@@ -1,0 +1,24 @@
+body:has(.admin-app) [data-storefront-chrome] {
+  display: none !important;
+}
+
+body:has(.admin-app) {
+  background: #f4f5f7;
+}
+
+.admin-app {
+  min-height: 100vh;
+  color: #191c22;
+}
+
+@media print {
+  body [data-storefront-chrome],
+  .admin-no-print {
+    display: none !important;
+  }
+
+  body,
+  .admin-app {
+    background: white !important;
+  }
+}

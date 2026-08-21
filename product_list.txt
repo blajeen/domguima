@@ -1,0 +1,88 @@
+0	Suporte Duplo para Controle PS5
+1	Suporte Veicular para Starlink Mini com Ventosa Dupla
+2	Película Protetora para Starlink Mini
+3	Kit Starlink Mini — Suporte Veicular + Película Protetora
+4	Suporte Veicular para Starlink Mini + Carregador Veicular
+5	Suporte para Celular Tênis, Beach Tennis e Padel — DG Shop
+6	Organizador de Cabos para Starlink Mini — DG Shop
+7	Ar Condicionado Philco Inverter 9000 BTUs Frio PAC9FT
+8	Ar-Condicionado Consul Triple Inverter 9.000 BTUs CBK09DB Frio
+9	Ar Condicionado Philco Inverter 12000 BTUs Frio PAC12FC
+10	Ar-Condicionado Elgin Inverter 12.000 BTUs HIFE12C2CA Frio
+11	Ar-Condicionado Philco Inverter 12.000 BTUs PAC12QC Quente/Frio
+12	Ar-Condicionado Samsung Inverter 12.000 BTUs AR12DYFAAWKXAZ Frio
+13	Climatizador de Ar Britânia BCL05A
+14	Climatizador de Ar Philco PCL05A
+15	Aquecedor Britânia AB1100N
+16	Ventilador de Mesa Elgin Breeze Air
+17	Ventilador de Mesa Britânia Super Turbo BVT405
+18	Ventilador de Mesa Mondial Super Power VSP-40-B
+19	Ventilador de Mesa Mondial Super Turbo VTX-40-8P
+20	Ventilador de Mesa Philco PVT402
+21	Ventilador de Mesa Wap Flow Turbo
+22	Ventilador de Coluna Mondial Super Turbo VTX-40C-8P
+23	Ventilador de Parede Ventisol Premium 50cm
+24	Ventilador de Parede Ventisol Premium 60cm
+25	Esmerilhadeira Bosch GWS 700
+26	Fechadura Digital Intelbras FR221V
+27	Fechadura Digital Elsys Pop DS1100V
+28	Parafusadeira Titanium 12V 7743
+29	Parafusadeira Vonder 12V PFV012I
+30	Kit de Ferramentas Tramontina 3 Peças 43408195
+31	Kit de Ferramentas Tramontina 5 Peças 43408505
+32	Kit de Ferramentas Tramontina 5 Peças 43408502
+33	Kit de Ferramentas Tramontina 5 Peças 43408142
+34	Lixeira Tramontina Inox 5L
+35	Copo Stanley Beer Tumbler Happy Hour 384ml
+36	Copo Stanley Pilsner Glass Happy Hour 444ml
+37	Taça Térmica Cocktail Glass Stanley 414ml
+38	Kit Tramontina Churrasco 4 Peças
+39	Aparador Patrimar Vero com 2 Gavetas e Adega
+40	Extensão Múltipla Tramontina 5m
+41	Caixa de Som Torre Pulse Flamebox SP512
+42	Purificador Electrolux Efficient PE11X
+43	Cooktop Consul 5 Bocas Preto Bivolt CDD75AE
+44	Micro-ondas Midea 20L MHP20S1
+45	Micro-ondas Electrolux MTO30
+46	Micro-ondas Electrolux Efficient 23L ME23B
+47	Micro-ondas Electrolux Efficient 23L ME23P
+48	Micro-ondas Electrolux Efficient ME36B
+49	Máquina de Lavar Electrolux 11kg LES11
+50	Máquina de Lavar Electrolux LEE15 14,5kg
+51	Lava-Louças Midea 8 Serviços MDWTF08W1
+52	Air Fryer Kitchen Art KFR01 5,7L
+53	Air Fryer Britânia BFR50 Redstone 5,5L
+54	Lavadora de Alta Pressão Karcher Compacta
+55	Batedeira Planetária Mondial Premium BP-01P-W
+56	Mixer Processador Philips Walita Pro Mix RI2530
+57	Mixer Britânia 2 em 1 350W BMX360
+58	Liquidificador Britânia Diamante 800
+59	Liquidificador Britânia BLQ1100
+60	Ferro a Vapor Mondial FVN-01-O
+61	Ferro Electrolux a Vapor e a Seco SIE60 Azul
+62	Ferro a Vapor Arno Essentialgliss FMQ
+63	Sanduicheira Cadence Toast & Grill SAN260
+64	Sanduicheira e Grill Philco PGR21PI Maxx Clean
+65	Chapa Taiff Style Azul
+66	Secador Britânia BSC2050
+67	Secador de Cabelo Britânia SP3100N
+68	Cadeira Gamer XT Racer Speed Series
+69	Monitor LG UHD 4K 32" 32UL750-W
+70	Monitor Samsung Odyssey G40 25"
+71	Mouse Gamer Asus TUF Gaming M3
+72	Mouse Lenovo ThinkPad MoRFn60
+73	Kit Mouse Lenovo ThinkPad + Mochila Targus Intellect
+74	Mochila Targus Intellect Essentials TSB966 15,6"
+75	Kit Gamer Dazz Arsenal
+76	Fone Gamer Dazz Immersion
+77	Fone Gamer OEX Shield HS409
+78	Soundbar Samsung HW-B450F
+79	Smart TV Toshiba 32" HD 32V35L TB016M
+80	Smart TV Samsung 32" H5000F
+81	Smart TV LG Full HD AI 43" 43LR6700PSA
+82	Smart TV Samsung 43" QLED Full HD Q5F
+83	Smart TV LG UHD AI 4K 50" 50UA8550PSA
+84	Smart TV Samsung 50" Crystal UHD U8100F
+85	Smart TV Samsung 55" Crystal UHD 4K U8600F
+86	Smart TV Samsung 75" Crystal UHD 4K U8600F
+87	Smartphone Motorola Signature 5G

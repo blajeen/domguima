@@ -1,0 +1,39 @@
+{
+  "name": "site-domguima",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "import:shopee": "node scripts/import-shopee.mjs",
+    "test:smoke": "node scripts/smoke-test.mjs",
+    "optimize:assets": "node scripts/optimize-assets.mjs",
+    "images:standardize": "node scripts/standardize-product-images.mjs",
+    "images:audit": "node scripts/audit-product-covers.mjs",
+    "check:shopee": "node scripts/import-shopee.mjs --check",
+    "login:shopee": "node scripts/shopee-login-import.mjs",
+    "setup:admin": "node scripts/setup-admin.mjs domguima"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.0",
+    "jose": "^6.2.9",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.1",
+    "playwright": "^1.62.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,61 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Variáveis de ambiente locais
+.env.local
+.env*.local
+
+# Cookie de sessão da Shopee (usado por npm run import:shopee) — NUNCA versionar
+shopee-cookie.txt
+
+# Persistencia local do painel; em producao os dados ficam no Vercel Blob.
+/data/admin-catalog.json
+/public/uploads/
+/.image-audit/
+
+# Catalogo bruto recebido do lojista. As imagens publicadas e otimizadas ficam
+# em /public/produtos; os arquivos-fonte nao devem ser expostos no repositorio.
+/docs/DOM GUIMA SHOP/
+/.image-inventory-files.txt
+
+.vercel
+.env*

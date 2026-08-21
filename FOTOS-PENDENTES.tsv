@@ -1,0 +1,89 @@
+idx	categoria	marca	nome	pasta_destino
+0	eletronicos		Suporte Duplo para Controle PS5	public/produtos/suporte-duplo-para-controle-ps5-0/
+1	eletronicos		Suporte Veicular para Starlink Mini com Ventosa Dupla	public/produtos/suporte-veicular-para-starlink-mini-com-ventosa-dupla-1/
+2	eletronicos		Película Protetora para Starlink Mini	public/produtos/pelicula-protetora-para-starlink-mini-2/
+3	eletronicos		Kit Starlink Mini — Suporte Veicular + Película Protetora	public/produtos/kit-starlink-mini-suporte-veicular-pelicula-protetora-3/
+4	eletronicos		Suporte Veicular para Starlink Mini + Carregador Veicular	public/produtos/suporte-veicular-para-starlink-mini-carregador-veicular-4/
+5	celulares		Suporte para Celular Tênis, Beach Tennis e Padel — DG Shop	public/produtos/suporte-para-celular-tenis-beach-tennis-e-padel-dg-shop-5/
+6	eletronicos		Organizador de Cabos para Starlink Mini — DG Shop	public/produtos/organizador-de-cabos-para-starlink-mini-dg-shop-6/
+7	climatizacao	Philco	Ar Condicionado Philco Inverter 9000 BTUs Frio PAC9FT	public/produtos/ar-condicionado-philco-inverter-9000-btus-frio-pac9ft-7/
+8	climatizacao	Consul	Ar-Condicionado Consul Triple Inverter 9.000 BTUs CBK09DB Frio	public/produtos/ar-condicionado-consul-triple-inverter-9-000-btus-cbk09db-frio-8/
+9	climatizacao	Philco	Ar Condicionado Philco Inverter 12000 BTUs Frio PAC12FC	public/produtos/ar-condicionado-philco-inverter-12000-btus-frio-pac12fc-9/
+10	climatizacao	Elgin	Ar-Condicionado Elgin Inverter 12.000 BTUs HIFE12C2CA Frio	public/produtos/ar-condicionado-elgin-inverter-12-000-btus-hife12c2ca-frio-10/
+11	climatizacao	Philco	Ar-Condicionado Philco Inverter 12.000 BTUs PAC12QC Quente/Frio	public/produtos/ar-condicionado-philco-inverter-12-000-btus-pac12qc-quente-frio-11/
+12	climatizacao	Samsung	Ar-Condicionado Samsung Inverter 12.000 BTUs AR12DYFAAWKXAZ Frio	public/produtos/ar-condicionado-samsung-inverter-12-000-btus-ar12dyfaawkxaz-frio-12/
+13	climatizacao	Britânia	Climatizador de Ar Britânia BCL05A	public/produtos/climatizador-de-ar-britania-bcl05a-13/
+14	climatizacao	Philco	Climatizador de Ar Philco PCL05A	public/produtos/climatizador-de-ar-philco-pcl05a-14/
+15	climatizacao	Britânia	Aquecedor Britânia AB1100N	public/produtos/aquecedor-britania-ab1100n-15/
+16	climatizacao	Elgin	Ventilador de Mesa Elgin Breeze Air	public/produtos/ventilador-de-mesa-elgin-breeze-air-16/
+17	climatizacao	Britânia	Ventilador de Mesa Britânia Super Turbo BVT405	public/produtos/ventilador-de-mesa-britania-super-turbo-bvt405-17/
+18	climatizacao	Mondial	Ventilador de Mesa Mondial Super Power VSP-40-B	public/produtos/ventilador-de-mesa-mondial-super-power-vsp-40-b-18/
+19	climatizacao	Mondial	Ventilador de Mesa Mondial Super Turbo VTX-40-8P	public/produtos/ventilador-de-mesa-mondial-super-turbo-vtx-40-8p-19/
+20	climatizacao	Philco	Ventilador de Mesa Philco PVT402	public/produtos/ventilador-de-mesa-philco-pvt402-20/
+21	climatizacao	Wap	Ventilador de Mesa Wap Flow Turbo	public/produtos/ventilador-de-mesa-wap-flow-turbo-21/
+22	climatizacao	Mondial	Ventilador de Coluna Mondial Super Turbo VTX-40C-8P	public/produtos/ventilador-de-coluna-mondial-super-turbo-vtx-40c-8p-22/
+23	climatizacao	Ventisol	Ventilador de Parede Ventisol Premium 50cm	public/produtos/ventilador-de-parede-ventisol-premium-50cm-23/
+24	climatizacao	Ventisol	Ventilador de Parede Ventisol Premium 60cm	public/produtos/ventilador-de-parede-ventisol-premium-60cm-24/
+25	ferramentas	Bosch	Esmerilhadeira Bosch GWS 700	public/produtos/esmerilhadeira-bosch-gws-700-25/
+26	ferramentas	Intelbras	Fechadura Digital Intelbras FR221V	public/produtos/fechadura-digital-intelbras-fr221v-26/
+27	ferramentas	Elsys	Fechadura Digital Elsys Pop DS1100V	public/produtos/fechadura-digital-elsys-pop-ds1100v-27/
+28	ferramentas	Titanium	Parafusadeira Titanium 12V 7743	public/produtos/parafusadeira-titanium-12v-7743-28/
+29	ferramentas	Vonder	Parafusadeira Vonder 12V PFV012I	public/produtos/parafusadeira-vonder-12v-pfv012i-29/
+30	ferramentas	Tramontina	Kit de Ferramentas Tramontina 3 Peças 43408195	public/produtos/kit-de-ferramentas-tramontina-3-pecas-43408195-30/
+31	ferramentas	Tramontina	Kit de Ferramentas Tramontina 5 Peças 43408505	public/produtos/kit-de-ferramentas-tramontina-5-pecas-43408505-31/
+32	ferramentas	Tramontina	Kit de Ferramentas Tramontina 5 Peças 43408502	public/produtos/kit-de-ferramentas-tramontina-5-pecas-43408502-32/
+33	ferramentas	Tramontina	Kit de Ferramentas Tramontina 5 Peças 43408142	public/produtos/kit-de-ferramentas-tramontina-5-pecas-43408142-33/
+34	casa-decoracao	Tramontina	Lixeira Tramontina Inox 5L	public/produtos/lixeira-tramontina-inox-5l-34/
+35	casa-decoracao	Stanley	Copo Stanley Beer Tumbler Happy Hour 384ml	public/produtos/copo-stanley-beer-tumbler-happy-hour-384ml-35/
+36	casa-decoracao	Stanley	Copo Stanley Pilsner Glass Happy Hour 444ml	public/produtos/copo-stanley-pilsner-glass-happy-hour-444ml-36/
+37	casa-decoracao	Stanley	Taça Térmica Cocktail Glass Stanley 414ml	public/produtos/taca-termica-cocktail-glass-stanley-414ml-37/
+38	casa-decoracao	Tramontina	Kit Tramontina Churrasco 4 Peças	public/produtos/kit-tramontina-churrasco-4-pecas-38/
+39	casa-decoracao	Patrimar	Aparador Patrimar Vero com 2 Gavetas e Adega	public/produtos/aparador-patrimar-vero-com-2-gavetas-e-adega-39/
+40	casa-decoracao	Tramontina	Extensão Múltipla Tramontina 5m	public/produtos/extensao-multipla-tramontina-5m-40/
+41	eletronicos	Pulse	Caixa de Som Torre Pulse Flamebox SP512	public/produtos/caixa-de-som-torre-pulse-flamebox-sp512-41/
+42	eletrodomesticos	Electrolux	Purificador Electrolux Efficient PE11X	public/produtos/purificador-electrolux-efficient-pe11x-42/
+43	eletrodomesticos	Consul	Cooktop Consul 5 Bocas Preto Bivolt CDD75AE	public/produtos/cooktop-consul-5-bocas-preto-bivolt-cdd75ae-43/
+44	eletrodomesticos	Midea	Micro-ondas Midea 20L MHP20S1	public/produtos/micro-ondas-midea-20l-mhp20s1-44/
+45	eletrodomesticos	Electrolux	Micro-ondas Electrolux MTO30	public/produtos/micro-ondas-electrolux-mto30-45/
+46	eletrodomesticos	Electrolux	Micro-ondas Electrolux Efficient 23L ME23B	public/produtos/micro-ondas-electrolux-efficient-23l-me23b-46/
+47	eletrodomesticos	Electrolux	Micro-ondas Electrolux Efficient 23L ME23P	public/produtos/micro-ondas-electrolux-efficient-23l-me23p-47/
+48	eletrodomesticos	Electrolux	Micro-ondas Electrolux Efficient ME36B	public/produtos/micro-ondas-electrolux-efficient-me36b-48/
+49	eletrodomesticos	Electrolux	Máquina de Lavar Electrolux 11kg LES11	public/produtos/maquina-de-lavar-electrolux-11kg-les11-49/
+50	eletrodomesticos	Electrolux	Máquina de Lavar Electrolux LEE15 14,5kg	public/produtos/maquina-de-lavar-electrolux-lee15-14-5kg-50/
+51	eletrodomesticos	Midea	Lava-Louças Midea 8 Serviços MDWTF08W1	public/produtos/lava-loucas-midea-8-servicos-mdwtf08w1-51/
+52	eletrodomesticos	Kitchen Art	Air Fryer Kitchen Art KFR01 5,7L	public/produtos/air-fryer-kitchen-art-kfr01-5-7l-52/
+53	eletrodomesticos	Britânia	Air Fryer Britânia BFR50 Redstone 5,5L	public/produtos/air-fryer-britania-bfr50-redstone-5-5l-53/
+54	eletrodomesticos	Karcher	Lavadora de Alta Pressão Karcher Compacta	public/produtos/lavadora-de-alta-pressao-karcher-compacta-54/
+55	eletrodomesticos	Mondial	Batedeira Planetária Mondial Premium BP-01P-W	public/produtos/batedeira-planetaria-mondial-premium-bp-01p-w-55/
+56	eletrodomesticos	Philips Walita	Mixer Processador Philips Walita Pro Mix RI2530	public/produtos/mixer-processador-philips-walita-pro-mix-ri2530-56/
+57	eletrodomesticos	Britânia	Mixer Britânia 2 em 1 350W BMX360	public/produtos/mixer-britania-2-em-1-350w-bmx360-57/
+58	eletrodomesticos	Britânia	Liquidificador Britânia Diamante 800	public/produtos/liquidificador-britania-diamante-800-58/
+59	eletrodomesticos	Britânia	Liquidificador Britânia BLQ1100	public/produtos/liquidificador-britania-blq1100-59/
+60	eletrodomesticos	Mondial	Ferro a Vapor Mondial FVN-01-O	public/produtos/ferro-a-vapor-mondial-fvn-01-o-60/
+61	eletrodomesticos	Electrolux	Ferro Electrolux a Vapor e a Seco SIE60 Azul	public/produtos/ferro-electrolux-a-vapor-e-a-seco-sie60-azul-61/
+62	eletrodomesticos	Arno	Ferro a Vapor Arno Essentialgliss FMQ	public/produtos/ferro-a-vapor-arno-essentialgliss-fmq-62/
+63	eletrodomesticos	Cadence	Sanduicheira Cadence Toast & Grill SAN260	public/produtos/sanduicheira-cadence-toast-grill-san260-63/
+64	eletrodomesticos	Philco	Sanduicheira e Grill Philco PGR21PI Maxx Clean	public/produtos/sanduicheira-e-grill-philco-pgr21pi-maxx-clean-64/
+65	beleza	Taiff	Chapa Taiff Style Azul	public/produtos/chapa-taiff-style-azul-65/
+66	beleza	Britânia	Secador Britânia BSC2050	public/produtos/secador-britania-bsc2050-66/
+67	beleza	Britânia	Secador de Cabelo Britânia SP3100N	public/produtos/secador-de-cabelo-britania-sp3100n-67/
+68	informatica	XT Racer	Cadeira Gamer XT Racer Speed Series	public/produtos/cadeira-gamer-xt-racer-speed-series-68/
+69	informatica	LG	Monitor LG UHD 4K 32" 32UL750-W	public/produtos/monitor-lg-uhd-4k-32-32ul750-w-69/
+70	informatica	Samsung	Monitor Samsung Odyssey G40 25"	public/produtos/monitor-samsung-odyssey-g40-25-70/
+71	informatica	Asus	Mouse Gamer Asus TUF Gaming M3	public/produtos/mouse-gamer-asus-tuf-gaming-m3-71/
+72	informatica	Lenovo	Mouse Lenovo ThinkPad MoRFn60	public/produtos/mouse-lenovo-thinkpad-morfn60-72/
+73	informatica	Lenovo / Targus	Kit Mouse Lenovo ThinkPad + Mochila Targus Intellect	public/produtos/kit-mouse-lenovo-thinkpad-mochila-targus-intellect-73/
+74	informatica	Targus	Mochila Targus Intellect Essentials TSB966 15,6"	public/produtos/mochila-targus-intellect-essentials-tsb966-15-6-74/
+75	informatica	Dazz	Kit Gamer Dazz Arsenal	public/produtos/kit-gamer-dazz-arsenal-75/
+76	informatica	Dazz	Fone Gamer Dazz Immersion	public/produtos/fone-gamer-dazz-immersion-76/
+77	informatica	OEX	Fone Gamer OEX Shield HS409	public/produtos/fone-gamer-oex-shield-hs409-77/
+78	smart-tvs	Samsung	Soundbar Samsung HW-B450F	public/produtos/soundbar-samsung-hw-b450f-78/
+79	smart-tvs	Toshiba	Smart TV Toshiba 32" HD 32V35L TB016M	public/produtos/smart-tv-toshiba-32-hd-32v35l-tb016m-79/
+80	smart-tvs	Samsung	Smart TV Samsung 32" H5000F	public/produtos/smart-tv-samsung-32-h5000f-80/
+81	smart-tvs	LG	Smart TV LG Full HD AI 43" 43LR6700PSA	public/produtos/smart-tv-lg-full-hd-ai-43-43lr6700psa-81/
+82	smart-tvs	Samsung	Smart TV Samsung 43" QLED Full HD Q5F	public/produtos/smart-tv-samsung-43-qled-full-hd-q5f-82/
+83	smart-tvs	LG	Smart TV LG UHD AI 4K 50" 50UA8550PSA	public/produtos/smart-tv-lg-uhd-ai-4k-50-50ua8550psa-83/
+84	smart-tvs	Samsung	Smart TV Samsung 50" Crystal UHD U8100F	public/produtos/smart-tv-samsung-50-crystal-uhd-u8100f-84/
+85	smart-tvs	Samsung	Smart TV Samsung 55" Crystal UHD 4K U8600F	public/produtos/smart-tv-samsung-55-crystal-uhd-4k-u8600f-85/
+86	smart-tvs	Samsung	Smart TV Samsung 75" Crystal UHD 4K U8600F	public/produtos/smart-tv-samsung-75-crystal-uhd-4k-u8600f-86/
+87	celulares	Motorola	Smartphone Motorola Signature 5G	public/produtos/smartphone-motorola-signature-5g-87/
