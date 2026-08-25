@@ -40,7 +40,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   const value = parsed.data;
   let created = false;
   try {
-    const state = await readCatalogState({ requireStorage: true });
+    const state = await readCatalogState();
     const before = state.products.find((product) => product.id === id);
     if (state.products.some((product) => product.id !== id && product.slug === value.slug)) return { message: "Ja existe um produto com este endereco (slug)." };
     if (state.products.some((product) => product.id !== id && product.sku === value.sku)) return { message: "Ja existe um produto com este SKU." };

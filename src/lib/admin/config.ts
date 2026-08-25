@@ -8,6 +8,9 @@ export function hasAdminConfig(): boolean {
   return Boolean(adminConfig.username && adminConfig.passwordHash && adminConfig.sessionSecret.length >= 32);
 }
 
-export function hasDurableStorage(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+export function hasSupabaseConfig(): boolean {
+  return Boolean(
+    process.env.SUPABASE_URL?.trim() &&
+      (process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
+  );
 }

@@ -15,8 +15,9 @@ const nextConfig: NextConfig = {
       // CDN da Shopee, caso o catálogo seja importado com URLs remotas.
       { protocol: "https", hostname: "down-br.img.susercontent.com" },
       { protocol: "https", hostname: "**.susercontent.com" },
-      // Fotos enviadas pelo painel administrativo e armazenadas no Vercel Blob.
+      // Fotos enviadas pelo painel administrativo e armazenadas no Supabase Storage.
       { protocol: "https", hostname: "**.public.blob.vercel-storage.com" },
+      { protocol: "https", hostname: "usiwdhadqfrqigbvvlsw.supabase.co" },
     ],
   },
   poweredByHeader: false,
