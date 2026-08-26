@@ -16,6 +16,8 @@ export interface InventoryMovementRecord {
   stock_after: number;
   reason: string;
   note: string | null;
+  commission_percent: number;
+  commission_cents: number;
   actor_id: string;
   created_at: string;
   products?: { name: string; sku: string };
@@ -170,8 +172,20 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
     products,
     categories,
     settings: { ...defaultStoreSettings, ...(settingsRow?.settings ?? {}) },
-    inventoryMovements: (movementsResult.data ?? []) as InventoryMovementRecord[],
+    inventoryMovements: enrichMovementCommissions((movementsResult.data ?? []) as InventoryMovementRecord[], (auditResult.data ?? []) as AuditRecord[]),
     auditLogs: (auditResult.data ?? []) as AuditRecord[],
     updatedAt: settingsRow?.updated_at ?? new Date().toISOString(),
   };
+}
+
+// Compatibilidade com instalações anteriores à coluna de comissão: o RPC antigo
+// ainda guarda esses dados no after_data do log de auditoria.
+function enrichMovementCommissions(movements: InventoryMovementRecord[], audits: AuditRecord[]): InventoryMovementRecord[] {
+  return movements.map((movement) => {
+    if (Number(movement.commission_cents ?? 0) > 0) return movement;
+    const match = audits.find((audit) => audit.action === "inventory.adjusted" && audit.entity_id === movement.product_id && Number((audit.after_data as { stock?: number } | null)?.stock) === Number(movement.stock_after) && Number((audit.after_data as { commissionCents?: number } | null)?.commissionCents ?? 0) > 0);
+    if (!match) return movement;
+    const data = match.after_data as { commissionPercent?: number; commissionCents?: number };
+    return { ...movement, commission_percent: Number(data.commissionPercent ?? 0), commission_cents: Number(data.commissionCents ?? 0) };
+  });
 }

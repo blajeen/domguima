@@ -69,7 +69,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
     await mutateCatalogState((draft) => {
       const index = draft.products.findIndex((item) => item.id === id);
       if (index >= 0) draft.products[index] = product; else draft.products.push(product);
-      if (!before && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", actor_id: owner.id, created_at: now });
+      if (!before && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now });
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
     created = !before;
@@ -160,6 +160,7 @@ export async function adjustInventoryAction(_: ActionState, formData: FormData):
   const enteredDelta = Math.trunc(numberFrom(formData.get("quantityDelta")));
   const delta = reason === "sale" ? -Math.abs(enteredDelta) : enteredDelta;
   const note = String(formData.get("note") ?? "").trim();
+  const commissionPercent = Math.max(0, Math.min(100, Number(formData.get("commissionPercent") ?? 0) || 0));
   if (!productId || !delta) return { message: "Escolha um produto e informe uma quantidade diferente de zero." };
   if (!note) return { message: "Explique o motivo do ajuste." };
   let actionError = "";
@@ -170,12 +171,13 @@ export async function adjustInventoryAction(_: ActionState, formData: FormData):
     if (after < 0) { actionError = "O estoque nao pode ficar negativo."; return; }
     const before = product.stock;
     const now = new Date().toISOString();
+    const commissionCents = reason === "sale" ? Math.round(product.price_cents * Math.abs(delta) * commissionPercent / 100) : 0;
     product.stock = after;
     product.updated_at = now;
     if (delta > 0) product.last_stock_entry_at = now;
     if (reason === "sale") product.last_sale_at = now;
-    state.inventoryMovements.unshift({ id: randomUUID(), product_id: productId, quantity_delta: delta, stock_before: before, stock_after: after, reason, note, actor_id: owner.id, created_at: now });
-    audit(state, owner.id, "inventory.adjusted", "product", productId, { stock: before }, { stock: after, reason, note });
+    state.inventoryMovements.unshift({ id: randomUUID(), product_id: productId, quantity_delta: delta, stock_before: before, stock_after: after, reason, note, commission_percent: commissionPercent, commission_cents: commissionCents, actor_id: owner.id, created_at: now });
+    audit(state, owner.id, "inventory.adjusted", "product", productId, { stock: before }, { stock: after, reason, note, commissionPercent, commissionCents });
   }); } catch (error) {
     console.error("Falha ao atualizar estoque:", error);
     return { message: error instanceof Error ? error.message : "Nao foi possivel atualizar o estoque. Tente novamente." };

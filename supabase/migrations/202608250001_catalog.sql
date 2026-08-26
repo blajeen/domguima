@@ -77,9 +77,14 @@ create table if not exists public.inventory_movements (
   stock_after integer not null,
   reason text not null,
   note text,
+  commission_percent numeric not null default 0,
+  commission_cents integer not null default 0,
   actor_id text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.inventory_movements add column if not exists commission_percent numeric not null default 0;
+alter table public.inventory_movements add column if not exists commission_cents integer not null default 0;
 
 create table if not exists public.audit_logs (
   id text primary key,
@@ -163,8 +168,8 @@ begin
   end loop;
 
   for movement in select * from jsonb_array_elements(coalesce(p_state->'inventoryMovements', '[]'::jsonb)) loop
-    insert into public.inventory_movements (id, product_id, quantity_delta, stock_before, stock_after, reason, note, actor_id, created_at)
-    values (movement->>'id', movement->>'product_id', (movement->>'quantity_delta')::integer, (movement->>'stock_before')::integer, (movement->>'stock_after')::integer, movement->>'reason', nullif(movement->>'note', ''), movement->>'actor_id', coalesce(nullif(movement->>'created_at', '')::timestamptz, now()));
+    insert into public.inventory_movements (id, product_id, quantity_delta, stock_before, stock_after, reason, note, commission_percent, commission_cents, actor_id, created_at)
+    values (movement->>'id', movement->>'product_id', (movement->>'quantity_delta')::integer, (movement->>'stock_before')::integer, (movement->>'stock_after')::integer, movement->>'reason', nullif(movement->>'note', ''), coalesce(nullif(movement->>'commission_percent', '')::numeric, 0), coalesce(nullif(movement->>'commission_cents', '')::integer, 0), movement->>'actor_id', coalesce(nullif(movement->>'created_at', '')::timestamptz, now()));
   end loop;
 
   for audit in select * from jsonb_array_elements(coalesce(p_state->'auditLogs', '[]'::jsonb)) loop
