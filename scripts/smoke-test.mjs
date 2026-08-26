@@ -151,9 +151,9 @@ else fail(`CEP não preencheu a cidade (recebido: "${city}")`);
 
 console.log("\n▸ Busca");
 await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-const input = page.getByPlaceholder("O que você está procurando?").first();
+const input = page.getByPlaceholder("Buscar produtos...").first();
 await input.click();
-await input.type("carregador", { delay: 50 });
+await input.type("suporte", { delay: 50 });
 await page.waitForTimeout(900);
 const options = await page.getByRole("option").count();
 if (options > 0) pass(`autocomplete retorna ${options} sugestões`);
