@@ -40,6 +40,13 @@ export async function getInventoryMovements(limit = 30) {
   return state.inventoryMovements.slice(0, limit).map((movement) => ({ ...movement, products: products.get(movement.product_id) }));
 }
 
+export async function getAuditLogs(limit = 100) {
+  const state = await readCatalogState();
+  const products = new Map(state.products.map((product) => [product.id, product.name]));
+  const categories = new Map(state.categories.map((category) => [category.id, category.name]));
+  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_id }));
+}
+
 export async function getStoreSettings(): Promise<StoreSettings> {
   const state = await readCatalogState();
   return { ...defaultStoreSettings, ...state.settings };

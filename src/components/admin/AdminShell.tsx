@@ -9,6 +9,7 @@ const nav = [
   { href: "/painel/estoque", label: "Estoque", icon: "↕" },
   { href: "/painel/categorias", label: "Categorias", icon: "◇" },
   { href: "/painel/catalogo-pdf", label: "Catalogo PDF", icon: "PDF" },
+  { href: "/painel/historico", label: "Historico", icon: "H" },
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 

@@ -156,13 +156,14 @@ export async function setPrimaryImageAction(formData: FormData) {
 export async function adjustInventoryAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
   const productId = String(formData.get("productId") ?? "");
-  const delta = Math.trunc(numberFrom(formData.get("quantityDelta")));
-  const note = String(formData.get("note") ?? "").trim();
   const reason = String(formData.get("reason") ?? "manual_adjustment");
+  const enteredDelta = Math.trunc(numberFrom(formData.get("quantityDelta")));
+  const delta = reason === "sale" ? -Math.abs(enteredDelta) : enteredDelta;
+  const note = String(formData.get("note") ?? "").trim();
   if (!productId || !delta) return { message: "Escolha um produto e informe uma quantidade diferente de zero." };
   if (!note) return { message: "Explique o motivo do ajuste." };
   let actionError = "";
-  await mutateCatalogState((state) => {
+  try { await mutateCatalogState((state) => {
     const product = state.products.find((item) => item.id === productId);
     if (!product) { actionError = "Produto nao encontrado."; return; }
     const after = product.stock + delta;
@@ -175,7 +176,10 @@ export async function adjustInventoryAction(_: ActionState, formData: FormData):
     if (reason === "sale") product.last_sale_at = now;
     state.inventoryMovements.unshift({ id: randomUUID(), product_id: productId, quantity_delta: delta, stock_before: before, stock_after: after, reason, note, actor_id: owner.id, created_at: now });
     audit(state, owner.id, "inventory.adjusted", "product", productId, { stock: before }, { stock: after, reason, note });
-  });
+  }); } catch (error) {
+    console.error("Falha ao atualizar estoque:", error);
+    return { message: error instanceof Error ? error.message : "Nao foi possivel atualizar o estoque. Tente novamente." };
+  }
   if (actionError) return { message: actionError };
   refreshCatalog();
   return { ok: true, message: "Estoque atualizado." };
