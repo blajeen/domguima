@@ -124,11 +124,11 @@ declare
   movement jsonb;
   audit jsonb;
 begin
-  delete from public.audit_logs;
-  delete from public.inventory_movements;
-  delete from public.product_images;
-  delete from public.products;
-  delete from public.categories;
+  delete from public.audit_logs where true;
+  delete from public.inventory_movements where true;
+  delete from public.product_images where true;
+  delete from public.products where true;
+  delete from public.categories where true;
 
   for category in select * from jsonb_array_elements(coalesce(p_state->'categories', '[]'::jsonb)) loop
     insert into public.categories (id, name, slug, description, icon, sort_order, in_main_menu, active)
