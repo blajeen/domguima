@@ -11,7 +11,8 @@ const SESSION_HOURS = 12;
 
 export async function verifyAdminCredentials(username: string, password: string): Promise<boolean> {
   if (!hasAdminConfig() || username !== adminConfig.username) return false;
-  const [algorithm, salt, expectedHex] = adminConfig.passwordHash.split("$");
+  const separator = adminConfig.passwordHash.includes(":") ? ":" : "$";
+  const [algorithm, salt, expectedHex] = adminConfig.passwordHash.split(separator);
   if (algorithm !== "scrypt" || !salt || !expectedHex) return false;
   const actual = scryptSync(password, salt, expectedHex.length / 2);
   const expected = Buffer.from(expectedHex, "hex");
