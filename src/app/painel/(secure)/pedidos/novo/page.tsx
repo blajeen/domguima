@@ -1,8 +1,10 @@
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { OrderComposer } from "@/components/admin/OrderComposer";
+import { requireOwner } from "@/lib/admin/auth";
 import { getAdminProducts, getSellers } from "@/lib/admin/data";
 
 export default async function NewOrderPage() {
+  await requireOwner();
   const [products, sellers] = await Promise.all([getAdminProducts(), getSellers()]);
   const options = products.filter((product) => product.status !== "archived").map((product) => ({
     id: product.id,

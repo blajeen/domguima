@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
+import { requireOwner } from "@/lib/admin/auth";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
 import { formatPrice, normalize } from "@/lib/utils/format";
 
 type Params = Record<string, string | string[] | undefined>;
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<Params> }) {
+  await requireOwner();
   const params = await searchParams;
   const [allOrders, sellers] = await Promise.all([getSalesOrders(), getSellers()]);
   const query = typeof params.q === "string" ? params.q.trim() : "";

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { requireOwner } from "@/lib/admin/auth";
 import { readCatalogState } from "@/lib/admin/catalog-store";
 import { defaultReportRange, reportOrders, reportTotals, sellerSummaries, validDateParam } from "@/lib/admin/reports";
 import { formatPrice } from "@/lib/utils/format";
@@ -7,6 +8,7 @@ import { formatPrice } from "@/lib/utils/format";
 type Params = Record<string, string | string[] | undefined>;
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<Params> }) {
+  await requireOwner();
   const params = await searchParams;
   const state = await readCatalogState();
   const fallback = defaultReportRange();
