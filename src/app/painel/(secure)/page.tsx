@@ -51,6 +51,8 @@ export default async function DashboardPage() {
         <PanelCard>
           <h2 className="text-lg font-black">Atalhos</h2>
           <div className="mt-4 grid gap-2">
+            <QuickLink href="/painel/pedidos/novo" label="Criar novo pedido" />
+            <QuickLink href="/painel/pedidos" label="Consultar pedidos" />
             <QuickLink href="/painel/estoque" label="Ajustar estoque" />
             <QuickLink href="/painel/categorias" label="Organizar categorias" />
             <QuickLink href="/painel/catalogo-pdf" label="Exportar catalogo PDF" />

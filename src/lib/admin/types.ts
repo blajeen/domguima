@@ -2,9 +2,77 @@ export type ActionState = {
   ok?: boolean;
   message?: string;
   errors?: Record<string, string[]>;
+  orderId?: string;
+  orderNumber?: string;
 };
 
 export type ProductStatus = "draft" | "active" | "archived";
+
+export type OrderStatus = "completed" | "cancelled";
+
+export interface SellerRecord {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+export interface ProductOperationalMeta {
+  ncm: string;
+  cost_cents: number | null;
+}
+
+export interface OrderCustomerSnapshot {
+  name: string;
+  cpf: string;
+  phone: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
+export interface SalesOrderItem {
+  product_id: string;
+  product_name: string;
+  sku: string;
+  quantity: number;
+  list_unit_price_cents: number;
+  unit_price_cents: number;
+  discount_cents: number;
+  line_total_cents: number;
+  commission_unit_cents: number;
+  commission_total_cents: number;
+}
+
+export interface SalesOrderRecord {
+  id: string;
+  number: string;
+  request_id: string;
+  status: OrderStatus;
+  seller_id: string;
+  seller_name: string;
+  customer: OrderCustomerSnapshot;
+  items: SalesOrderItem[];
+  total_units: number;
+  gross_total_cents: number;
+  discount_total_cents: number;
+  total_cents: number;
+  commission_total_cents: number;
+  notes: string;
+  created_by: string;
+  created_at: string;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+}
+
+export interface AdminOperationsState {
+  sellers: SellerRecord[];
+  orders: SalesOrderRecord[];
+  product_meta: Record<string, ProductOperationalMeta>;
+}
 
 export interface AdminProductRow {
   id: string;

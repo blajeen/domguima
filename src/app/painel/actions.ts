@@ -7,8 +7,10 @@ import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
+import { cancelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
+import { isValidCPF, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
@@ -26,6 +28,30 @@ const dailySaleInput = z.object({
   quantity: z.number().int().min(1).max(1_000_000),
 });
 
+const orderInput = z.object({
+  requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/),
+  sellerId: z.string().trim().min(1).max(80),
+  customer: z.object({
+    name: z.string().trim().min(3).max(140),
+    cpf: z.string().transform(onlyDigits).refine(isValidCPF, "CPF inválido."),
+    phone: z.string().trim().max(30),
+    cep: z.string().transform(onlyDigits).refine((value) => value.length === 8, "CEP inválido."),
+    street: z.string().trim().min(2).max(180),
+    number: z.string().trim().min(1).max(30),
+    complement: z.string().trim().max(100),
+    neighborhood: z.string().trim().min(2).max(100),
+    city: z.string().trim().min(2).max(100),
+    state: z.string().trim().length(2).transform((value) => value.toUpperCase()),
+  }),
+  notes: z.string().trim().max(500),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1).max(200),
+    quantity: z.number().int().min(1).max(10_000),
+    expectedStock: z.number().int().min(0),
+    unitPriceCents: z.number().int().positive().max(100_000_000),
+  })).min(1).max(100),
+});
+
 export async function loginAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
@@ -40,6 +66,11 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   const owner = await ownerOrThrow();
   const id = String(formData.get("id") || formData.get("slug") || randomUUID()).trim();
   const oldPriceRaw = String(formData.get("oldPrice") ?? "").trim();
+  const costRaw = String(formData.get("cost") ?? "").trim();
+  const costCents = costRaw ? moneyToCents(costRaw) : null;
+  const ncm = onlyDigits(String(formData.get("ncm") ?? ""));
+  if (costCents !== null && costCents <= 0) return { message: "Informe um custo válido ou deixe o campo vazio." };
+  if (ncm && ncm.length !== 8) return { message: "O NCM deve conter exatamente 8 dígitos." };
   const parsed = productSchema.safeParse({
     id, name: formData.get("name"), slug: formData.get("slug"), sku: formData.get("sku"), brand: formData.get("brand"),
     categoryId: formData.get("categoryId"), description: formData.get("description"), priceCents: moneyToCents(formData.get("price")),
@@ -88,6 +119,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
       const index = draft.products.findIndex((item) => item.id === id);
       if (index >= 0) draft.products[index] = product; else draft.products.push(product);
       if (!before && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now });
+      draft.operations.product_meta[id] = { ncm, cost_cents: costCents };
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
     created = !before;
@@ -251,6 +283,34 @@ export async function registerDailySalesAction(batchId: unknown, updates: unknow
   }
 }
 
+export async function createOrderAction(input: unknown): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsed = orderInput.safeParse(input);
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do pedido." };
+  try {
+    let created: ReturnType<typeof createSalesOrder> | null = null;
+    await mutateCatalogState((state) => { created = createSalesOrder(state, parsed.data, owner.id); });
+    refreshCatalog();
+    revalidatePath("/painel/pedidos");
+    revalidatePath("/painel/financeiro");
+    return { ok: true, message: `Pedido ${created!.number} finalizado. O estoque foi atualizado.`, orderId: created!.id, orderNumber: created!.number };
+  } catch (error) {
+    if (error instanceof OrderOperationError) return { message: error.message };
+    return catalogStorageError(error);
+  }
+}
+
+export async function cancelOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) return;
+  await mutateCatalogState((state) => { cancelSalesOrder(state, orderId, owner.id); });
+  refreshCatalog();
+  revalidatePath("/painel/pedidos");
+  revalidatePath("/painel/financeiro");
+  redirect(`/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`);
+}
+
 export async function saveCategoryAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
   const parsed = categorySchema.safeParse({ id: formData.get("id") || formData.get("slug"), name: formData.get("name"), slug: formData.get("slug"), description: formData.get("description"), icon: formData.get("icon"), sortOrder: Math.trunc(numberFrom(formData.get("sortOrder"))), inMainMenu: formData.get("inMainMenu") === "on", active: formData.get("active") === "on" });
@@ -300,7 +360,7 @@ export async function importCurrentCatalogAction(_: ActionState, formData: FormD
 
 function refreshCatalog() {
   updateTag("catalog");
-  for (const path of ["/", "/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes"]) revalidatePath(path);
+  for (const path of ["/", "/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes", "/painel/pedidos", "/painel/financeiro"]) revalidatePath(path);
 }
 
 function audit(state: CatalogState, actorId: string, action: string, entityType: string, entityId: string, beforeData: unknown, afterData: unknown) {

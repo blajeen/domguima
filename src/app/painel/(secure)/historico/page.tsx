@@ -1,7 +1,7 @@
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { getAuditLogs } from "@/lib/admin/data";
 
-const labels: Record<string, string> = { "product.created": "Produto criado", "product.updated": "Produto atualizado", "product.archived": "Produto arquivado", "product.image_uploaded": "Imagem adicionada", "product.image_removed": "Imagem removida", "inventory.adjusted": "Estoque atualizado", "category.created": "Categoria criada", "category.updated": "Categoria atualizada", "settings.updated": "Configurações atualizadas", "catalog.imported": "Catálogo importado" };
+const labels: Record<string, string> = { "product.created": "Produto criado", "product.updated": "Produto atualizado", "product.archived": "Produto arquivado", "product.image_uploaded": "Imagem adicionada", "product.images_uploaded": "Imagens adicionadas", "product.image_removed": "Imagem removida", "inventory.adjusted": "Estoque atualizado", "inventory.sheet_updated": "Planilha atualizada", "inventory.daily_sales": "Baixa avulsa", "order.completed": "Pedido finalizado", "order.cancelled": "Pedido cancelado", "category.created": "Categoria criada", "category.updated": "Categoria atualizada", "settings.updated": "Configurações atualizadas", "catalog.imported": "Catálogo importado" };
 
 export default async function HistoryPage() {
   const logs = await getAuditLogs();

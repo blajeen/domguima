@@ -5,12 +5,14 @@ import { logoutAction } from "@/app/painel/actions";
 const nav = [
   { href: "/painel", label: "Visao geral", icon: "⌂" },
   { href: "/painel/produtos", label: "Produtos", icon: "▦" },
+  { href: "/painel/pedidos/novo", label: "Novo pedido", icon: "+" },
+  { href: "/painel/pedidos", label: "Pedidos", icon: "P" },
   { href: "/painel/ofertas", label: "Ofertas", icon: "%" },
   { href: "/painel/estoque", label: "Estoque", icon: "↕" },
   { href: "/painel/categorias", label: "Categorias", icon: "◇" },
   { href: "/painel/catalogo-pdf", label: "Catalogo PDF", icon: "PDF" },
   { href: "/painel/historico", label: "Historico", icon: "H" },
-  { href: "/painel/financeiro", label: "Financeiro", icon: "$" },
+  { href: "/painel/financeiro", label: "Relatórios", icon: "$" },
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 

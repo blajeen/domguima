@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
-import type { AdminCategoryRow, AdminProductImage, AdminProductRow, StoreSettings } from "./types";
+import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, StoreSettings } from "./types";
 
 export interface InventoryMovementRecord {
   id: string;
@@ -37,11 +37,12 @@ export interface AuditRecord {
 }
 
 export interface CatalogState {
-  version: 1;
+  version: 1 | 2;
   catalogEnabled: boolean;
   products: AdminProductRow[];
   categories: AdminCategoryRow[];
   settings: StoreSettings;
+  operations: AdminOperationsState;
   inventoryMovements: InventoryMovementRecord[];
   auditLogs: AuditRecord[];
   updatedAt: string;
@@ -54,11 +55,12 @@ let remoteStateExpiresAt = 0;
 
 export function createInitialState(): CatalogState {
   return {
-    version: 1,
+    version: 2,
     catalogEnabled: false,
     products: initialProducts(),
     categories: initialCategories(),
     settings: { ...defaultStoreSettings },
+    operations: defaultOperationsState(),
     inventoryMovements: [],
     auditLogs: [],
     updatedAt: new Date().toISOString(),
@@ -75,7 +77,7 @@ export async function readCatalogState(): Promise<CatalogState> {
   }
 
   try {
-    return JSON.parse(await readFile(LOCAL_FILE, "utf8")) as CatalogState;
+    return normalizeCatalogState(JSON.parse(await readFile(LOCAL_FILE, "utf8")) as Partial<CatalogState>);
   } catch {
     return createInitialState();
   }
@@ -84,7 +86,10 @@ export async function readCatalogState(): Promise<CatalogState> {
 export async function writeCatalogState(state: CatalogState): Promise<void> {
   state.updatedAt = new Date().toISOString();
   if (hasSupabaseConfig()) {
-    const { error } = await createSupabaseAdminClient().rpc("replace_catalog_state", { p_state: state });
+    // O RPC atual persiste `settings` como JSONB. O livro operacional fica
+    // encapsulado nele para que pedidos funcionem sem uma migração destrutiva.
+    const persistedState = { ...state, settings: { ...state.settings, __operations: state.operations } };
+    const { error } = await createSupabaseAdminClient().rpc("replace_catalog_state", { p_state: persistedState });
     if (error) throw new Error(`Nao foi possivel salvar o catalogo no Supabase: ${error.message}`);
     remoteStateExpiresAt = Date.now() + 5_000;
     remoteStatePromise = Promise.resolve(structuredClone(state));
@@ -161,7 +166,9 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
     images.push(image);
     imagesByProduct.set(image.product_id, images);
   }
-  const settingsRow = settingsResult.data as { catalog_enabled?: boolean; settings?: Partial<StoreSettings>; updated_at?: string } | null;
+  const settingsRow = settingsResult.data as { catalog_enabled?: boolean; settings?: Partial<StoreSettings> & { __operations?: AdminOperationsState }; updated_at?: string } | null;
+  const persistedSettings = settingsRow?.settings ?? {};
+  const { __operations, ...publicSettings } = persistedSettings;
   const products = ((productsResult.data ?? []) as AdminProductRow[]).map((product) => ({
     ...product,
     product_images: imagesByProduct.get(product.id) ?? [],
@@ -169,14 +176,50 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
   }));
 
   return {
-    version: 1,
+    version: 2,
     catalogEnabled: Boolean(settingsRow?.catalog_enabled),
     products,
     categories,
-    settings: { ...defaultStoreSettings, ...(settingsRow?.settings ?? {}) },
+    settings: { ...defaultStoreSettings, ...publicSettings },
+    operations: normalizeOperations(__operations),
     inventoryMovements: enrichMovementCommissions((movementsResult.data ?? []) as InventoryMovementRecord[], (auditResult.data ?? []) as AuditRecord[]),
     auditLogs: (auditResult.data ?? []) as AuditRecord[],
     updatedAt: settingsRow?.updated_at ?? new Date().toISOString(),
+  };
+}
+
+export function defaultOperationsState(): AdminOperationsState {
+  return {
+    sellers: [
+      { id: "dom-guima", name: "Dom Guima", active: true },
+      { id: "gabriel", name: "Gabriel", active: true },
+    ],
+    orders: [],
+    product_meta: {},
+  };
+}
+
+function normalizeOperations(value?: Partial<AdminOperationsState> | null): AdminOperationsState {
+  const fallback = defaultOperationsState();
+  return {
+    sellers: Array.isArray(value?.sellers) && value.sellers.length ? value.sellers : fallback.sellers,
+    orders: Array.isArray(value?.orders) ? value.orders : [],
+    product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
+  };
+}
+
+function normalizeCatalogState(value: Partial<CatalogState>): CatalogState {
+  const fallback = createInitialState();
+  return {
+    ...fallback,
+    ...value,
+    version: 2,
+    settings: { ...fallback.settings, ...(value.settings ?? {}) },
+    operations: normalizeOperations(value.operations),
+    products: Array.isArray(value.products) ? value.products : fallback.products,
+    categories: Array.isArray(value.categories) ? value.categories : fallback.categories,
+    inventoryMovements: Array.isArray(value.inventoryMovements) ? value.inventoryMovements : [],
+    auditLogs: Array.isArray(value.auditLogs) ? value.auditLogs : [],
   };
 }
 

@@ -96,18 +96,17 @@ export function applyDailySales(
   });
 
   const now = new Date().toISOString();
-  const note = `Saídas do dia • ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date())}`;
+  const note = `Baixas avulsas de estoque · ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date())}`;
   let units = 0;
   for (const { product, update } of operations) {
     const before = product.stock;
     const after = before - update.quantity;
     product.stock = after;
-    product.last_sale_at = now;
     product.updated_at = now;
     units += update.quantity;
     const movement: InventoryMovementRecord = {
       id: randomUUID(), product_id: product.id, quantity_delta: -update.quantity,
-      stock_before: before, stock_after: after, reason: "sale", note,
+      stock_before: before, stock_after: after, reason: "manual_adjustment", note,
       commission_percent: 0, commission_cents: 0, actor_id: actorId, created_at: now, batch_id: batchId,
     };
     state.inventoryMovements.unshift(movement);

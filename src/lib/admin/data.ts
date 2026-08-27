@@ -16,6 +16,18 @@ export async function getAdminProduct(id: string): Promise<AdminProductRow | nul
   return (await getAdminProducts()).find((product) => product.id === id) ?? null;
 }
 
+export async function getProductOperationalMeta(id: string) {
+  return (await readCatalogState()).operations.product_meta[id] ?? { ncm: "", cost_cents: null };
+}
+
+export async function getSellers() {
+  return [...(await readCatalogState()).operations.sellers].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+export async function getSalesOrders() {
+  return [...(await readCatalogState()).operations.orders].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
 export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
   return [...(await readCatalogState()).categories].sort((a, b) => a.sort_order - b.sort_order);
 }
@@ -44,7 +56,8 @@ export async function getAuditLogs(limit = 100) {
   const state = await readCatalogState();
   const products = new Map(state.products.map((product) => [product.id, product.name]));
   const categories = new Map(state.categories.map((category) => [category.id, category.name]));
-  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_id }));
+  const orders = new Map(state.operations.orders.map((order) => [order.id, order.number]));
+  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_id }));
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {

@@ -2,10 +2,10 @@
 
 import { useActionState } from "react";
 import { saveProductAction } from "@/app/painel/actions";
-import type { AdminCategoryRow, AdminProductRow } from "@/lib/admin/types";
+import type { AdminCategoryRow, AdminProductRow, ProductOperationalMeta } from "@/lib/admin/types";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
 
-export function ProductForm({ product, categories }: { product?: AdminProductRow | null; categories: AdminCategoryRow[] }) {
+export function ProductForm({ product, categories, operationalMeta }: { product?: AdminProductRow | null; categories: AdminCategoryRow[]; operationalMeta?: ProductOperationalMeta }) {
   const [state, action] = useActionState(saveProductAction, {});
   const specs = product?.specifications.map((item) => `${item.label}: ${item.value}`).join("\n") ?? "";
   const variants = product?.variants.map((item) => `${item.name}: ${item.options.join(", ")}`).join("\n") ?? "";
@@ -17,6 +17,7 @@ export function ProductForm({ product, categories }: { product?: AdminProductRow
           <Field name="name" label="Nome do produto" defaultValue={product?.name} required className="sm:col-span-2" error={state.errors?.name} />
           <Field name="slug" label="Endereco (slug)" defaultValue={product?.slug} required hint="Ex.: smart-tv-samsung-50" error={state.errors?.slug} />
           <Field name="sku" label="SKU" defaultValue={product?.sku} required error={state.errors?.sku} />
+          <Field name="ncm" label="NCM" inputMode="numeric" maxLength={8} defaultValue={operationalMeta?.ncm ?? ""} hint="Opcional; somente os 8 dígitos." />
           <Field name="brand" label="Marca" defaultValue={product?.brand ?? ""} />
           <label className={labelClass}>Categoria
             <select name="categoryId" defaultValue={product?.category_id} required className={fieldClass}>
@@ -33,6 +34,7 @@ export function ProductForm({ product, categories }: { product?: AdminProductRow
 
       <Section title="Preco, estoque e publicacao" description="Alteracoes de estoque posteriores devem ser feitas pela tela Estoque.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field name="cost" label="Custo (R$)" inputMode="decimal" defaultValue={cents(operationalMeta?.cost_cents)} hint="Uso interno; não aparece na loja." />
           <Field name="price" label="Preco atual (R$)" inputMode="decimal" defaultValue={cents(product?.price_cents)} required error={state.errors?.priceCents} />
           <Field name="oldPrice" label="Preco anterior (R$)" inputMode="decimal" defaultValue={cents(product?.old_price_cents)} hint="Opcional; deve ser maior." />
           {product ? <label className={labelClass}>Estoque atual<input value={product.stock} disabled className={`${fieldClass} bg-ink-50`} /><input type="hidden" name="stock" value={product.stock} /><span className="mt-1 block font-normal text-ink-400">Use a tela Estoque para alterar e registrar o motivo.</span></label> : <Field name="stock" label="Estoque inicial" type="number" min="0" defaultValue={0} required />}
