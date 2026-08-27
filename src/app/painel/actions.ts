@@ -3,10 +3,28 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
+
+const inventoryCountInput = z.object({
+  productId: z.string().trim().min(1).max(200),
+  expectedStock: z.number().int().min(0),
+  stock: z.number().int().min(0).max(1_000_000),
+  expectedPriceCents: z.number().int().positive().optional(),
+  priceCents: z.number().int().positive().optional(),
+  oldPriceCents: z.number().int().positive().nullable().optional(),
+  cardInstallment: z.object({ count: z.number().int().min(2).max(24), value: z.number().int().positive() }).nullable().optional(),
+});
+
+const dailySaleInput = z.object({
+  productId: z.string().trim().min(1).max(200),
+  expectedStock: z.number().int().min(0),
+  quantity: z.number().int().min(1).max(1_000_000),
+});
 
 export async function loginAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const username = String(formData.get("username") ?? "").trim();
@@ -96,27 +114,40 @@ export async function archiveProductAction(formData: FormData) {
   refreshCatalog();
 }
 
-export async function uploadProductImageAction(_: ActionState, formData: FormData): Promise<ActionState> {
+export async function uploadProductImagesAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
-  const productId = String(formData.get("productId") ?? "");
-  const file = formData.get("image");
-  if (!(file instanceof File) || !file.size) return { message: "Escolha uma imagem." };
-  if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) return { message: "Use JPG, PNG ou WebP." };
-  if (file.size > 4 * 1024 * 1024) return { message: "A imagem deve ter no maximo 4 MB." };
-  if (!(await readCatalogState()).products.some((product) => product.id === productId)) return { message: "Produto nao encontrado." };
-  const uploaded = await uploadCatalogImage(file, productId).catch((error: unknown) => nullError(error));
-  if (!("src" in uploaded)) return uploaded;
-  await mutateCatalogState((state) => {
-    const product = state.products.find((item) => item.id === productId);
-    if (!product) throw new Error("Produto nao encontrado.");
-    const images = product.product_images ?? [];
-    images.push({ id: randomUUID(), product_id: productId, src: uploaded.src, storage_path: uploaded.storagePath, alt: String(formData.get("alt") || "Foto do produto").trim(), sort_order: images.length, is_primary: images.length === 0 });
-    product.product_images = images;
-    product.updated_at = new Date().toISOString();
-    audit(state, owner.id, "product.image_uploaded", "product", productId, null, { path: uploaded.storagePath });
-  });
-  refreshCatalog();
-  return { ok: true, message: "Imagem enviada." };
+  const productId = String(formData.get("productId") ?? "").trim();
+  const files = formData.getAll("images").filter((value): value is File => value instanceof File && value.size > 0);
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!files.length) return { message: "Escolha pelo menos uma imagem." };
+  if (files.length > 12) return { message: "Envie no máximo 12 fotos por vez." };
+  if (files.some((file) => !allowedTypes.has(file.type))) return { message: "Use apenas JPG, PNG ou WebP." };
+  if (files.some((file) => file.size > 4 * 1024 * 1024)) return { message: "Cada imagem deve ter no máximo 4 MB." };
+  if (files.reduce((total, file) => total + file.size, 0) > 40 * 1024 * 1024) return { message: "O lote deve ter no máximo 40 MB. Comprima as imagens e tente novamente." };
+  try {
+    if (!(await readCatalogState()).products.some((product) => product.id === productId)) return { message: "Produto não encontrado." };
+    const uploaded: Array<{ src: string; storagePath: string }> = [];
+    try {
+      for (const file of files) uploaded.push(await uploadCatalogImage(file, productId));
+      await mutateCatalogState((state) => {
+        const product = state.products.find((item) => item.id === productId);
+        if (!product) throw new Error("Produto não encontrado.");
+        const images = product.product_images ?? [];
+        const alt = String(formData.get("alt") || "Foto do produto").trim() || "Foto do produto";
+        uploaded.forEach((image, index) => images.push({ id: randomUUID(), product_id: productId, src: image.src, storage_path: image.storagePath, alt: `${alt}${uploaded.length > 1 ? ` ${index + 1}` : ""}`, sort_order: images.length, is_primary: images.length === 0 }));
+        product.product_images = images;
+        product.updated_at = new Date().toISOString();
+        audit(state, owner.id, "product.images_uploaded", "product", productId, null, { paths: uploaded.map((image) => image.storagePath), count: uploaded.length });
+      });
+    } catch (error) {
+      await Promise.all(uploaded.map((image) => deleteCatalogImage(image.storagePath).catch(() => undefined)));
+      throw error;
+    }
+    refreshCatalog();
+    return { ok: true, message: `${files.length} ${files.length === 1 ? "foto enviada" : "fotos enviadas"} com sucesso.` };
+  } catch (error) {
+    return catalogStorageError(error);
+  }
 }
 
 export async function removeProductImageAction(formData: FormData) {
@@ -180,11 +211,44 @@ export async function adjustInventoryAction(_: ActionState, formData: FormData):
     audit(state, owner.id, "inventory.adjusted", "product", productId, { stock: before }, { stock: after, reason, note, commissionPercent, commissionCents });
   }); } catch (error) {
     console.error("Falha ao atualizar estoque:", error);
-    return { message: error instanceof Error ? error.message : "Nao foi possivel atualizar o estoque. Tente novamente." };
+    return inventoryActionError(error);
   }
   if (actionError) return { message: actionError };
   refreshCatalog();
   return { ok: true, message: "Estoque atualizado." };
+}
+
+/** Saves only the rows whose counted stock changed. The expected value protects against stale sheets. */
+export async function saveInventoryCountsAction(updates: unknown): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsed = z.array(inventoryCountInput).max(200).safeParse(updates);
+  if (!parsed.success) return { message: "Revise os valores de estoque informados." };
+  if (!parsed.data.length) return { ok: true, message: "Nenhuma contagem para salvar." };
+  try {
+    let changed = 0;
+    await mutateCatalogState((state) => { changed = applyInventoryCounts(state, parsed.data, owner.id); });
+    refreshCatalog();
+    return { ok: true, message: `${changed === 1 ? "1 produto atualizado" : `${changed} produtos atualizados`} com sucesso.` };
+  } catch (error) {
+    return inventoryActionError(error);
+  }
+}
+
+/** Registers several sales at once and is safe to retry with the same batch id. */
+export async function registerDailySalesAction(batchId: unknown, updates: unknown): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsedBatchId = z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/).safeParse(batchId);
+  const parsed = z.array(dailySaleInput).min(1).max(200).safeParse(updates);
+  if (!parsedBatchId.success || !parsed.success) return { message: "Revise as saídas informadas e tente novamente." };
+  try {
+    let result = { products: 0, units: 0, alreadyApplied: false };
+    await mutateCatalogState((state) => { result = applyDailySales(state, parsed.data, owner.id, parsedBatchId.data); });
+    refreshCatalog();
+    if (result.alreadyApplied) return { ok: true, message: "Essa saída já havia sido registrada." };
+    return { ok: true, message: `${result.units} ${result.units === 1 ? "unidade baixada" : "unidades baixadas"} em ${result.products} ${result.products === 1 ? "produto" : "produtos"}.` };
+  } catch (error) {
+    return inventoryActionError(error);
+  }
 }
 
 export async function saveCategoryAction(_: ActionState, formData: FormData): Promise<ActionState> {
@@ -248,11 +312,15 @@ function splitCommaList(value: FormDataEntryValue | null): string[] { return Str
 function parseSpecifications(value: FormDataEntryValue | null) { return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [label, ...rest] = line.split(":"); return { label: label.trim(), value: rest.join(":").trim() }; }).filter((item) => item.label && item.value); }
 function parseVariants(value: FormDataEntryValue | null) { return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [name, ...rest] = line.split(":"); return { name: name.trim(), options: rest.join(":").split(",").map((item) => item.trim()).filter(Boolean) }; }).filter((item) => item.name && item.options.length); }
 function validationState(errors: Record<string, string[] | undefined>): ActionState { return { message: "Revise os campos destacados.", errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string[]] => Boolean(entry[1]))) }; }
-function nullError(error: unknown): ActionState { return { message: error instanceof Error ? error.message : "Nao foi possivel enviar a imagem." }; }
 function catalogStorageError(error: unknown): ActionState {
   const message = error instanceof Error ? error.message : "";
   if (/suspended|blocked/i.test(message)) {
     return { message: "O armazenamento do catalogo esta suspenso na Vercel. Nenhuma alteracao foi perdida nesta tentativa. Reative o Blob e tente novamente." };
   }
   return { message: "Nao foi possivel acessar o armazenamento do catalogo. Nenhuma alteracao foi perdida nesta tentativa. Tente novamente em instantes." };
+}
+
+function inventoryActionError(error: unknown): ActionState {
+  if (error instanceof InventoryOperationError) return { message: error.message };
+  return catalogStorageError(error);
 }

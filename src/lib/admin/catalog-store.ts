@@ -20,6 +20,8 @@ export interface InventoryMovementRecord {
   commission_cents: number;
   actor_id: string;
   created_at: string;
+  /** Idempotency key for a daily sales batch, when applicable. */
+  batch_id?: string;
   products?: { name: string; sku: string };
 }
 

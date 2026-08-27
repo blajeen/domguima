@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Permite enviar um lote de imagens do painel (cada arquivo continua
+    // limitado a 4 MB na ação e o lote a 40 MB).
+    serverActions: { bodySizeLimit: "45mb" },
+  },
   images: {
     // AVIF/WebP automáticos: o Next serve o formato mais leve que o navegador aceita.
     formats: ["image/avif", "image/webp"],

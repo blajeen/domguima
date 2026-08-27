@@ -1,18 +1,37 @@
-import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
-import { StockAdjustmentForm } from "@/components/admin/StockAdjustmentForm";
+import { InventorySpreadsheet } from "@/components/admin/InventorySpreadsheet";
 import { getAdminProducts, getInventoryMovements } from "@/lib/admin/data";
-import { formatPrice } from "@/lib/utils/format";
+import type { InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/types";
 
 export default async function InventoryPage() {
-  const [products, movements] = await Promise.all([getAdminProducts(), getInventoryMovements()]);
-  const attention = products.filter((item) => item.status !== "archived" && item.stock <= item.low_stock_threshold).sort((a, b) => a.stock - b.stock);
+  const [products, movements] = await Promise.all([getAdminProducts(), getInventoryMovements(200)]);
+  const sheetProducts: InventorySheetProduct[] = products.map((product) => {
+    const image = [...(product.product_images ?? [])].sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order)[0];
+    return {
+      id: product.id, name: product.name, sku: product.sku, price_cents: product.price_cents,
+      old_price_cents: product.old_price_cents, installment_count: product.card_installment?.count ?? null,
+      installment_value_cents: product.card_installment?.value ?? null,
+      stock: product.stock, low_stock_threshold: product.low_stock_threshold, status: product.status,
+      category_name: product.categories?.name ?? product.category_id, image_src: image?.src ?? null,
+      image_alt: image?.alt ?? product.name, updated_at: product.updated_at,
+    };
+  });
+  const sheetMovements: InventorySheetMovement[] = movements.map((movement) => ({
+    id: String(movement.id), product_id: String(movement.product_id),
+    product_name: (movement.products as { name?: string } | undefined)?.name ?? String(movement.product_id),
+    quantity_delta: Number(movement.quantity_delta), stock_before: Number(movement.stock_before),
+    stock_after: Number(movement.stock_after), reason: String(movement.reason),
+    note: movement.note ? String(movement.note) : null, created_at: String(movement.created_at),
+  }));
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const todayUnits = sheetMovements.filter((movement) => movement.reason === "sale" && localDay(movement.created_at) === today).reduce((total, movement) => total + Math.abs(movement.quantity_delta), 0);
+
   return <>
-    <AdminPageHeader eyebrow="Venda assistida" title="Estoque" description="O carrinho e o WhatsApp nao baixam estoque. Registre a saida quando a venda for confirmada." />
-    <PanelCard><h2 className="mb-4 text-base font-black">Novo ajuste</h2><StockAdjustmentForm products={products} /></PanelCard>
-    {attention.length > 0 && <PanelCard className="mt-5"><h2 className="text-base font-black">Precisam de atencao</h2><div className="mt-3 divide-y divide-ink-100">{attention.map((product) => <div key={product.id} className="flex items-center justify-between gap-4 py-3"><div><Link href={`/painel/produtos/${encodeURIComponent(product.id)}`} className="text-sm font-bold hover:text-gold-800">{product.name}</Link><p className="text-xs text-ink-400">SKU {product.sku} · limite {product.low_stock_threshold}</p></div><span className={`text-lg font-black ${product.stock === 0 ? "text-red-600" : "text-orange-600"}`}>{product.stock}</span></div>)}</div></PanelCard>}
-    <PanelCard className="mt-5"><h2 className="text-base font-black">Historico de movimentacoes</h2><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[860px] text-left text-sm"><thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Data</th><th>Produto</th><th>Movimento</th><th>Antes → Depois</th><th>Motivo</th><th>Comissão</th><th>Observacao</th></tr></thead><tbody className="divide-y divide-ink-100">{movements.map((movement) => <tr key={String(movement.id)}><td className="py-3 text-xs text-ink-500">{new Date(String(movement.created_at)).toLocaleString("pt-BR")}</td><td className="font-semibold">{(movement.products as { name?: string } | null)?.name ?? movement.product_id}</td><td className={`font-black ${Number(movement.quantity_delta) > 0 ? "text-success" : "text-red-600"}`}>{Number(movement.quantity_delta) > 0 ? "+" : ""}{movement.quantity_delta}</td><td>{movement.stock_before} → {movement.stock_after}</td><td>{reasonLabel(String(movement.reason))}</td><td>{Number(movement.commission_percent ?? 0) > 0 ? `${Number(movement.commission_percent)}% · ${formatPrice(Number(movement.commission_cents ?? 0))}` : "—"}</td><td className="text-ink-500">{movement.note || "—"}</td></tr>)}</tbody></table>{movements.length === 0 && <p className="py-8 text-center text-sm text-ink-500">Nenhuma movimentacao registrada ainda.</p>}</div></PanelCard>
+    <AdminPageHeader eyebrow="Operação de estoque" title="Estoque" description="Uma visão rápida para conferir preços, corrigir quantidades e registrar as saídas do dia com segurança." />
+    <PanelCard className="!p-0"><InventorySpreadsheet products={sheetProducts} movements={sheetMovements} todayUnits={todayUnits} /></PanelCard>
   </>;
 }
 
-function reasonLabel(value: string) { return ({ initial_import: "Importacao", manual_adjustment: "Ajuste manual", sale: "Venda", cancellation: "Cancelamento", correction: "Correcao" } as Record<string, string>)[value] ?? value; }
+function localDay(value: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}

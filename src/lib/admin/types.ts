@@ -50,6 +50,36 @@ export interface AdminProductRow {
   categories?: { name: string } | null;
 }
 
+/** Safe, compact payload used by the interactive inventory sheet. */
+export interface InventorySheetProduct {
+  id: string;
+  name: string;
+  sku: string;
+  price_cents: number;
+  old_price_cents: number | null;
+  installment_count: number | null;
+  installment_value_cents: number | null;
+  stock: number;
+  low_stock_threshold: number;
+  status: ProductStatus;
+  category_name: string;
+  image_src: string | null;
+  image_alt: string;
+  updated_at: string;
+}
+
+export interface InventorySheetMovement {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity_delta: number;
+  stock_before: number;
+  stock_after: number;
+  reason: string;
+  note: string | null;
+  created_at: string;
+}
+
 export interface AdminProductImage {
   id: string;
   product_id: string;
