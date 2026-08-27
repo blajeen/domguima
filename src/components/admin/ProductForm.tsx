@@ -1,26 +1,38 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { saveProductAction } from "@/app/painel/actions";
+import type { CategorySkuChoice } from "@/lib/admin/sku";
 import type { AdminCategoryRow, AdminProductRow, ProductOperationalMeta } from "@/lib/admin/types";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
 
-export function ProductForm({ product, categories, operationalMeta }: { product?: AdminProductRow | null; categories: AdminCategoryRow[]; operationalMeta?: ProductOperationalMeta }) {
+export function ProductForm({ product, categories, operationalMeta, initialCategoryId = "", skuChoices = [] }: { product?: AdminProductRow | null; categories: AdminCategoryRow[]; operationalMeta?: ProductOperationalMeta; initialCategoryId?: string; skuChoices?: CategorySkuChoice[] }) {
   const [state, action] = useActionState(saveProductAction, {});
+  const choicesByCategory = useMemo(() => new Map(skuChoices.map((choice) => [choice.categoryId, choice])), [skuChoices]);
+  const startingCategory = product?.category_id ?? initialCategoryId;
+  const startingChoice = choicesByCategory.get(startingCategory);
+  const [categoryId, setCategoryId] = useState(startingCategory);
+  const [sku, setSku] = useState(product?.sku ?? startingChoice?.nextSku ?? "");
+  const [automaticSku, setAutomaticSku] = useState(!product && Boolean(startingChoice));
   const specs = product?.specifications.map((item) => `${item.label}: ${item.value}`).join("\n") ?? "";
   const variants = product?.variants.map((item) => `${item.name}: ${item.options.join(", ")}`).join("\n") ?? "";
   return (
     <form action={action} className="space-y-6">
       <input type="hidden" name="id" value={product?.id ?? ""} />
+      <input type="hidden" name="skuMode" value={automaticSku ? "auto" : "manual"} />
       <Section title="Informacoes principais" description="Campos usados na busca e na pagina publica.">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field name="name" label="Nome do produto" defaultValue={product?.name} required className="sm:col-span-2" error={state.errors?.name} />
           <Field name="slug" label="Endereco (slug)" defaultValue={product?.slug} required hint="Ex.: smart-tv-samsung-50" error={state.errors?.slug} />
-          <Field name="sku" label="SKU" defaultValue={product?.sku} required error={state.errors?.sku} />
+          <label className={labelClass}>SKU
+            <div className="relative"><input name="sku" value={sku} onChange={(event) => { setSku(event.target.value.toUpperCase()); setAutomaticSku(false); }} required className={`${fieldClass} pr-24 font-mono font-bold`} /><span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[9px] font-black uppercase ${automaticSku ? "bg-green-50 text-green-700" : "bg-ink-50 text-ink-500"}`}>{automaticSku ? "Automático" : "Manual"}</span></div>
+            {!product && choicesByCategory.get(categoryId) && <button type="button" onClick={() => { setSku(choicesByCategory.get(categoryId)!.nextSku); setAutomaticSku(true); }} className="mt-1 text-left text-[11px] font-bold text-blue-700 hover:underline">Usar próximo código: {choicesByCategory.get(categoryId)!.nextSku}</button>}
+            {state.errors?.sku && <ErrorText value={state.errors.sku} />}
+          </label>
           <Field name="ncm" label="NCM" inputMode="numeric" maxLength={8} defaultValue={operationalMeta?.ncm ?? ""} hint="Opcional; somente os 8 dígitos." />
           <Field name="brand" label="Marca" defaultValue={product?.brand ?? ""} />
           <label className={labelClass}>Categoria
-            <select name="categoryId" defaultValue={product?.category_id} required className={fieldClass}>
+            <select name="categoryId" value={categoryId} onChange={(event) => { const nextCategory = event.target.value; setCategoryId(nextCategory); if (!product) { const choice = choicesByCategory.get(nextCategory); setSku(choice?.nextSku ?? ""); setAutomaticSku(Boolean(choice)); } }} required className={fieldClass}>
               <option value="">Selecione</option>
               {categories.filter((item) => item.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>

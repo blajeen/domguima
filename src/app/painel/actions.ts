@@ -8,6 +8,7 @@ import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCrede
 import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, onlyDigits } from "@/lib/utils/validators";
@@ -69,6 +70,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   const costRaw = String(formData.get("cost") ?? "").trim();
   const costCents = costRaw ? moneyToCents(costRaw) : null;
   const ncm = onlyDigits(String(formData.get("ncm") ?? ""));
+  const automaticSku = formData.get("skuMode") === "auto";
   if (costCents !== null && costCents <= 0) return { message: "Informe um custo válido ou deixe o campo vazio." };
   if (ncm && ncm.length !== 8) return { message: "O NCM deve conter exatamente 8 dígitos." };
   const parsed = productSchema.safeParse({
@@ -86,11 +88,16 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   });
   if (!parsed.success) return validationState(parsed.error.flatten().fieldErrors);
 
-  const value = parsed.data;
+  let value = parsed.data;
   let created = false;
   try {
     const state = await readCatalogState();
     const before = state.products.find((product) => product.id === id);
+    if (!before && automaticSku) {
+      const choice = buildCategorySkuChoices(state.categories, state.products).find((item) => item.categoryId === value.categoryId);
+      if (!choice) return { message: "Selecione um setor ativo para gerar o código do produto." };
+      value = { ...value, sku: choice.nextSku };
+    }
     if (state.products.some((product) => product.id !== id && product.slug === value.slug)) return { message: "Ja existe um produto com este endereco (slug)." };
     if (state.products.some((product) => product.id !== id && product.sku === value.sku)) return { message: "Ja existe um produto com este SKU." };
     if (!before && value.status === "active") return { message: "Cadastre como rascunho, adicione uma foto e depois publique." };
