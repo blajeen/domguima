@@ -4,6 +4,18 @@ export function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+/** Valida GTIN-8, UPC-A/GTIN-12, EAN-13 e GTIN-14 pelo dígito verificador. */
+export function isValidGTIN(value: string): boolean {
+  const digits = onlyDigits(value);
+  if (![8, 12, 13, 14].includes(digits.length) || /^(\d)\1+$/.test(digits)) return false;
+  const body = digits.slice(0, -1);
+  let sum = 0;
+  for (let index = body.length - 1, position = 0; index >= 0; index--, position++) {
+    sum += Number(body[index]) * (position % 2 === 0 ? 3 : 1);
+  }
+  return (10 - (sum % 10)) % 10 === Number(digits.at(-1));
+}
+
 /** Valida CPF pelos dois dígitos verificadores. */
 export function isValidCPF(value: string): boolean {
   const cpf = onlyDigits(value);

@@ -11,7 +11,7 @@ import { cancelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/a
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
-import { isValidCPF, onlyDigits } from "@/lib/utils/validators";
+import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
@@ -70,9 +70,13 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   const costRaw = String(formData.get("cost") ?? "").trim();
   const costCents = costRaw ? moneyToCents(costRaw) : null;
   const ncm = onlyDigits(String(formData.get("ncm") ?? ""));
+  const model = String(formData.get("model") ?? "").trim();
+  const gtin = onlyDigits(String(formData.get("gtin") ?? ""));
   const automaticSku = formData.get("skuMode") === "auto";
   if (costCents !== null && costCents <= 0) return { message: "Informe um custo válido ou deixe o campo vazio." };
   if (ncm && ncm.length !== 8) return { message: "O NCM deve conter exatamente 8 dígitos." };
+  if (model.length > 100) return { message: "O modelo deve ter no máximo 100 caracteres." };
+  if (gtin && !isValidGTIN(gtin)) return { message: "Informe um EAN/GTIN válido ou deixe o campo vazio." };
   const parsed = productSchema.safeParse({
     id, name: formData.get("name"), slug: formData.get("slug"), sku: formData.get("sku"), brand: formData.get("brand"),
     categoryId: formData.get("categoryId"), description: formData.get("description"), priceCents: moneyToCents(formData.get("price")),
@@ -126,7 +130,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
       const index = draft.products.findIndex((item) => item.id === id);
       if (index >= 0) draft.products[index] = product; else draft.products.push(product);
       if (!before && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now });
-      draft.operations.product_meta[id] = { ncm, cost_cents: costCents };
+      draft.operations.product_meta[id] = { ncm, cost_cents: costCents, model, gtin };
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
     created = !before;

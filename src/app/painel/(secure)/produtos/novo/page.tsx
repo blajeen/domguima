@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { requireOwner } from "@/lib/admin/auth";
-import { getAdminCategories, getAdminProducts } from "@/lib/admin/data";
+import { getAdminCategories, getAdminProducts, getProductAssistTemplates } from "@/lib/admin/data";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 
 type Params = Record<string, string | string[] | undefined>;
@@ -10,7 +10,7 @@ type Params = Record<string, string | string[] | undefined>;
 export default async function NewProductPage({ searchParams }: { searchParams: Promise<Params> }) {
   await requireOwner();
   const params = await searchParams;
-  const [categories, products] = await Promise.all([getAdminCategories(), getAdminProducts()]);
+  const [categories, products, templates] = await Promise.all([getAdminCategories(), getAdminProducts(), getProductAssistTemplates()]);
   const skuChoices = buildCategorySkuChoices(categories, products);
   const requestedCategory = typeof params.categoria === "string" ? params.categoria : "";
   const selected = skuChoices.find((choice) => choice.categoryId === requestedCategory);
@@ -36,6 +36,6 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
       <span>Setor selecionado: <strong>{selected.categoryName}</strong></span>
       <span>Próximo código: <strong className="font-mono">{selected.nextSku}</strong></span>
     </div>
-    <ProductForm categories={categories} initialCategoryId={selected.categoryId} skuChoices={skuChoices} />
+    <ProductForm categories={categories} initialCategoryId={selected.categoryId} skuChoices={skuChoices} templates={templates} />
   </>;
 }

@@ -2,7 +2,7 @@ import "server-only";
 
 import { readCatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
-import type { AdminCategoryRow, AdminProductRow, StoreSettings } from "./types";
+import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
 
 export { defaultStoreSettings } from "./defaults";
 
@@ -17,7 +17,29 @@ export async function getAdminProduct(id: string): Promise<AdminProductRow | nul
 }
 
 export async function getProductOperationalMeta(id: string) {
-  return (await readCatalogState()).operations.product_meta[id] ?? { ncm: "", cost_cents: null };
+  return normalizeProductOperationalMeta((await readCatalogState()).operations.product_meta[id]);
+}
+
+export async function getProductAssistTemplates(excludeId?: string): Promise<ProductAssistTemplate[]> {
+  const state = await readCatalogState();
+  const categoryNames = new Map(state.categories.map((category) => [category.id, category.name]));
+  return state.products
+    .filter((product) => product.id !== excludeId && product.status !== "archived")
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      brand: product.brand ?? "",
+      category_id: product.category_id,
+      category_name: categoryNames.get(product.category_id) ?? product.category_id,
+      description: product.description,
+      tags: product.tags,
+      specifications: product.specifications,
+      variants: product.variants,
+      shipping: product.shipping,
+      seller_note: product.seller_note ?? "",
+    }));
 }
 
 export async function getSellers() {
@@ -63,4 +85,13 @@ export async function getAuditLogs(limit = 100) {
 export async function getStoreSettings(): Promise<StoreSettings> {
   const state = await readCatalogState();
   return { ...defaultStoreSettings, ...state.settings };
+}
+
+function normalizeProductOperationalMeta(value?: Partial<ProductOperationalMeta> | null): ProductOperationalMeta {
+  return {
+    ncm: typeof value?.ncm === "string" ? value.ncm : "",
+    cost_cents: typeof value?.cost_cents === "number" ? value.cost_cents : null,
+    model: typeof value?.model === "string" ? value.model : "",
+    gtin: typeof value?.gtin === "string" ? value.gtin : "",
+  };
 }

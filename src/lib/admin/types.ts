@@ -19,6 +19,23 @@ export interface SellerRecord {
 export interface ProductOperationalMeta {
   ncm: string;
   cost_cents: number | null;
+  model: string;
+  gtin: string;
+}
+
+export interface ProductAssistTemplate {
+  id: string;
+  name: string;
+  sku: string;
+  brand: string;
+  category_id: string;
+  category_name: string;
+  description: string;
+  tags: string[];
+  specifications: Array<{ label: string; value: string }>;
+  variants: Array<{ name: string; options: string[] }>;
+  shipping: AdminProductRow["shipping"];
+  seller_note: string;
 }
 
 export interface OrderCustomerSnapshot {
