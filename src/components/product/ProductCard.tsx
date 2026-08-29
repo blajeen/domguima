@@ -64,7 +64,7 @@ export function ProductCard({
         className="flex flex-1 flex-col focus-visible:outline-none"
       >
         <div className="relative aspect-square overflow-hidden bg-white">
-          {image && (
+          {image ? (
             <Image
               src={image.src}
               alt={image.alt}
@@ -76,6 +76,8 @@ export function ProductCard({
                 outOfStock ? "opacity-45 grayscale" : ""
               }`}
             />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 bg-ink-50 p-5 text-center"><Image src="/brand/logo-dom-guima.png" alt="" width={48} height={48} className="size-12 object-contain opacity-30" /><span className="text-[11px] font-semibold text-ink-400">Foto em preparação</span></div>
           )}
 
           <div className="absolute left-2 top-2 flex flex-col items-start gap-1">

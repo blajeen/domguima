@@ -15,7 +15,11 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
   const [origin, setOrigin] = useState("50% 50%");
   const trackRef = useRef<HTMLDivElement>(null);
 
-  if (images.length === 0) return null;
+  if (images.length === 0) {
+    return <div className="flex aspect-square items-center justify-center rounded-card border border-dashed border-ink-200 bg-ink-50 p-8 text-center">
+      <div><Image src="/brand/logo-dom-guima.png" alt="" width={72} height={72} className="mx-auto size-16 object-contain opacity-35" /><p className="mt-3 text-sm font-bold text-ink-500">Fotos deste produto em preparação</p><p className="mt-1 text-xs text-ink-400">Confira a descrição e as especificações abaixo.</p></div>
+    </div>;
+  }
 
   const current = images[active];
   const hasMany = images.length > 1;

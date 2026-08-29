@@ -31,7 +31,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
   </>;
 
   return <>
-    <AdminPageHeader eyebrow="Novo produto · Passo 2 de 2" title="Cadastrar produto" description="O código foi preparado pelo setor. Salve como rascunho, adicione as fotos e depois publique." actions={<Link href="/painel/produtos/novo" className="rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-bold text-ink-700 hover:border-gold-400">Trocar setor</Link>} />
+    <AdminPageHeader eyebrow="Novo produto · Passo 2 de 2" title="Cadastrar produto" description="O código foi preparado pelo setor. Ao salvar, o produto será criado e publicado na loja." actions={<Link href="/painel/produtos/novo" className="rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-bold text-ink-700 hover:border-gold-400">Trocar setor</Link>} />
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
       <span>Setor selecionado: <strong>{selected.categoryName}</strong></span>
       <span>Próximo código: <strong className="font-mono">{selected.nextSku}</strong></span>

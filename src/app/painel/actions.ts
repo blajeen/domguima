@@ -104,9 +104,6 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
     }
     if (state.products.some((product) => product.id !== id && product.slug === value.slug)) return { message: "Ja existe um produto com este endereco (slug)." };
     if (state.products.some((product) => product.id !== id && product.sku === value.sku)) return { message: "Ja existe um produto com este SKU." };
-    if (!before && value.status === "active") return { message: "Cadastre como rascunho, adicione uma foto e depois publique." };
-    if (before && value.status === "active" && !before.product_images?.length) return { message: "Adicione ao menos uma foto antes de publicar o produto." };
-
     const now = new Date().toISOString();
     const product: AdminProductRow = {
       id, external_id: before?.external_id ?? null, name: value.name, slug: value.slug, description: value.description,
