@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
-import { cancelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { cancelSalesOrder, confirmPendingSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
@@ -305,6 +305,23 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
   } catch (error) {
     if (error instanceof OrderOperationError) return { message: error.message };
     return catalogStorageError(error);
+  }
+}
+
+export async function confirmOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  if (!orderId || !sellerId) return;
+  try {
+    await mutateCatalogState((state) => { confirmPendingSalesOrder(state, orderId, sellerId, owner.id); });
+    refreshCatalog();
+    revalidatePath("/painel/pedidos");
+    revalidatePath("/painel/financeiro");
+    redirect(`/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`);
+  } catch (error) {
+    if (error instanceof OrderOperationError) redirect(`/painel/pedidos?erro=${encodeURIComponent(error.message)}`);
+    redirect("/painel/pedidos?erro=Não foi possível confirmar o pedido agora.");
   }
 }
 

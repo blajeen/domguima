@@ -7,7 +7,7 @@ export interface ReportFilters {
   from: string;
   to: string;
   sellerId?: string;
-  status?: "completed" | "cancelled" | "all";
+  status?: "pending" | "completed" | "cancelled" | "all";
 }
 
 export interface SellerReportSummary {
@@ -63,7 +63,7 @@ export function ordersReportCsv(orders: SalesOrderRecord[]): string {
   const rows = orders.flatMap((order) => order.items.map((item) => [
     order.number,
     localDateTime(order.created_at),
-    order.status === "completed" ? "Finalizado" : "Cancelado",
+    order.status === "completed" ? "Finalizado" : order.status === "pending" ? "Aguardando confirmação" : "Cancelado",
     order.seller_name,
     order.customer.name,
     order.customer.cpf,

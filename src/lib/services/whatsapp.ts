@@ -8,6 +8,13 @@ export function whatsappLink(message?: string, number = whatsapp.number): string
   return message ? `${base}?text=${encodeURIComponent(message)}` : base;
 }
 
+/** Link para iniciar a conversa com um cliente usando o DDD brasileiro informado. */
+export function customerWhatsappLink(phone: string, message?: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const number = digits.startsWith("55") && (digits.length === 12 || digits.length === 13) ? digits : `55${digits}`;
+  return whatsappLink(message, number);
+}
+
 export function productMessage(product: Product, url?: string): string {
   const lines = [
     `Olá! Tenho interesse no produto *${product.name}*.`,

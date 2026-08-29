@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const to = validDateParam(url.searchParams.get("ate"), fallback.to);
   const sellerId = url.searchParams.get("vendedor") ?? "";
   const rawStatus = url.searchParams.get("status");
-  const status = rawStatus === "cancelled" ? "cancelled" : rawStatus === "all" ? "all" : "completed";
+  const status = rawStatus === "pending" ? "pending" : rawStatus === "cancelled" ? "cancelled" : rawStatus === "all" ? "all" : "completed";
   const orders = reportOrders(await readCatalogState(), { from, to, sellerId, status });
   const filename = `dom-guima-vendas-${from}-a-${to}.csv`;
   return new Response(ordersReportCsv(orders), {

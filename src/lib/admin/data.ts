@@ -56,6 +56,7 @@ export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
 
 export async function getDashboardData() {
   const products = await getAdminProducts();
+  const pendingOrders = (await readCatalogState()).operations.orders.filter((order) => order.status === "pending").length;
   return {
     total: products.length,
     active: products.filter((item) => item.status === "active").length,
@@ -64,6 +65,7 @@ export async function getDashboardData() {
     outOfStock: products.filter((item) => item.status !== "archived" && item.stock === 0).length,
     lowStock: products.filter((item) => item.status !== "archived" && item.stock > 0 && item.stock <= item.low_stock_threshold).length,
     incomplete: products.filter((item) => !item.name || !item.sku || !item.description || item.price_cents <= 0 || !item.product_images?.length).length,
+    pendingOrders,
     recent: products.slice(0, 6),
   };
 }

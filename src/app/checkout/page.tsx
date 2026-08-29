@@ -5,16 +5,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { site } from "@/config/site";
-import { isPaymentConfigured, PAYMENT_METHOD_LABELS } from "@/lib/services/payments";
+import { ORDER_PAYMENT_METHOD_LABELS, type OrderPaymentMethod } from "@/lib/admin/types";
 import {
   BRAZILIAN_STATES,
   formatCep,
   isValidCep,
   lookupCep,
 } from "@/lib/services/shipping";
-import { whatsappLink } from "@/lib/services/whatsapp";
 import { useCart } from "@/lib/store/cart";
-import { formatPrice, formatWeight } from "@/lib/utils/format";
+import { formatPrice } from "@/lib/utils/format";
 import {
   formatDocument,
   formatPhone,
@@ -36,6 +35,7 @@ interface FormState {
   city: string;
   state: string;
   notes: string;
+  paymentMethod: OrderPaymentMethod | "";
 }
 
 const EMPTY: FormState = {
@@ -51,6 +51,7 @@ const EMPTY: FormState = {
   city: "",
   state: "",
   notes: "",
+  paymentMethod: "",
 };
 
 type Errors = Partial<Record<keyof FormState, string>>;
@@ -61,21 +62,19 @@ type Errors = Partial<Record<keyof FormState, string>>;
  * Coleta os dados reais do pedido, valida CPF/CNPJ de verdade e preenche o
  * endereço pelo CEP (ViaCEP, integração real e funcionando).
  *
- * Pagamento: enquanto `getPaymentProvider()` devolver null, o pedido é
- * encaminhado pelo WhatsApp — que é como a loja já vende. Não simulamos
- * cobrança, não geramos Pix falso e não pedimos dado de cartão sem gateway.
- * Ligando um gateway, esta tela ganha o passo de pagamento sem reescrita.
+ * O checkout registra uma solicitação no site. A Dom Guima confirma
+ * disponibilidade, frete e pagamento pelo WhatsApp antes de qualquer cobrança.
  */
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, ready, subtotal, savings, totalWeight, clear } = useCart();
+  const { items, ready, subtotal, savings, clear } = useCart();
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Errors>({});
   const [cepStatus, setCepStatus] = useState<"idle" | "loading" | "error">("idle");
   const [cepMessage, setCepMessage] = useState("");
-
-  const paymentReady = isPaymentConfigured();
+  const [sitePending, setSitePending] = useState(false);
+  const [siteError, setSiteError] = useState("");
 
   // Carrinho vazio não tem checkout: manda de volta para a home.
   useEffect(() => {
@@ -83,7 +82,11 @@ export default function CheckoutPage() {
   }, [ready, items.length, router]);
 
   function update<K extends keyof FormState>(key: K, value: string) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => ({
+      ...f,
+      [key]: value,
+      ...(key === "city" && f.paymentMethod === "cash_on_delivery" && !isUberlandia(value) ? { paymentMethod: "to_confirm" as const } : {}),
+    }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   }
 
@@ -100,6 +103,7 @@ export default function CheckoutPage() {
         neighborhood: address.neighborhood || f.neighborhood,
         city: address.city,
         state: address.state,
+        paymentMethod: f.paymentMethod === "cash_on_delivery" && !isUberlandia(address.city) ? "to_confirm" : f.paymentMethod,
       }));
       setCepStatus("idle");
     } catch (error) {
@@ -121,6 +125,10 @@ export default function CheckoutPage() {
     if (!form.neighborhood.trim()) next.neighborhood = "Informe o bairro.";
     if (!form.city.trim()) next.city = "Informe a cidade.";
     if (!form.state) next.state = "Selecione o estado.";
+    if (!form.paymentMethod) next.paymentMethod = "Escolha como deseja pagar.";
+    if (form.paymentMethod === "cash_on_delivery" && !isUberlandia(form.city)) {
+      next.paymentMethod = "Pagar na entrega está disponível somente para Uberlândia.";
+    }
 
     setErrors(next);
     if (Object.keys(next).length > 0) {
@@ -132,47 +140,44 @@ export default function CheckoutPage() {
     return true;
   }
 
-  function orderSummary(): string {
-    const lines = items.map(
-      (i) =>
-        `• ${i.quantity}x ${i.variant ? `${i.name} (${i.variant})` : i.name} — ${formatPrice(i.price * i.quantity)}`,
-    );
-
-    return [
-      "*NOVO PEDIDO — SITE DOM GUIMA*",
-      "",
-      "*Itens*",
-      ...lines,
-      "",
-      `*Subtotal:* ${formatPrice(subtotal)}`,
-      savings > 0 ? `*Desconto:* ${formatPrice(savings)}` : "",
-      `*Peso estimado:* ${formatWeight(totalWeight)}`,
-      "",
-      "*Dados do cliente*",
-      `Nome: ${form.name}`,
-      `CPF/CNPJ: ${form.document}`,
-      `Telefone: ${form.phone}`,
-      `E-mail: ${form.email}`,
-      "",
-      "*Endereço de entrega*",
-      `${form.street}, ${form.number}${form.complement ? ` — ${form.complement}` : ""}`,
-      `${form.neighborhood} — ${form.city}/${form.state}`,
-      `CEP: ${form.cep}`,
-      form.notes ? `\n*Observações:* ${form.notes}` : "",
-      "",
-      "Aguardo a confirmação do frete e das formas de pagamento.",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  function onSubmit(event: React.FormEvent) {
+  async function onSiteSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!validate()) return;
-
-    window.open(whatsappLink(orderSummary()), "_blank", "noopener,noreferrer");
-    clear();
-    router.push("/pedido-enviado");
+    if (!validate() || sitePending) return;
+    setSitePending(true);
+    setSiteError("");
+    try {
+      const response = await fetch("/api/pedidos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: `site-${crypto.randomUUID()}`,
+          customer: {
+            name: form.name,
+            cpf: form.document,
+            email: form.email,
+            phone: form.phone,
+            cep: form.cep,
+            street: form.street,
+            number: form.number,
+            complement: form.complement,
+            neighborhood: form.neighborhood,
+            city: form.city,
+            state: form.state,
+          },
+          notes: form.notes,
+          paymentMethod: form.paymentMethod,
+          deliveryMethod: isUberlandia(form.city) ? "uberlandia_delivery" : "shipping_to_confirm",
+          items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, variant: item.variant })),
+        }),
+      });
+      const data = (await response.json()) as { message?: string; orderNumber?: string };
+      if (!response.ok || !data.orderNumber) throw new Error(data.message || "Nao foi possivel registrar o pedido.");
+      clear();
+      router.push(`/pedido-enviado?tipo=site&numero=${encodeURIComponent(data.orderNumber)}`);
+    } catch (error) {
+      setSiteError(error instanceof Error ? error.message : "Nao foi possivel registrar o pedido agora.");
+      setSitePending(false);
+    }
   }
 
   if (!ready || items.length === 0) {
@@ -199,7 +204,7 @@ export default function CheckoutPage() {
       </h1>
 
       <form
-        onSubmit={onSubmit}
+        onSubmit={onSiteSubmit}
         noValidate
         className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8"
       >
@@ -349,29 +354,43 @@ export default function CheckoutPage() {
               </p>
             </div>
 
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-ink-900">
-                Formas de pagamento
+            <fieldset className="mt-4" data-field="paymentMethod">
+              <legend className="text-sm font-semibold text-ink-900">
+                Como você prefere pagar?
+              </legend>
+              <p className="mt-1 text-sm leading-relaxed text-ink-600">
+                Escolha uma preferência. A Dom Guima confirma o valor final e a forma de pagamento pelo WhatsApp antes de qualquer cobrança.
               </p>
-              {paymentReady ? (
-                <p className="mt-1 text-sm text-ink-600">
-                  Escolha a forma de pagamento na próxima etapa.
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {paymentOptions(isUberlandia(form.city)).map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors ${form.paymentMethod === option.value ? "border-brand-700 bg-blue-50 text-blue-950" : "border-ink-200 hover:border-brand-300"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={option.value}
+                      checked={form.paymentMethod === option.value}
+                      onChange={() => update("paymentMethod", option.value)}
+                      className="mt-0.5 accent-brand-700"
+                    />
+                    <span>
+                      <span className="block font-bold">{option.label}</span>
+                      <span className="mt-0.5 block text-xs text-ink-500">{option.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {!isUberlandia(form.city) && (
+                <p className="mt-2 text-xs font-semibold text-ink-500">
+                  Para outras cidades, o pagamento fica a combinar com a loja.
                 </p>
-              ) : (
-                <>
-                  <p className="mt-1 text-sm leading-relaxed text-ink-600">
-                    Combinamos o pagamento junto com o frete. Trabalhamos com{" "}
-                    {Object.values(PAYMENT_METHOD_LABELS)
-                      .join(", ")
-                      .replace(/, ([^,]*)$/, " e $1")}
-                    .
-                  </p>
-                  <p className="mt-2 text-xs text-ink-400">
-                    Não pedimos dados de cartão por aqui.
-                  </p>
-                </>
               )}
-            </div>
+              {errors.paymentMethod && (
+                <p className="mt-2 text-xs text-promo">{errors.paymentMethod}</p>
+              )}
+            </fieldset>
 
             <div className="mt-4">
               <Label htmlFor="notes">Observações (opcional)</Label>
@@ -433,16 +452,24 @@ export default function CheckoutPage() {
               </div>
             </dl>
 
+            <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <p className="text-sm font-extrabold text-blue-950">Pedido pelo site</p>
+              <p className="mt-1 text-xs leading-relaxed text-blue-800">
+                Enviamos sua solicitação para a Dom Guima. O dono entra em contato pelo WhatsApp para confirmar o pedido, o frete, o pagamento e avisar quando ele for enviado.
+              </p>
+            </div>
+
+            {siteError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{siteError}</p>}
             <button
               type="submit"
-              className="mt-5 w-full rounded-xl bg-brand-700 px-6 py-3.5 text-base font-extrabold text-white transition-colors hover:bg-brand-600"
+              disabled={sitePending}
+              className="mt-3 w-full rounded-xl bg-brand-700 px-6 py-3.5 text-base font-extrabold text-white transition-colors hover:bg-brand-600 disabled:cursor-wait disabled:opacity-60"
             >
-              Enviar pedido pelo WhatsApp
+              {sitePending ? "Enviando pedido..." : "Enviar pedido"}
             </button>
 
             <p className="mt-3 text-center text-xs leading-relaxed text-ink-400">
-              Ao enviar, abrimos uma conversa com o resumo do seu pedido. Você
-              confirma tudo antes de pagar.
+              Nenhum pagamento é cobrado nesta etapa. A confirmação será feita pelo WhatsApp.
             </p>
 
             <Link
@@ -456,6 +483,22 @@ export default function CheckoutPage() {
       </form>
     </div>
   );
+}
+
+function paymentOptions(isLocal: boolean): Array<{ value: OrderPaymentMethod; label: string; description: string }> {
+  const options: Array<{ value: OrderPaymentMethod; label: string; description: string }> = [
+    { value: "pix", label: ORDER_PAYMENT_METHOD_LABELS.pix, description: "A loja envia os dados pelo WhatsApp." },
+    { value: "credit_card", label: ORDER_PAYMENT_METHOD_LABELS.credit_card, description: "Combinamos a cobrança com você." },
+    { value: "debit_card", label: ORDER_PAYMENT_METHOD_LABELS.debit_card, description: "Disponibilidade confirmada pela loja." },
+    { value: "boleto", label: ORDER_PAYMENT_METHOD_LABELS.boleto, description: "A combinar com a Dom Guima." },
+    { value: "to_confirm", label: ORDER_PAYMENT_METHOD_LABELS.to_confirm, description: "Decidimos junto com frete e prazo." },
+  ];
+  if (isLocal) options.splice(4, 0, { value: "cash_on_delivery", label: ORDER_PAYMENT_METHOD_LABELS.cash_on_delivery, description: "Exclusivo para entregas em Uberlândia." });
+  return options;
+}
+
+function isUberlandia(city: string): boolean {
+  return city.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === "uberlandia";
 }
 
 /* ── Peças do formulário ─────────────────────────────────────────────────── */

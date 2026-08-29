@@ -11,6 +11,7 @@ export default async function DashboardPage() {
     ["Sem estoque", data.outOfStock, "text-red-700"],
     ["Estoque baixo", data.lowStock, "text-orange-700"],
     ["Cadastro incompleto", data.incomplete, "text-ink-700"],
+    ["Pedidos aguardando", data.pendingOrders, "text-blue-700"],
   ] as const;
 
   return (
@@ -21,7 +22,7 @@ export default async function DashboardPage() {
         description="Acompanhe o catalogo sem inventar metricas de faturamento."
         actions={<Link href="/painel/produtos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 hover:bg-gold-300">+ Novo produto</Link>}
       />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {stats.map(([label, value, color]) => (
           <PanelCard key={label} className="p-4">
             <p className="text-xs font-semibold text-ink-500">{label}</p>
@@ -53,6 +54,7 @@ export default async function DashboardPage() {
           <div className="mt-4 grid gap-2">
             <QuickLink href="/painel/pedidos/novo" label="Criar novo pedido" />
             <QuickLink href="/painel/pedidos" label="Consultar pedidos" />
+            {data.pendingOrders > 0 && <QuickLink href="/painel/pedidos?status=pending" label={`Ver ${data.pendingOrders} pedido(s) aguardando`} />}
             <QuickLink href="/painel/estoque" label="Ajustar estoque" />
             <QuickLink href="/painel/categorias" label="Organizar categorias" />
             <QuickLink href="/painel/catalogo-pdf" label="Exportar catalogo PDF" />

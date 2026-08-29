@@ -8,7 +8,18 @@ export type ActionState = {
 
 export type ProductStatus = "draft" | "active" | "archived";
 
-export type OrderStatus = "completed" | "cancelled";
+export type OrderStatus = "pending" | "completed" | "cancelled";
+export type OrderPaymentMethod = "pix" | "credit_card" | "debit_card" | "boleto" | "cash_on_delivery" | "to_confirm";
+export type OrderDeliveryMethod = "uberlandia_delivery" | "shipping_to_confirm";
+
+export const ORDER_PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
+  pix: "Pix",
+  credit_card: "Cartão de crédito",
+  debit_card: "Cartão de débito",
+  boleto: "Boleto bancário",
+  cash_on_delivery: "Pagar no ato da entrega",
+  to_confirm: "Pagamento a combinar",
+};
 
 export interface SellerRecord {
   id: string;
@@ -41,6 +52,7 @@ export interface ProductAssistTemplate {
 export interface OrderCustomerSnapshot {
   name: string;
   cpf: string;
+  email?: string;
   phone: string;
   cep: string;
   street: string;
@@ -55,6 +67,7 @@ export interface SalesOrderItem {
   product_id: string;
   product_name: string;
   sku: string;
+  variant?: string | null;
   quantity: number;
   list_unit_price_cents: number;
   unit_price_cents: number;
@@ -71,6 +84,8 @@ export interface SalesOrderRecord {
   status: OrderStatus;
   seller_id: string;
   seller_name: string;
+  payment_method?: OrderPaymentMethod;
+  delivery_method?: OrderDeliveryMethod;
   customer: OrderCustomerSnapshot;
   items: SalesOrderItem[];
   total_units: number;
