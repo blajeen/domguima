@@ -62,6 +62,7 @@ export async function Header() {
             <div className="ml-auto flex items-center gap-1 sm:gap-2 lg:ml-0 lg:justify-self-end">
               <Link
                 href="/conta"
+                aria-label="Minha conta"
                 className="hidden items-center gap-2 rounded-lg px-2.5 py-2 text-white transition-colors hover:bg-white/10 sm:flex"
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden>

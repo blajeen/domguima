@@ -151,7 +151,7 @@ else fail(`CEP não preencheu a cidade (recebido: "${city}")`);
 
 console.log("\n▸ Busca");
 await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-const input = page.getByPlaceholder("Buscar produtos...").first();
+const input = page.locator('input[placeholder="Buscar produtos..."]:visible').first();
 await input.click();
 await input.type("suporte", { delay: 50 });
 await page.waitForTimeout(900);
