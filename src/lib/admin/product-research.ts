@@ -134,8 +134,9 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
     }
     const result = resultSchema.safeParse(raw);
     if (!result.success) throw new ProductResearchError("invalid_result", "A pesquisa não retornou dados confiáveis para preencher.");
-    const sources = extractSources(payload);
-    const primary = safeHttpUrl(result.data.primarySourceUrl) || sources[0]?.url || "";
+    const requestedPrimary = safeHttpUrl(result.data.primarySourceUrl);
+    const sources = extractSources(payload, requestedPrimary);
+    const primary = requestedPrimary || sources[0]?.url || "";
     return { ...result.data, primarySourceUrl: primary, sources };
   } catch (error) {
     if (error instanceof ProductResearchError) throw error;
@@ -148,21 +149,32 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
 
 interface OpenAIResponse {
   output_text?: string;
-  output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }>; action?: { sources?: unknown[] } }>;
+  output?: Array<{
+    type?: string;
+    content?: Array<{ type?: string; text?: string; annotations?: unknown[] }>;
+    action?: { sources?: unknown[] };
+  }>;
 }
 
-function extractSources(payload: OpenAIResponse): ProductResearchSource[] {
-  const sourceItems = payload.output?.flatMap((item) => item.action?.sources ?? []) ?? [];
+function extractSources(payload: OpenAIResponse, primaryUrl: string): ProductResearchSource[] {
+  const actionSources = payload.output?.flatMap((item) => item.action?.sources ?? []) ?? [];
+  const citationSources = payload.output?.flatMap((item) => item.content?.flatMap((content) => content.annotations ?? []) ?? []) ?? [];
+  const sourceItems = [...actionSources, ...citationSources];
   return sourceItems.flatMap((source) => {
-    if (!isRecord(source) || typeof source.url !== "string" || typeof source.title !== "string") return [];
+    if (!isRecord(source) || typeof source.url !== "string") return [];
     try {
       const url = new URL(source.url);
       if (url.protocol !== "http:" && url.protocol !== "https:") return [];
-      return [{ title: source.title.slice(0, 180), url: url.toString(), domain: url.hostname.replace(/^www\./, "") }];
+      const normalizedUrl = url.toString();
+      const domain = url.hostname.replace(/^www\./, "");
+      const title = typeof source.title === "string" && source.title.trim() ? source.title.trim().slice(0, 180) : domain;
+      return [{ title, url: normalizedUrl, domain }];
     } catch {
       return [];
     }
-  }).filter((source, index, all) => all.findIndex((item) => item.url === source.url) === index).slice(0, 8);
+  }).filter((source, index, all) => all.findIndex((item) => item.url === source.url) === index)
+    .sort((a, b) => Number(b.url === primaryUrl) - Number(a.url === primaryUrl))
+    .slice(0, 8);
 }
 
 function safeHttpUrl(value: string): string {
