@@ -50,7 +50,7 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
     throw new ProductResearchError("not_configured", "O assistente online ainda não foi configurado no painel da Vercel.");
   }
 
-  const model = process.env.OPENAI_PRODUCT_RESEARCH_MODEL?.trim() || "gpt-5-mini";
+  const model = process.env.OPENAI_PRODUCT_RESEARCH_MODEL?.trim() || "gpt-5.4-mini";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55_000);
   try {
@@ -61,7 +61,10 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
       body: JSON.stringify({
         model,
         store: false,
-        tools: [{ type: "web_search_preview", search_context_size: "medium" }],
+        max_output_tokens: 1_800,
+        max_tool_calls: 3,
+        reasoning: { effort: "none" },
+        tools: [{ type: "web_search_preview", search_context_size: "low" }],
         tool_choice: "required",
         input: [
           {
