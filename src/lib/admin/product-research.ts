@@ -62,16 +62,21 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
         model,
         store: false,
         max_output_tokens: 1_800,
-        max_tool_calls: 3,
+        max_tool_calls: 4,
         reasoning: { effort: "none" },
-        tools: [{ type: "web_search_preview", search_context_size: "low" }],
+        tools: [{
+          type: "web_search_preview",
+          search_context_size: "low",
+          user_location: { type: "approximate", country: "BR", timezone: "America/Sao_Paulo" },
+        }],
         tool_choice: "required",
         input: [
           {
             role: "developer",
             content: [{ type: "input_text", text: [
               "Você é um pesquisador de cadastro de produtos para uma loja brasileira. Sua prioridade é confirmar a identidade exata do produto antes de preencher qualquer dado.",
-              "Siga obrigatoriamente este protocolo, nesta ordem: 1) normalize marca, modelo, EAN/GTIN e categoria; 2) pesquise primeiro no domínio oficial do fabricante, procurando a página do produto, o manual, a ficha técnica ou a página de suporte; 3) somente depois complemente com a internet geral, priorizando fontes técnicas confiáveis e varejistas autorizados; 4) compare as fontes e descarte resultados de modelo parecido, outra capacidade, tamanho, voltagem, cor, geração ou revisão.",
+              "Siga obrigatoriamente este protocolo, nesta ordem: 1) normalize marca, modelo, EAN/GTIN e categoria; 2) quando a marca estiver informada, pesquise primeiro o modelo exato no domínio oficial do fabricante; 3) quando a marca estiver vazia, faça uma única busca de descoberta usando o modelo exato entre aspas junto de produto e da categoria para identificar o fabricante provável; 4) depois pesquise a página oficial do produto, manual, ficha técnica ou suporte no domínio desse fabricante; 5) por último complemente e valide na internet geral, priorizando fontes técnicas confiáveis e varejistas autorizados.",
+              "Pesquise o código do modelo exatamente como foi informado, incluindo letras, números e sufixos. Se a primeira consulta não localizar o item, tente uma variação sem espaços, hífens ou pontuação antes de concluir que não há resultado. Um código curto como LES11 ainda deve ser pesquisado literalmente junto da categoria e das palavras produto e fabricante.",
               "A fonte oficial do fabricante prevalece sobre todas as outras. Marketplace, anúncio, blog, comparador e varejista nunca são fonte oficial. Quando não localizar o modelo exato em uma fonte oficial, registre isso em notes e use confidence low ou medium, conforme a evidência disponível.",
               "Não invente, não complete por intuição e não transfira características de um modelo semelhante. Letras, números e sufixos do modelo precisam coincidir. Em caso de divergência, prefira o manual ou a página oficial; se o conflito continuar, deixe o dado vazio e explique em notes.",
               "Escreva description em português do Brasil com 2 a 4 frases curtas, claras e comerciais, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo, garantia ou desempenho não comprovado.",
