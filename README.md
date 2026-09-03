@@ -126,10 +126,24 @@ integração desligada apenas esconde a sua seção, em vez de mostrar promessa 
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | botão flutuante, "comprar pelo WhatsApp", checkout | usa o número da bio do Instagram |
 | `NEXT_PUBLIC_GOOGLE_PROFILE_URL` | sobrescreve o perfil público do Google já configurado | usa o link verificado no código |
 | `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_USER_ID` | grade de posts reais | mostra o convite para seguir |
+| `OPENAI_API_KEY` | pesquisa inteligente de modelo, descrição, especificações e sugestão de NCM no painel | o cadastro continua manual; o assistente pede configuração |
+| `OPENAI_PRODUCT_RESEARCH_MODEL` | escolhe o modelo usado pelo assistente | usa o modelo padrão da aplicação |
 
 A chave do Instagram é **server-side** — nunca use o prefixo `NEXT_PUBLIC_` nela.
 As métricas do Google são um retrato público datado em `src/config/site.ts` e
 levam ao perfil oficial; não dependem de API.
+
+### Assistente inteligente de cadastro
+
+No cadastro de produto, informe o modelo e clique em **Pesquisar modelo**. Com
+`OPENAI_API_KEY` configurada na Vercel, o servidor usa pesquisa na web para
+priorizar o fabricante/site oficial e devolve uma prévia com nome, marca,
+descrição, especificações, fonte e NCM sugerido. O operador precisa revisar e
+clicar em **Aplicar dados pesquisados** antes de salvar. O NCM é sempre tratado
+como sugestão fiscal, não como classificação definitiva.
+
+A chave fica somente no servidor e nunca é enviada ao navegador. A pesquisa não
+altera preço, custo, estoque, fotos, status ou publica o produto.
 
 ### Pendências do lojista (procure por `CONFIG` no código)
 

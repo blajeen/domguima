@@ -4,9 +4,11 @@ import { useActionState, useMemo, useState } from "react";
 import { saveProductAction } from "@/app/painel/actions";
 import type { CategorySkuChoice } from "@/lib/admin/sku";
 import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta } from "@/lib/admin/types";
+import type { ProductResearchResult } from "@/lib/admin/product-research-types";
 import { formatPrice, normalize } from "@/lib/utils/format";
 import { onlyDigits } from "@/lib/utils/validators";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
+import { ProductResearchAssistant } from "./ProductResearchAssistant";
 
 interface ProductFormProps {
   product?: AdminProductRow | null;
@@ -33,11 +35,13 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
   const [brand, setBrand] = useState(product?.brand ?? "");
   const [model, setModel] = useState(operationalMeta?.model ?? "");
   const [gtin, setGtin] = useState(operationalMeta?.gtin ?? "");
+  const [ncm, setNcm] = useState(operationalMeta?.ncm ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [tags, setTags] = useState(product?.tags.join(", ") ?? "");
   const [specs, setSpecs] = useState(product?.specifications.map((item) => `${item.label}: ${item.value}`).join("\n") ?? "");
   const [variants, setVariants] = useState(product?.variants.map((item) => `${item.name}: ${item.options.join(", ")}`).join("\n") ?? "");
   const [sellerNote, setSellerNote] = useState(product?.seller_note ?? "");
+  const [sourceUrl, setSourceUrl] = useState(product?.source_url ?? "");
   const [cost, setCost] = useState(cents(operationalMeta?.cost_cents));
   const [price, setPrice] = useState(cents(product?.price_cents));
   const [shipping, setShipping] = useState({ weight: String(product?.shipping.weight ?? 0), length: String(product?.shipping.dimensions.length ?? 0), width: String(product?.shipping.dimensions.width ?? 0), height: String(product?.shipping.dimensions.height ?? 0), origin: product?.shipping.origin ?? "Minas Gerais" });
@@ -77,6 +81,17 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     setTemplateQuery(""); setAssistMessage(`Estrutura copiada de “${template.name}”. Nome, modelo, EAN, preço, custo e estoque não foram copiados.`);
   }
 
+  function applyResearch(result: ProductResearchResult) {
+    if (!name.trim() && result.name) { setName(result.name); setSlug(slugify(result.name)); setAutomaticSlug(true); }
+    if (!brand.trim() && result.brand) setBrand(result.brand);
+    if (result.description) setDescription(result.description);
+    if (result.ncm) setNcm(result.ncm);
+    if (result.specifications.length) setSpecs(result.specifications.map((item) => `${item.label}: ${item.value}`).join("\n"));
+    if (!sourceUrl && result.primarySourceUrl) setSourceUrl(result.primarySourceUrl);
+    setTags(buildTags(result.name || name, result.brand || brand, model, categoryNames.get(categoryId) ?? ""));
+    setAssistMessage("Dados pesquisados aplicados. Revise a fonte oficial, o NCM e as especificações antes de salvar.");
+  }
+
   return <form action={action} className="space-y-6">
     <input type="hidden" name="id" value={product?.id ?? ""} /><input type="hidden" name="skuMode" value={automaticSku ? "auto" : "manual"} />
 
@@ -91,11 +106,12 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
       <Field name="name" label="Nome do produto" value={name} onChange={(event) => changeName(event.target.value)} required className="sm:col-span-2 lg:col-span-3" error={state.errors?.name} />
       <label className={labelClass}>Marca<input name="brand" value={brand} onChange={(event) => setBrand(event.target.value)} list="product-brand-options" className={fieldClass} /><datalist id="product-brand-options">{knownBrands.map((item) => <option key={item} value={item} />)}</datalist></label>
       <Field name="model" label="Modelo" value={model} onChange={(event) => setModel(event.target.value)} maxLength={100} placeholder="Ex.: 50UA8550PSA" hint="Ajuda a encontrar o produto exato na internet." />
+      <ProductResearchAssistant name={name} brand={brand} model={model} gtin={gtin} category={categoryNames.get(categoryId) ?? ""} onApply={applyResearch} />
       <Field name="gtin" label="EAN / GTIN" value={gtin} onChange={(event) => setGtin(onlyDigits(event.target.value).slice(0, 14))} inputMode="numeric" maxLength={14} placeholder="Código de barras" hint="Aceita GTIN-8, UPC, EAN-13 ou GTIN-14." />
       <label className={labelClass}>Categoria<select name="categoryId" value={categoryId} onChange={(event) => changeCategory(event.target.value)} required className={fieldClass}><option value="">Selecione</option>{categories.filter((item) => item.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label className={labelClass}>SKU<div className="relative"><input name="sku" value={sku} onChange={(event) => { setSku(event.target.value.toUpperCase()); setAutomaticSku(false); }} required className={`${fieldClass} pr-24 font-mono font-bold`} /><span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[9px] font-black uppercase ${automaticSku ? "bg-green-50 text-green-700" : "bg-ink-50 text-ink-500"}`}>{automaticSku ? "Automático" : "Manual"}</span></div>{!product && choicesByCategory.get(categoryId) && <button type="button" onClick={() => { setSku(choicesByCategory.get(categoryId)!.nextSku); setAutomaticSku(true); }} className="mt-1 text-left text-[11px] font-bold text-blue-700 hover:underline">Usar próximo código: {choicesByCategory.get(categoryId)!.nextSku}</button>}{state.errors?.sku && <ErrorText value={state.errors.sku} />}</label>
       <label className={labelClass}>Endereço (slug)<div className="relative"><input name="slug" value={slug} onChange={(event) => { setSlug(slugify(event.target.value)); setAutomaticSlug(false); }} required className={`${fieldClass} pr-24`} /><span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[9px] font-black uppercase ${automaticSlug ? "bg-green-50 text-green-700" : "bg-ink-50 text-ink-500"}`}>{automaticSlug ? "Automático" : "Manual"}</span></div>{!product && <button type="button" onClick={() => { setSlug(slugify(name)); setAutomaticSlug(true); }} className="mt-1 text-[11px] font-bold text-blue-700 hover:underline">Gerar novamente pelo nome</button>}{state.errors?.slug && <ErrorText value={state.errors.slug} />}</label>
-      <Field name="ncm" label="NCM" inputMode="numeric" maxLength={8} defaultValue={operationalMeta?.ncm ?? ""} hint="Opcional; somente os 8 dígitos." />
+      <Field name="ncm" label="NCM" inputMode="numeric" maxLength={8} value={ncm} onChange={(event) => setNcm(onlyDigits(event.target.value).slice(0, 8))} hint="Sugestão assistida; confira com a contabilidade." />
       <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>Descrição<textarea name="description" value={description} onChange={(event) => setDescription(event.target.value)} rows={5} required className={fieldClass} /><button type="button" onClick={() => { setDescription(buildDescription(name, brand, model, categoryNames.get(categoryId) ?? "")); setAssistMessage("Descrição-base criada. Revise antes de publicar."); }} disabled={!name.trim()} className="mt-1 text-[11px] font-bold text-blue-700 hover:underline disabled:opacity-40">Montar descrição-base</button>{state.errors?.description && <ErrorText value={state.errors.description} />}</label>
     </div></Section>
 
@@ -108,7 +124,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
       <div className="flex flex-wrap gap-4 sm:col-span-2 lg:col-span-3 lg:pt-2"><Check name="isFeatured" label="Destaque na home" checked={product?.is_featured} /><Check name="isOffer" label="Oferta" checked={product?.is_offer} /><Check name="isBestSeller" label="Seleção mais vendidos" checked={product?.is_best_seller} /><Check name="isExclusive" label="Exclusivo Dom Guima" checked={product?.is_exclusive} /><Check name="heroEnabled" label="Pode aparecer no banner" checked={product?.hero_enabled ?? true} /></div><Field name="heroPriority" label="Prioridade no banner" type="number" min="-100" max="100" defaultValue={product?.hero_priority ?? 0} hint="0 = automático; use de -100 a 100 para ajustar." />
     </div></Section>
 
-    <Section title="Detalhes comerciais" description="Abra somente quando precisar revisar textos e especificações." collapsible><div className="grid gap-4 sm:grid-cols-2"><label className={`${labelClass} sm:col-span-2`}>Palavras-chave<textarea name="tags" value={tags} onChange={(event) => setTags(event.target.value)} rows={2} className={fieldClass} /><button type="button" onClick={() => setTags(buildTags(name, brand, model, categoryNames.get(categoryId) ?? ""))} className="mt-1 text-[11px] font-bold text-blue-700 hover:underline">Sugerir palavras-chave</button></label><Field name="sourceUrl" label="Link do anúncio original" type="url" defaultValue={product?.source_url ?? ""} /><Field name="sellerNote" label="Observação do vendedor" value={sellerNote} onChange={(event) => setSellerNote(event.target.value)} /><label className={labelClass}>Especificações<textarea name="specifications" value={specs} onChange={(event) => setSpecs(event.target.value)} rows={7} className={fieldClass} placeholder={'Potência: 1500W\nCor: Preto'} /><span className="mt-1 block font-normal text-ink-400">Uma por linha, no formato Campo: Valor.</span></label><label className={labelClass}>Variações<textarea name="variants" value={variants} onChange={(event) => setVariants(event.target.value)} rows={7} className={fieldClass} placeholder="Voltagem: 110V, 220V" /><span className="mt-1 block font-normal text-ink-400">Uma por linha; opções separadas por vírgula.</span></label></div></Section>
+      <Section title="Detalhes comerciais" description="Abra somente quando precisar revisar textos e especificações." collapsible><div className="grid gap-4 sm:grid-cols-2"><label className={`${labelClass} sm:col-span-2`}>Palavras-chave<textarea name="tags" value={tags} onChange={(event) => setTags(event.target.value)} rows={2} className={fieldClass} /><button type="button" onClick={() => setTags(buildTags(name, brand, model, categoryNames.get(categoryId) ?? ""))} className="mt-1 text-[11px] font-bold text-blue-700 hover:underline">Sugerir palavras-chave</button></label><Field name="sourceUrl" label="Link do anúncio original" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /><Field name="sellerNote" label="Observação do vendedor" value={sellerNote} onChange={(event) => setSellerNote(event.target.value)} /><label className={labelClass}>Especificações<textarea name="specifications" value={specs} onChange={(event) => setSpecs(event.target.value)} rows={7} className={fieldClass} placeholder={'Potência: 1500W\nCor: Preto'} /><span className="mt-1 block font-normal text-ink-400">Uma por linha, no formato Campo: Valor.</span></label><label className={labelClass}>Variações<textarea name="variants" value={variants} onChange={(event) => setVariants(event.target.value)} rows={7} className={fieldClass} placeholder="Voltagem: 110V, 220V" /><span className="mt-1 block font-normal text-ink-400">Uma por linha; opções separadas por vírgula.</span></label></div></Section>
 
     <Section title="Envio" description="Peso e dimensões podem ser copiados de um produto semelhante, mas devem ser conferidos." collapsible><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5"><Field name="shippingWeight" label="Peso (gramas)" type="number" min="0" value={shipping.weight} onChange={(event) => setShipping((current) => ({ ...current, weight: event.target.value }))} /><Field name="shippingLength" label="Comprimento (cm)" type="number" min="0" step="0.1" value={shipping.length} onChange={(event) => setShipping((current) => ({ ...current, length: event.target.value }))} /><Field name="shippingWidth" label="Largura (cm)" type="number" min="0" step="0.1" value={shipping.width} onChange={(event) => setShipping((current) => ({ ...current, width: event.target.value }))} /><Field name="shippingHeight" label="Altura (cm)" type="number" min="0" step="0.1" value={shipping.height} onChange={(event) => setShipping((current) => ({ ...current, height: event.target.value }))} /><Field name="shippingOrigin" label="Origem" value={shipping.origin} onChange={(event) => setShipping((current) => ({ ...current, origin: event.target.value }))} /></div></Section>
 
