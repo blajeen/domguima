@@ -76,7 +76,7 @@ Um modelo completo e o EAN/GTIN ajudam a diferenciar versões parecidas do mesmo
    - confiança geral;
    - descrição;
    - especificações;
-   - NCM sugerido;
+   - NCM sugerido e o nível de confiança fiscal;
    - fontes consultadas.
 7. Abra a fonte oficial do fabricante e confirme se o modelo é exatamente o mesmo.
 8. Se os dados estiverem corretos, clique em **Aplicar dados pesquisados**.
@@ -97,9 +97,20 @@ A prévia mostra as fontes para permitir a conferência antes do salvamento. A p
 
 Se a confiança for baixa, não aplique automaticamente. Pesquise o modelo completo, acrescente a marca ou EAN/GTIN e tente novamente.
 
-### Regra importante para o NCM
+### NCM: como usar com segurança
 
-O NCM retornado pela IA é somente uma **sugestão**. Ele deve ser conferido com a contabilidade ou responsável fiscal antes de ser usado em uma nota fiscal. Se a IA não encontrar evidência suficiente, o campo pode ficar vazio — isso é intencional e mais seguro do que preencher um código sem confirmação.
+O NCM retornado pela IA é somente uma **sugestão fiscal**. Na prévia, ele aparece como **NCM sugerido**, acompanhado do nível de confiança e de uma observação. O NCM não é usado para decidir o preço e não altera o estoque.
+
+Faça assim:
+
+1. Confira se a descrição e o modelo pesquisado correspondem ao produto real.
+2. Abra as fontes consultadas e veja se a classificação faz sentido para aquele produto exato.
+3. Se estiver de acordo, clique em **Aplicar dados pesquisados** para levar o NCM ao campo do cadastro.
+4. Confirme o código com a contabilidade ou responsável fiscal antes de emitir nota fiscal.
+
+A IA pode deixar o NCM vazio quando não encontra evidência suficiente. Isso é intencional e mais seguro do que preencher um código sem confirmação. Nesse caso, deixe o campo vazio ou preencha somente depois da validação fiscal.
+
+O NCM pode variar conforme características do produto e regras tributárias aplicáveis. Por isso, mesmo quando a confiança aparecer como alta ou média, a conferência fiscal continua obrigatória.
 
 ### O que é aplicado no formulário
 
