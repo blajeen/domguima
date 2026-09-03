@@ -145,6 +145,9 @@ como sugestão fiscal, não como classificação definitiva.
 A chave fica somente no servidor e nunca é enviada ao navegador. A pesquisa não
 altera preço, custo, estoque, fotos, status ou publica o produto.
 
+Para o passo a passo operacional do comparativo de preços e da pesquisa com IA,
+consulte o [Guia de pesquisa de produtos](docs/GUIA-PESQUISA-DE-PRODUTOS.md).
+
 ### Pendências do lojista (procure por `CONFIG` no código)
 
 - [x] Número de WhatsApp confirmado: +55 34 9874-8425
