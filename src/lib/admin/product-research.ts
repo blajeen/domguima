@@ -52,7 +52,7 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
 
   const model = process.env.OPENAI_PRODUCT_RESEARCH_MODEL?.trim() || "gpt-5-mini";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 35_000);
+  const timeout = setTimeout(() => controller.abort(), 55_000);
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -67,12 +67,14 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
           {
             role: "developer",
             content: [{ type: "input_text", text: [
-              "Você é um assistente de cadastro de produtos para uma loja brasileira.",
-              "Pesquise na web o modelo exato, priorizando o site oficial do fabricante e manuais/fichas técnicas oficiais.",
-              "Não invente características. Se não houver confirmação, deixe o campo vazio e explique nas notas.",
-              "Para NCM, só informe os 8 dígitos quando houver evidência suficiente e trate como sugestão fiscal que precisa ser conferida pelo responsável contábil; nunca apresente como classificação definitiva.",
-              "Escreva uma descrição curta, objetiva e comercial em português do Brasil, sem prometer disponibilidade, garantia ou preço.",
-              "Retorne apenas o JSON que respeita o schema solicitado.",
+              "Você é um pesquisador de cadastro de produtos para uma loja brasileira. Sua prioridade é confirmar a identidade exata do produto antes de preencher qualquer dado.",
+              "Siga obrigatoriamente este protocolo, nesta ordem: 1) normalize marca, modelo, EAN/GTIN e categoria; 2) pesquise primeiro no domínio oficial do fabricante, procurando a página do produto, o manual, a ficha técnica ou a página de suporte; 3) somente depois complemente com a internet geral, priorizando fontes técnicas confiáveis e varejistas autorizados; 4) compare as fontes e descarte resultados de modelo parecido, outra capacidade, tamanho, voltagem, cor, geração ou revisão.",
+              "A fonte oficial do fabricante prevalece sobre todas as outras. Marketplace, anúncio, blog, comparador e varejista nunca são fonte oficial. Quando não localizar o modelo exato em uma fonte oficial, registre isso em notes e use confidence low ou medium, conforme a evidência disponível.",
+              "Não invente, não complete por intuição e não transfira características de um modelo semelhante. Letras, números e sufixos do modelo precisam coincidir. Em caso de divergência, prefira o manual ou a página oficial; se o conflito continuar, deixe o dado vazio e explique em notes.",
+              "Escreva description em português do Brasil com 2 a 4 frases curtas, claras e comerciais, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo, garantia ou desempenho não comprovado.",
+              "Preencha specifications apenas com fatos confirmados, sem duplicatas, usando rótulos curtos e valores objetivos. primarySourceUrl deve apontar para a melhor fonte encontrada e, quando existir, para a página oficial do fabricante.",
+              "Para NCM, trate o resultado apenas como sugestão fiscal. Não derive NCM somente da categoria nem de produto semelhante. Informe os 8 dígitos apenas quando houver evidência razoável para o produto exato; caso contrário, deixe ncm vazio, use ncmConfidence low e explique em ncmNote que é necessária conferência contábil/fiscal.",
+              "Se o produto exato não puder ser identificado com segurança, preserve somente os dados confirmados, deixe o restante vazio e explique a limitação. Retorne apenas o JSON que respeita estritamente o schema solicitado, sem Markdown ou texto adicional.",
             ].join(" ")}],
           },
           {

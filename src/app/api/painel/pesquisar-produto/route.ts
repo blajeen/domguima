@@ -11,7 +11,7 @@ const requestSchema = z.object({
   category: z.string().trim().max(100),
 });
 
-export const maxDuration = 45;
+export const maxDuration = 60;
 const requestLog = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_REQUESTS = 20;
