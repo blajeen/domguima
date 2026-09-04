@@ -119,7 +119,8 @@ function assertUniqueProductIds(ids: string[]) {
   if (new Set(ids).size !== ids.length) throw new InventoryOperationError("Há um produto repetido nesta operação. Revise a planilha e tente novamente.");
 }
 
+// Sem corte: `replace_catalog_state` grava com "on conflict do nothing" e nao
+// apaga mais o que ja esta no banco. Truncar aqui so descartaria registro novo.
 function appendAudit(state: CatalogState, actorId: string, action: string, entityType: string, entityId: string, beforeData: unknown, afterData: unknown) {
   state.auditLogs.unshift({ id: randomUUID(), actor_id: actorId, action, entity_type: entityType, entity_id: entityId, before_data: beforeData, after_data: afterData, created_at: new Date().toISOString() });
-  state.auditLogs = state.auditLogs.slice(0, 1000);
 }

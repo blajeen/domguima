@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { mutateCatalogState } from "@/lib/admin/catalog-store";
+import { readCatalogState } from "@/lib/admin/catalog-store";
 import { createPendingSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { isValidDocument, isValidPhone, onlyDigits } from "@/lib/utils/validators";
 
@@ -65,11 +65,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    let created: ReturnType<typeof createPendingSalesOrder> | null = null;
-    await mutateCatalogState((state) => {
-      created = createPendingSalesOrder(state, parsed.data);
-    });
-    return NextResponse.json({ ok: true, orderId: created!.id, orderNumber: created!.number }, { status: 201 });
+    // Leitura fresca so para validar (produto, preco, estoque); a gravacao e
+    // uma transacao no banco, sem reescrever o catalogo inteiro.
+    const created = await createPendingSalesOrder(await readCatalogState(true), parsed.data);
+    return NextResponse.json({ ok: true, orderId: created.id, orderNumber: created.number }, { status: 201 });
   } catch (error) {
     if (error instanceof OrderOperationError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: "Nao foi possivel registrar o pedido agora. Tente novamente em instantes." }, { status: 500 });

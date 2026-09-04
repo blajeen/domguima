@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { CatalogState, InventoryMovementRecord } from "./catalog-store";
+import {
+  createOrderRecord,
+  updateOrderRecord,
+  LedgerStockError,
+  type CatalogState,
+  type LedgerAuditDraft,
+  type LedgerMovementDraft,
+  type OrderDraft,
+} from "./catalog-store";
 import type { OrderCustomerSnapshot, OrderDeliveryMethod, OrderPaymentMethod, SalesOrderRecord } from "./types";
 import { commissionForUnit } from "./commission";
 
@@ -36,9 +44,19 @@ export class OrderOperationError extends Error {
   }
 }
 
-export function createSalesOrder(state: CatalogState, input: CreateOrderInput, actorId: string): SalesOrderRecord {
-  const existing = state.operations.orders.find((order) => order.request_id === input.requestId);
-  if (existing) return existing;
+/**
+ * O `state` aqui serve apenas para validar e montar o pedido (nomes, precos,
+ * vendedor). A gravacao — pedido, baixa de estoque, movimento e auditoria —
+ * acontece no banco, numa transacao so. O estoque conferido aqui e uma
+ * cortesia para dar mensagem boa ao operador; quem realmente impede venda
+ * acima do saldo e a trava dentro da transacao.
+ */
+export async function createSalesOrder(state: CatalogState, input: CreateOrderInput, actorId: string): Promise<SalesOrderRecord> {
+  // Reenvio do mesmo pedido devolve o que ja existe. A checagem repete no
+  // banco (unique em request_id); aqui ela evita reprovar o retry por causa do
+  // estoque que a primeira tentativa ja baixou.
+  const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
+  if (jaCriado) return jaCriado;
   if (!input.items.length) throw new OrderOperationError("Adicione pelo menos um produto ao pedido.");
   if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
     throw new OrderOperationError("Há um produto repetido no pedido. Ajuste a quantidade em uma única linha.");
@@ -67,11 +85,8 @@ export function createSalesOrder(state: CatalogState, input: CreateOrderInput, a
   });
 
   const now = new Date().toISOString();
-  const id = randomUUID();
-  const number = nextOrderNumber(state, now);
-  const order: SalesOrderRecord = {
-    id,
-    number,
+  const draft: OrderDraft = {
+    id: randomUUID(),
     request_id: input.requestId,
     status: "completed",
     seller_id: seller.id,
@@ -103,36 +118,31 @@ export function createSalesOrder(state: CatalogState, input: CreateOrderInput, a
     cancelled_by: null,
   };
 
-  for (const item of prepared) {
-    const before = item.product.stock;
-    item.product.stock -= item.quantity;
-    item.product.updated_at = now;
-    item.product.last_sale_at = now;
+  // `{{number}}` porque o numero do pedido so nasce dentro da transacao.
+  const movements: LedgerMovementDraft[] = prepared.map((item) => {
     const commissionTotal = item.commissionUnit * item.quantity;
-    const effectivePercent = item.lineTotal > 0 ? Number(((commissionTotal / item.lineTotal) * 100).toFixed(4)) : 0;
-    const movement: InventoryMovementRecord = {
-      id: randomUUID(),
+    return {
       product_id: item.product.id,
       quantity_delta: -item.quantity,
-      stock_before: before,
-      stock_after: item.product.stock,
       reason: "sale",
-      note: `${number} · ${seller.name} · ${input.customer.name}`,
-      commission_percent: effectivePercent,
+      note: `{{number}} · ${seller.name} · ${input.customer.name}`,
+      commission_percent: item.lineTotal > 0 ? Number(((commissionTotal / item.lineTotal) * 100).toFixed(4)) : 0,
       commission_cents: commissionTotal,
       actor_id: actorId,
-      created_at: now,
       batch_id: input.requestId,
     };
-    state.inventoryMovements.unshift(movement);
-  }
-
-  state.operations.orders.unshift(order);
-  state.auditLogs.unshift({
-    id: randomUUID(), actor_id: actorId, action: "order.completed", entity_type: "order", entity_id: id,
-    before_data: null, after_data: { number, seller: seller.name, customer: input.customer.name, units: order.total_units, totalCents: order.total_cents, commissionCents: order.commission_total_cents }, created_at: now,
   });
-  state.auditLogs = state.auditLogs.slice(0, 1_000);
+
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.completed",
+    entity_type: "order",
+    entity_id: draft.id,
+    before_data: null,
+    after_data: { seller: seller.name, customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents },
+  };
+
+  const { order } = await gravarPedido(() => createOrderRecord(draft, movements, audit), prepared.map((item) => item.product));
   return order;
 }
 
@@ -140,9 +150,12 @@ export function createSalesOrder(state: CatalogState, input: CreateOrderInput, a
  * Cria uma solicitacao vinda do checkout publico sem baixar o estoque.
  * O cliente ainda precisa confirmar disponibilidade, frete e pagamento com a loja.
  */
-export function createPendingSalesOrder(state: CatalogState, input: CreatePendingOrderInput): SalesOrderRecord {
-  const existing = state.operations.orders.find((order) => order.request_id === input.requestId);
-  if (existing) return existing;
+export async function createPendingSalesOrder(state: CatalogState, input: CreatePendingOrderInput): Promise<SalesOrderRecord> {
+  // Reenvio do mesmo pedido devolve o que ja existe. A checagem repete no
+  // banco (unique em request_id); aqui ela evita reprovar o retry por causa do
+  // estoque que a primeira tentativa ja baixou.
+  const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
+  if (jaCriado) return jaCriado;
   if (!input.items.length) throw new OrderOperationError("Adicione pelo menos um produto ao pedido.");
   if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
     throw new OrderOperationError("Ha um produto repetido no pedido. Ajuste a quantidade em uma unica linha.");
@@ -159,11 +172,8 @@ export function createPendingSalesOrder(state: CatalogState, input: CreatePendin
   });
 
   const now = new Date().toISOString();
-  const id = randomUUID();
-  const number = nextOrderNumber(state, now);
-  const order: SalesOrderRecord = {
-    id,
-    number,
+  const draft: OrderDraft = {
+    id: randomUUID(),
     request_id: input.requestId,
     status: "pending",
     seller_id: "pending",
@@ -196,17 +206,22 @@ export function createPendingSalesOrder(state: CatalogState, input: CreatePendin
     cancelled_by: null,
   };
 
-  state.operations.orders.unshift(order);
-  state.auditLogs.unshift({
-    id: randomUUID(), actor_id: "public-site", action: "order.received", entity_type: "order", entity_id: id,
-    before_data: null, after_data: { number, customer: input.customer.name, units: order.total_units, totalCents: order.total_cents, source: "site" }, created_at: now,
-  });
-  state.auditLogs = state.auditLogs.slice(0, 1_000);
+  const audit: LedgerAuditDraft = {
+    actor_id: "public-site",
+    action: "order.received",
+    entity_type: "order",
+    entity_id: draft.id,
+    before_data: null,
+    after_data: { customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, source: "site" },
+  };
+
+  // Sem movimentos: a solicitacao ainda nao reserva estoque.
+  const { order } = await gravarPedido(() => createOrderRecord(draft, [], audit), []);
   return order;
 }
 
 /** Confirma uma solicitacao recebida no site e somente entao baixa o estoque. */
-export function confirmPendingSalesOrder(state: CatalogState, orderId: string, sellerId: string, actorId: string): SalesOrderRecord {
+export async function confirmPendingSalesOrder(state: CatalogState, orderId: string, sellerId: string, actorId: string): Promise<SalesOrderRecord> {
   const order = state.operations.orders.find((item) => item.id === orderId);
   if (!order) throw new OrderOperationError("Pedido nao encontrado.");
   if (order.status === "completed") return order;
@@ -214,90 +229,132 @@ export function confirmPendingSalesOrder(state: CatalogState, orderId: string, s
 
   const seller = state.operations.sellers.find((item) => item.id === sellerId && item.active);
   if (!seller) throw new OrderOperationError("Selecione um vendedor ativo.");
-  const now = new Date().toISOString();
 
-  for (const item of order.items) {
+  const produtos = order.items.map((item) => {
     const product = state.products.find((candidate) => candidate.id === item.product_id && candidate.status !== "archived");
     if (!product) throw new OrderOperationError(`O produto “${item.product_name}” nao esta mais disponivel.`);
     if (item.quantity > product.stock) throw new OrderOperationError(`Ha somente ${product.stock} unidade(s) de “${product.name}” no estoque.`);
-  }
-
-  for (const item of order.items) {
-    const product = state.products.find((candidate) => candidate.id === item.product_id)!;
-    const before = product.stock;
-    product.stock -= item.quantity;
-    product.updated_at = now;
-    product.last_sale_at = now;
-    const commissionTotal = item.commission_unit_cents * item.quantity;
-    const effectivePercent = item.line_total_cents > 0 ? Number(((commissionTotal / item.line_total_cents) * 100).toFixed(4)) : 0;
-    state.inventoryMovements.unshift({
-      id: randomUUID(), product_id: product.id, quantity_delta: -item.quantity,
-      stock_before: before, stock_after: product.stock, reason: "sale",
-      note: `${order.number} · ${seller.name} · ${order.customer.name}`,
-      commission_percent: effectivePercent, commission_cents: commissionTotal,
-      actor_id: actorId, created_at: now, batch_id: `confirm-${order.id}`,
-    });
-  }
-
-  order.status = "completed";
-  order.seller_id = seller.id;
-  order.seller_name = seller.name;
-  state.auditLogs.unshift({
-    id: randomUUID(), actor_id: actorId, action: "order.confirmed", entity_type: "order", entity_id: order.id,
-    before_data: { status: "pending" }, after_data: { status: "completed", number: order.number, seller: seller.name, units: order.total_units, totalCents: order.total_cents }, created_at: now,
+    return product;
   });
-  state.auditLogs = state.auditLogs.slice(0, 1_000);
-  return order;
+
+  const movements: LedgerMovementDraft[] = order.items.map((item) => {
+    const commissionTotal = item.commission_unit_cents * item.quantity;
+    return {
+      product_id: item.product_id,
+      quantity_delta: -item.quantity,
+      reason: "sale",
+      note: `${order.number} · ${seller.name} · ${order.customer.name}`,
+      commission_percent: item.line_total_cents > 0 ? Number(((commissionTotal / item.line_total_cents) * 100).toFixed(4)) : 0,
+      commission_cents: commissionTotal,
+      actor_id: actorId,
+      batch_id: `confirm-${order.id}`,
+    };
+  });
+
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.confirmed",
+    entity_type: "order",
+    entity_id: order.id,
+    before_data: { status: "pending" },
+    after_data: { status: "completed", seller: seller.name, units: order.total_units, totalCents: order.total_cents },
+  };
+
+  // `expectedStatus: "pending"` e o que impede a confirmacao dupla de baixar o
+  // estoque duas vezes quando dois cliques chegam juntos.
+  const resultado = await gravarAtualizacao(
+    () => updateOrderRecord(order.id, "pending", { status: "completed", seller_id: seller.id, seller_name: seller.name }, movements, audit),
+    produtos,
+  );
+  if (!resultado.found) throw new OrderOperationError("Pedido nao encontrado.");
+  if (!resultado.applied) {
+    if (resultado.order?.status === "completed") return resultado.order;
+    throw new OrderOperationError("Este pedido ja foi cancelado.");
+  }
+  return resultado.order!;
 }
 
-export function cancelSalesOrder(state: CatalogState, orderId: string, actorId: string): SalesOrderRecord {
+export async function cancelSalesOrder(state: CatalogState, orderId: string, actorId: string): Promise<SalesOrderRecord> {
   const order = state.operations.orders.find((item) => item.id === orderId);
   if (!order) throw new OrderOperationError("Pedido não encontrado.");
   if (order.status === "cancelled") return order;
+
   const now = new Date().toISOString();
-  if (order.status === "pending") {
-    order.status = "cancelled";
-    order.cancelled_at = now;
-    order.cancelled_by = actorId;
-    state.auditLogs.unshift({
-      id: randomUUID(), actor_id: actorId, action: "order.cancelled", entity_type: "order", entity_id: order.id,
-      before_data: { status: "pending" }, after_data: { status: "cancelled", restoredUnits: 0 }, created_at: now,
-    });
-    state.auditLogs = state.auditLogs.slice(0, 1_000);
-    return order;
+  const statusAnterior = order.status;
+  const patch = { status: "cancelled" as const, cancelled_at: now, cancelled_by: actorId };
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.cancelled",
+    entity_type: "order",
+    entity_id: order.id,
+    before_data: { status: statusAnterior },
+    after_data: { status: "cancelled", restoredUnits: statusAnterior === "completed" ? order.total_units : 0 },
+  };
+
+  // Pedido pendente nunca baixou estoque, entao nao ha o que devolver.
+  const produtos = statusAnterior === "completed"
+    ? order.items.map((item) => {
+        const product = state.products.find((candidate) => candidate.id === item.product_id);
+        if (!product) throw new OrderOperationError(`O produto “${item.product_name}” não existe mais. O cancelamento precisa de conferência manual.`);
+        return product;
+      })
+    : [];
+
+  const movements: LedgerMovementDraft[] = statusAnterior === "completed"
+    ? order.items.map((item) => ({
+        product_id: item.product_id,
+        quantity_delta: item.quantity,
+        reason: "cancellation",
+        note: `Cancelamento ${order.number}`,
+        actor_id: actorId,
+        batch_id: `cancel-${order.id}`,
+      }))
+    : [];
+
+  const resultado = await gravarAtualizacao(
+    () => updateOrderRecord(order.id, statusAnterior, patch, movements, audit),
+    produtos,
+  );
+  if (!resultado.found) throw new OrderOperationError("Pedido não encontrado.");
+  // Não aplicado significa que o status mudou entre a leitura e a gravação —
+  // outra sessão já cancelou, ou confirmou no intervalo.
+  if (!resultado.applied) {
+    if (resultado.order?.status === "cancelled") return resultado.order;
+    throw new OrderOperationError("O pedido mudou de situação em outra sessão. Atualize a página e tente novamente.");
   }
-  for (const item of order.items) {
-    const product = state.products.find((candidate) => candidate.id === item.product_id);
-    if (!product) throw new OrderOperationError(`O produto “${item.product_name}” não existe mais. O cancelamento precisa de conferência manual.`);
-    const before = product.stock;
-    product.stock += item.quantity;
-    product.updated_at = now;
-    product.last_stock_entry_at = now;
-    state.inventoryMovements.unshift({
-      id: randomUUID(), product_id: product.id, quantity_delta: item.quantity,
-      stock_before: before, stock_after: product.stock, reason: "cancellation",
-      note: `Cancelamento ${order.number}`, commission_percent: 0, commission_cents: 0,
-      actor_id: actorId, created_at: now, batch_id: `cancel-${order.id}`,
-    });
-  }
-  order.status = "cancelled";
-  order.cancelled_at = now;
-  order.cancelled_by = actorId;
-  state.auditLogs.unshift({
-    id: randomUUID(), actor_id: actorId, action: "order.cancelled", entity_type: "order", entity_id: order.id,
-    before_data: { status: "completed" }, after_data: { status: "cancelled", restoredUnits: order.total_units }, created_at: now,
-  });
-  state.auditLogs = state.auditLogs.slice(0, 1_000);
-  return order;
+  return resultado.order!;
 }
 
-function nextOrderNumber(state: CatalogState, createdAt: string): string {
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(createdAt));
-  const compact = date.replaceAll("-", "");
-  const sequence = state.operations.orders.filter((order) => localDate(order.created_at) === date).length + 1;
-  return `DG-${compact}-${String(sequence).padStart(3, "0")}`;
+/**
+ * Traduz o erro cru da transacao para uma mensagem com o nome do produto. O
+ * banco so conhece o id; quem tem o nome e a lista que acabamos de validar.
+ */
+async function gravarPedido(
+  operacao: () => Promise<{ order: SalesOrderRecord; alreadyExisted: boolean }>,
+  produtos: Array<{ id: string; name: string }>,
+): Promise<{ order: SalesOrderRecord; alreadyExisted: boolean }> {
+  try {
+    return await operacao();
+  } catch (error) {
+    throw traduzir(error, produtos);
+  }
 }
 
-function localDate(value: string) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+async function gravarAtualizacao(
+  operacao: () => Promise<{ order: SalesOrderRecord | null; found: boolean; applied: boolean }>,
+  produtos: Array<{ id: string; name: string }>,
+) {
+  try {
+    return await operacao();
+  } catch (error) {
+    throw traduzir(error, produtos);
+  }
+}
+
+function traduzir(error: unknown, produtos: Array<{ id: string; name: string }>): unknown {
+  if (!(error instanceof LedgerStockError)) return error;
+  const nome = produtos.find((product) => product.id === error.productId)?.name ?? "um dos produtos";
+  return error.kind === "insufficient"
+    ? new OrderOperationError(`O estoque de “${nome}” acabou de mudar. Atualize a página e confira o pedido.`)
+    : new OrderOperationError(`O produto “${nome}” não está mais disponível.`);
 }

@@ -14,7 +14,9 @@
     "images:audit": "node scripts/audit-product-covers.mjs",
     "check:shopee": "node scripts/import-shopee.mjs --check",
     "login:shopee": "node scripts/shopee-login-import.mjs",
-    "setup:admin": "node scripts/setup-admin.mjs domguima"
+    "setup:admin": "node scripts/setup-admin.mjs domguima",
+    "inspect:supabase": "node scripts/inspect-supabase.mjs",
+    "verify:ledger": "node scripts/verify-ledger.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

@@ -333,12 +333,13 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
   const parsed = orderInput.safeParse(input);
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do pedido." };
   try {
-    let created: ReturnType<typeof createSalesOrder> | null = null;
-    await mutateCatalogState((state) => { created = createSalesOrder(state, parsed.data, owner.id); });
+    // Pedido, baixa de estoque e auditoria vao numa transacao so, direto na
+    // tabela — sem passar pelo salvamento do catalogo inteiro.
+    const created = await createSalesOrder(await readCatalogState(true), parsed.data, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
-    return { ok: true, message: `Pedido ${created!.number} finalizado. O estoque foi atualizado.`, orderId: created!.id, orderNumber: created!.number };
+    return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.`, orderId: created.id, orderNumber: created.number };
   } catch (error) {
     if (error instanceof OrderOperationError) return { message: error.message };
     return catalogStorageError(error);
@@ -350,27 +351,39 @@ export async function confirmOrderAction(formData: FormData) {
   const orderId = String(formData.get("orderId") ?? "").trim();
   const sellerId = String(formData.get("sellerId") ?? "").trim();
   if (!orderId || !sellerId) return;
+  // O redirect fica FORA do try de proposito: ele funciona lancando
+  // NEXT_REDIRECT, e dentro do try o proprio catch o engolia — o pedido era
+  // confirmado e mesmo assim aparecia "nao foi possivel confirmar".
+  let destino: string;
   try {
-    await mutateCatalogState((state) => { confirmPendingSalesOrder(state, orderId, sellerId, owner.id); });
+    await confirmPendingSalesOrder(await readCatalogState(true), orderId, sellerId, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
-    redirect(`/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`);
+    destino = `/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`;
   } catch (error) {
-    if (error instanceof OrderOperationError) redirect(`/painel/pedidos?erro=${encodeURIComponent(error.message)}`);
-    redirect("/painel/pedidos?erro=Não foi possível confirmar o pedido agora.");
+    const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível confirmar o pedido agora.";
+    destino = `/painel/pedidos?erro=${encodeURIComponent(mensagem)}`;
   }
+  redirect(destino);
 }
 
 export async function cancelOrderAction(formData: FormData) {
   const owner = await ownerOrThrow();
   const orderId = String(formData.get("orderId") ?? "").trim();
   if (!orderId) return;
-  await mutateCatalogState((state) => { cancelSalesOrder(state, orderId, owner.id); });
-  refreshCatalog();
-  revalidatePath("/painel/pedidos");
-  revalidatePath("/painel/financeiro");
-  redirect(`/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`);
+  let destino: string;
+  try {
+    await cancelSalesOrder(await readCatalogState(true), orderId, owner.id);
+    refreshCatalog();
+    revalidatePath("/painel/pedidos");
+    revalidatePath("/painel/financeiro");
+    destino = `/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`;
+  } catch (error) {
+    const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível cancelar o pedido agora.";
+    destino = `/painel/pedidos?erro=${encodeURIComponent(mensagem)}`;
+  }
+  redirect(destino);
 }
 
 export async function saveCategoryAction(_: ActionState, formData: FormData): Promise<ActionState> {
