@@ -46,7 +46,17 @@ export async function POST(request: Request) {
   }
 
   const parsed = publicOrderInput.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ message: parsed.error.issues[0]?.message ?? "Revise os dados do pedido." }, { status: 400 });
+  if (!parsed.success) {
+    // Só devolvemos a mensagem quando ela é nossa (escrita em português no
+    // schema). As mensagens automáticas do Zod são técnicas e em inglês —
+    // não servem para o cliente e expõem a forma interna do payload.
+    const issue = parsed.error.issues[0];
+    const propria = issue?.message && !/^Invalid|^Required|^Expected|^Too /i.test(issue.message);
+    return NextResponse.json(
+      { message: propria ? issue.message : "Revise os dados do pedido e tente novamente." },
+      { status: 400 },
+    );
+  }
   if (parsed.data.paymentMethod === "cash_on_delivery" && !isUberlandia(parsed.data.customer.city)) {
     return NextResponse.json({ message: "Pagar no ato da entrega está disponível somente para Uberlândia." }, { status: 400 });
   }

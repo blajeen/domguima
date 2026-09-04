@@ -53,10 +53,47 @@ const orderInput = z.object({
   })).min(1).max(100),
 });
 
+/**
+ * Freio de força bruta no login. O scrypt já torna cada tentativa cara, mas
+ * sem limite um atacante pode tentar indefinidamente. Após MAX_LOGIN_ATTEMPTS
+ * falhas seguidas, bloqueia por LOGIN_BLOCK_MS.
+ *
+ * Limite conhecido: o contador vive na memória da instância. Em serverless com
+ * várias instâncias o teto efetivo é maior. Para um freio realmente global,
+ * usar um store compartilhado (Vercel KV/Upstash).
+ */
+const loginAttempts = new Map<string, { count: number; windowStart: number; blockedUntil: number }>();
+const MAX_LOGIN_ATTEMPTS = 8;
+const LOGIN_WINDOW_MS = 15 * 60 * 1_000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1_000;
+
 export async function loginAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  if (!(await verifyAdminCredentials(username, password))) return { message: "Usuario ou senha incorretos." };
+
+  const key = username.toLowerCase() || "(vazio)";
+  const now = Date.now();
+  const record = loginAttempts.get(key);
+
+  if (record && record.blockedUntil > now) {
+    const minutos = Math.ceil((record.blockedUntil - now) / 60_000);
+    return { message: `Muitas tentativas. Tente novamente em ${minutos} minuto(s).` };
+  }
+
+  if (!(await verifyAdminCredentials(username, password))) {
+    // O contador só zera quando a JANELA expira. Usar `blockedUntil` para isso
+    // reiniciava a contagem a cada tentativa (0 é sempre <= agora).
+    const janelaViva = record && now - record.windowStart < LOGIN_WINDOW_MS;
+    const count = (janelaViva ? record.count : 0) + 1;
+    loginAttempts.set(key, {
+      count,
+      windowStart: janelaViva ? record.windowStart : now,
+      blockedUntil: count >= MAX_LOGIN_ATTEMPTS ? now + LOGIN_BLOCK_MS : 0,
+    });
+    return { message: "Usuario ou senha incorretos." };
+  }
+
+  loginAttempts.delete(key);
   await createAdminSession();
   redirect("/painel");
 }

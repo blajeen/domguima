@@ -9,6 +9,7 @@ export default function robots(): MetadataRoute.Robots {
       // Páginas de sessão e de resultado não devem entrar no índice.
       disallow: [
         "/api/",
+        "/painel",
         "/carrinho",
         "/checkout",
         "/conta",

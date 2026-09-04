@@ -1,7 +1,7 @@
 import "server-only";
 
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
@@ -67,9 +67,14 @@ export function createInitialState(): CatalogState {
   };
 }
 
-export async function readCatalogState(): Promise<CatalogState> {
+/**
+ * @param fresh ignora o cache de 5s e relê a origem. Obrigatório antes de
+ * qualquer escrita: gravar em cima de um retrato velho apaga o que outra
+ * requisição acabou de salvar.
+ */
+export async function readCatalogState(fresh = false): Promise<CatalogState> {
   if (hasSupabaseConfig()) {
-    if (!remoteStatePromise || Date.now() >= remoteStateExpiresAt) {
+    if (fresh || !remoteStatePromise || Date.now() >= remoteStateExpiresAt) {
       remoteStateExpiresAt = Date.now() + 5_000;
       remoteStatePromise = readSupabaseCatalogState();
     }
@@ -101,13 +106,36 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
   await writeFile(LOCAL_FILE, JSON.stringify(state, null, 2), "utf8");
 }
 
-export async function mutateCatalogState(change: (state: CatalogState) => void | Promise<void>): Promise<CatalogState> {
-  const state = structuredClone(await readCatalogState());
-  await change(state);
-  state.catalogEnabled = true;
-  state.settings.catalogEnabled = true;
-  await writeCatalogState(state);
-  return state;
+/**
+ * Fila de mutações do processo.
+ *
+ * `mutateCatalogState` faz ler → alterar → gravar o estado inteiro. Sem
+ * serialização, duas chamadas simultâneas leem o mesmo retrato e a última a
+ * gravar apaga a alteração da primeira — pedidos somem e a numeração repete.
+ * Encadear as mutações garante que cada uma leia o resultado da anterior.
+ *
+ * Limite conhecido: isso protege dentro de UMA instância. Em serverless com
+ * várias instâncias simultâneas a corrida ainda existe, e a solução definitiva
+ * é atomicidade no banco (sequência para o número do pedido e inserção
+ * append-only em vez de substituir o estado inteiro).
+ */
+let mutationQueue: Promise<unknown> = Promise.resolve();
+
+export function mutateCatalogState(change: (state: CatalogState) => void | Promise<void>): Promise<CatalogState> {
+  const run = async (): Promise<CatalogState> => {
+    // Leitura fresca: nunca partir do cache para escrever.
+    const state = structuredClone(await readCatalogState(true));
+    await change(state);
+    state.catalogEnabled = true;
+    state.settings.catalogEnabled = true;
+    await writeCatalogState(state);
+    return state;
+  };
+
+  // A fila segue viva mesmo se uma mutação falhar.
+  const result = mutationQueue.then(run, run);
+  mutationQueue = result.catch(() => undefined);
+  return result;
 }
 
 export async function uploadCatalogImage(file: File, productId: string): Promise<{ src: string; storagePath: string }> {
@@ -139,7 +167,9 @@ export async function deleteCatalogImage(storagePath: string): Promise<void> {
   }
   const publicRoot = resolve(process.cwd(), "public");
   const absolute = resolve(publicRoot, storagePath);
-  if (!absolute.startsWith(`${publicRoot}\\`) && absolute !== publicRoot) throw new Error("Caminho de imagem invalido.");
+  // `sep` em vez de "\\" fixo: com a barra do Windows cravada, em Linux
+  // (produção/CI) a condição barrava até caminho legítimo dentro de public/.
+  if (!absolute.startsWith(`${publicRoot}${sep}`) && absolute !== publicRoot) throw new Error("Caminho de imagem invalido.");
   await unlink(absolute).catch(() => undefined);
 }
 

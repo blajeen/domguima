@@ -7,8 +7,10 @@ import { hasAdminConfig } from "@/lib/admin/config";
 export default async function LoginPage() {
   const configured = hasAdminConfig();
   if (configured && await getOwner()) redirect("/painel");
+  // `div`, não `main`: o layout raiz já emite <main id="conteudo">, e dois
+  // landmarks `main` aninhados confundem leitores de tela.
   return (
-    <main className="flex min-h-screen items-center justify-center bg-ink-950 px-4 py-12">
+    <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4 py-12">
       <div className="w-full max-w-md rounded-2xl border border-ink-800 bg-white p-6 shadow-2xl sm:p-8">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-gold-700">Dom Guima</p>
         <h1 className="mt-2 text-2xl font-black text-ink-900">Painel da loja</h1>
@@ -21,6 +23,6 @@ export default async function LoginPage() {
         <LoginForm configured={configured} />
         <Link href="/" className="mt-5 block text-center text-xs font-semibold text-ink-500 hover:text-ink-900">← Voltar para a loja</Link>
       </div>
-    </main>
+    </div>
   );
 }

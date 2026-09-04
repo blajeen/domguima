@@ -75,11 +75,15 @@ export default function CheckoutPage() {
   const [cepMessage, setCepMessage] = useState("");
   const [sitePending, setSitePending] = useState(false);
   const [siteError, setSiteError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
 
   // Carrinho vazio não tem checkout: manda de volta para a home.
+  // `submitted` é essencial: ao concluir o pedido esvaziamos o carrinho, e sem
+  // essa guarda este efeito dispararia e jogaria o cliente para /carrinho por
+  // cima da confirmação — ele veria um carrinho vazio achando que falhou.
   useEffect(() => {
-    if (ready && items.length === 0) router.replace("/carrinho");
-  }, [ready, items.length, router]);
+    if (ready && items.length === 0 && !submitted) router.replace("/carrinho");
+  }, [ready, items.length, router, submitted]);
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm((f) => ({
@@ -172,6 +176,7 @@ export default function CheckoutPage() {
       });
       const data = (await response.json()) as { message?: string; orderNumber?: string };
       if (!response.ok || !data.orderNumber) throw new Error(data.message || "Nao foi possivel registrar o pedido.");
+      setSubmitted(true);
       clear();
       router.push(`/pedido-enviado?tipo=site&numero=${encodeURIComponent(data.orderNumber)}`);
     } catch (error) {
