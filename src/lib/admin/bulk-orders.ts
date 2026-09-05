@@ -3,15 +3,17 @@
  *
  * O controle diario da loja e feito num grupo, em mensagens como:
  *
- *     RETIRADA
- *     FLAVIN
- *     01 SMART TV SAMSUNG 75U8600F
- *     PAGO
+ *     RETIRADA                     ENTREGA R$80 DUDU
+ *     FLAVIN                       LUCAS
+ *     01 SMART TV SAMSUNG 75U8600F Rua Marco Aurelio 330, Apto 704
+ *     PAGO                         01 SMART TV LG 50" 50UA8550PSA
+ *                                  R$2099,90 + R$80 ENTREGA
  *
- *     SHOPEE 04-09
- *
- *     01 MICRO-ONDAS ELECTROLUX ME36B 110V
- *     02 CLIMATIZADOR BRITANIA BCL05A 220V
+ * REGRA CENTRAL: so e produto a linha que COMECA COM QUANTIDADE ("01 ...",
+ * "03 ..."). Todo o resto — nome, endereco, valor, forma de pagamento — e
+ * anotacao. Ja tentei aceitar "um produto por linha" sem o numero na frente, e
+ * com as mensagens reais isso transformava "Rua do carteiro 25" em produto.
+ * O numero na frente e o unico sinal confiavel que separa item de recado.
  *
  * Este modulo so LE o texto e propoe correspondencias com o catalogo. Ele
  * nunca decide sozinho: toda linha sai com um grau de certeza, e cabe a tela
@@ -23,59 +25,73 @@
  * para revalidar antes de gravar.
  */
 
-export type BulkChannel = "retirada" | "entrega" | "shopee" | "mercado_livre" | "outro";
+import type { OrderPaymentMethod } from "./types";
+
+export type BulkChannel = "retirada" | "entrega" | "shopee" | "mercado_livre" | "magalu" | "outro";
 
 export interface BulkParsedItem {
   /** Linha original, para o operador reconhecer o que veio da mensagem. */
   raw: string;
   quantity: number;
   name: string;
-  /**
-   * true quando a linha veio sem numero na frente e assumimos 1 unidade.
-   * A tela destaca essas para o operador conferir a quantidade.
-   */
-  impliedQuantity: boolean;
 }
 
 export interface BulkParsedBlock {
   channel: BulkChannel;
-  /** Cabecalho como veio ("SHOPEE 04-09", "RETIRADA"). */
+  /** Cabecalho como veio ("SHOPEE 04-09", "ENTREGA R$80 DUDU"). */
   header: string;
-  /** Nome que aparece logo abaixo de RETIRADA/ENTREGA. Vazio nos canais sem nome. */
+  /** Nome logo abaixo de RETIRADA/ENTREGA. Vazio quando a mensagem nao traz. */
   customerName: string;
-  /** dd-mm lido do cabecalho, resolvido para ISO. Nulo quando a mensagem nao traz data. */
+  /** dd-mm lido do cabecalho, resolvido para ISO. Nulo quando nao ha data. */
   date: string | null;
   paid: boolean;
+  paymentMethod: OrderPaymentMethod;
   items: BulkParsedItem[];
-  /** Linhas que nao deram para classificar, mostradas ao operador em vez de silenciadas. */
-  ignored: string[];
+  /**
+   * Tudo que nao era produto: endereco, recado, observacao. Vai junto para as
+   * notas do pedido em vez de ser descartado — o endereco de entrega costuma
+   * estar aqui e nao pode se perder.
+   */
+  notes: string[];
+  /** Valores em centavos achados na mensagem, na ordem em que aparecem. */
+  priceHints: number[];
 }
 
 const CANAIS: Array<{ padrao: RegExp; canal: BulkChannel; temCliente: boolean }> = [
   { padrao: /^retirada\b/, canal: "retirada", temCliente: true },
   { padrao: /^entrega\b/, canal: "entrega", temCliente: true },
-  { padrao: /^shopee\b/, canal: "shopee", temCliente: false },
+  // "shopee?" pega tambem o "SHOPE 28-08" que aparece digitado sem o E.
+  { padrao: /^shopee?\b/, canal: "shopee", temCliente: false },
   { padrao: /^(mercado ?livre|ml)\b/, canal: "mercado_livre", temCliente: false },
+  { padrao: /^(magalu|magazine ?luiza)\b/, canal: "magalu", temCliente: false },
 ];
 
-/** Marcadores de estado que aparecem soltos e nao sao produto nem cliente. */
-const MARCADORES_PAGO = /^(pago|pg)$/;
-const MARCADORES_IGNORAVEIS = /^(nao pago|não pago|a pagar|pendente|falta pagar|entregue|ok)$/;
+const MARCADORES_PAGO = /^(pago|paga|pg|pagos)$/;
+
+const FORMAS_DE_PAGAMENTO: Array<{ padrao: RegExp; metodo: OrderPaymentMethod }> = [
+  { padrao: /\bpix\b/, metodo: "pix" },
+  { padrao: /\bcr[eé]dito\b|\bcart[aã]o de cr[eé]dito\b/, metodo: "credit_card" },
+  { padrao: /\bd[eé]bito\b/, metodo: "debit_card" },
+  { padrao: /\bboleto\b/, metodo: "boleto" },
+];
 
 /** Prefixo de exportacao do WhatsApp: "[12:42, 9/5/2026] Fulano: texto". */
 const PREFIXO_WHATSAPP = /^\[[^\]]{3,40}\]\s*[^:]{1,60}:\s*/;
 
-/** "01 PRODUTO", "1x PRODUTO", "02 - PRODUTO". */
+/**
+ * "01 PRODUTO", "1x PRODUTO", "02 - PRODUTO".
+ * O numero na frente e obrigatorio: e ele que distingue item de anotacao.
+ */
 const LINHA_ITEM = /^(\d{1,3})\s*(?:x|un|und|unid)?\s*[-–.)]?\s+(.{3,})$/i;
 
 /**
- * Filtro minimo para uma linha solta virar produto: precisa ter letras e
- * corpo suficiente. Barra saudacao curta, emoji solto e horario perdido.
+ * R$2.099,90 · R$2100 · R$ 240,00 · R$4800,00
+ *
+ * A forma com ponto de milhar vem primeiro e EXIGE o ponto; sem isso a
+ * alternativa de 1-3 digitos casava so o "209" de "2099,90" e o valor virava
+ * R$209,00.
  */
-function pareceProduto(linha: string): boolean {
-  const letras = linha.replace(/[^a-zA-ZÀ-ÿ]/g, "");
-  return letras.length >= 4 && linha.trim().length >= 5;
-}
+const VALOR = /r\$\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/gi;
 
 function limpar(linha: string): string {
   return linha.replace(PREFIXO_WHATSAPP, "").replace(/‎|‏/g, "").trim();
@@ -83,6 +99,21 @@ function limpar(linha: string): string {
 
 function chave(texto: string): string {
   return texto.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+/** Tira o negrito/italico do WhatsApp: _PRODUTO_, *PRODUTO*, ~PRODUTO~. */
+function semFormatacao(texto: string): string {
+  return texto.replace(/[_*~]+/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
+function valoresEmCentavos(linha: string): number[] {
+  const achados: number[] = [];
+  for (const encontro of linha.matchAll(VALOR)) {
+    const bruto = encontro[1].replace(/\./g, "").replace(",", ".");
+    const numero = Number(bruto);
+    if (Number.isFinite(numero) && numero > 0) achados.push(Math.round(numero * 100));
+  }
+  return achados;
 }
 
 /**
@@ -104,7 +135,10 @@ function lerCabecalho(linha: string, hoje: Date) {
   const texto = chave(linha);
   const encontrado = CANAIS.find((item) => item.padrao.test(texto));
   if (!encontrado) return null;
-  const data = /(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?/.exec(linha);
+  // A data e procurada fora dos trechos de dinheiro: "ENTREGA R$40,00" nao
+  // pode virar 40 de dezembro.
+  const semDinheiro = linha.replace(VALOR, " ");
+  const data = /(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?/.exec(semDinheiro);
   return {
     canal: encontrado.canal,
     temCliente: encontrado.temCliente,
@@ -123,10 +157,11 @@ export function parseBulkSalesText(text: string, hoje: Date = new Date()): BulkP
   let atual: (BulkParsedBlock & { temCliente: boolean }) | null = null;
 
   const fechar = () => {
-    if (atual && (atual.items.length || atual.ignored.length)) {
+    if (atual && (atual.items.length || atual.notes.length || atual.customerName)) {
       blocos.push({
         channel: atual.channel, header: atual.header, customerName: atual.customerName,
-        date: atual.date, paid: atual.paid, items: atual.items, ignored: atual.ignored,
+        date: atual.date, paid: atual.paid, paymentMethod: atual.paymentMethod,
+        items: atual.items, notes: atual.notes, priceHints: atual.priceHints,
       });
     }
     atual = null;
@@ -139,13 +174,8 @@ export function parseBulkSalesText(text: string, hoje: Date = new Date()): BulkP
     if (cabecalho) {
       fechar();
       atual = {
-        channel: cabecalho.canal,
-        header: linha,
-        customerName: "",
-        date: cabecalho.data,
-        paid: false,
-        items: [],
-        ignored: [],
+        channel: cabecalho.canal, header: linha, customerName: "", date: cabecalho.data,
+        paid: false, paymentMethod: "to_confirm", items: [], notes: [], priceHints: [],
         temCliente: cabecalho.temCliente,
       };
       continue;
@@ -154,35 +184,36 @@ export function parseBulkSalesText(text: string, hoje: Date = new Date()): BulkP
     // Linha solta antes de qualquer cabecalho: agrupa num bloco sem canal em
     // vez de descartar, para o operador ver que ela existe.
     if (!atual) {
-      atual = { channel: "outro", header: "", customerName: "", date: null, paid: false, items: [], ignored: [], temCliente: true };
+      atual = {
+        channel: "outro", header: "", customerName: "", date: null, paid: false,
+        paymentMethod: "to_confirm", items: [], notes: [], priceHints: [], temCliente: true,
+      };
     }
-
-    const marca = chave(linha);
-    if (MARCADORES_PAGO.test(marca)) { atual.paid = true; continue; }
-    if (MARCADORES_IGNORAVEIS.test(marca)) continue;
 
     const item = LINHA_ITEM.exec(linha);
     if (item) {
-      atual.items.push({ raw: linha, quantity: Number(item[1]), name: item[2].trim(), impliedQuantity: false });
+      atual.items.push({ raw: linha, quantity: Number(item[1]), name: semFormatacao(item[2]) });
       continue;
     }
 
-    // Nome do cliente: primeira linha nao-item logo apos RETIRADA/ENTREGA.
-    if (atual.temCliente && !atual.customerName && !atual.items.length) {
-      atual.customerName = linha;
+    // Daqui para baixo nada vira produto — e anotacao.
+    const marca = chave(semFormatacao(linha));
+    if (MARCADORES_PAGO.test(marca)) { atual.paid = true; continue; }
+
+    const forma = FORMAS_DE_PAGAMENTO.find((item) => item.padrao.test(marca));
+    if (forma && atual.paymentMethod === "to_confirm") atual.paymentMethod = forma.metodo;
+
+    atual.priceHints.push(...valoresEmCentavos(linha));
+
+    // Nome do cliente: primeira linha nao-item logo apos RETIRADA/ENTREGA,
+    // antes de qualquer produto. Nas mensagens em que o nome vem depois dos
+    // itens, ele fica nas notas e o operador ajusta o campo na tela.
+    if (atual.temCliente && !atual.customerName && !atual.items.length && !forma && !/r\$|\d{3}/.test(marca)) {
+      atual.customerName = semFormatacao(linha);
       continue;
     }
 
-    // Um produto por linha, sem numero na frente: assume 1 unidade. E como a
-    // lista costuma sair quando ninguem se da ao trabalho de prefixar "01".
-    // Linha curta demais ou sem letra nenhuma nao vira produto — vai para
-    // `ignored` e aparece na tela, em vez de virar item fantasma.
-    if (pareceProduto(linha)) {
-      atual.items.push({ raw: linha, quantity: 1, name: linha, impliedQuantity: true });
-      continue;
-    }
-
-    atual.ignored.push(linha);
+    atual.notes.push(semFormatacao(linha));
   }
 
   fechar();
@@ -228,9 +259,7 @@ function tokens(texto: string): string[] {
  * me36b) ou numero longo.
  *
  * Ser codigo NAO basta para valer muito: "220v" e "110v" tambem passam nesta
- * forma e aparecem em meio catalogo. Quem decide o peso e a raridade (idf)
- * calculada abaixo — foi assim que "BATED PLANETARIA MONDIAL 220V" deixou de
- * casar com um liquidificador so porque os dois eram 220V.
+ * forma. Quem decide o peso e a raridade (idf) e a lista de unidades abaixo.
  */
 function ehCodigo(token: string): boolean {
   if (token.length < 3) return false;
@@ -243,7 +272,7 @@ interface IndiceCatalogo {
   total: number;
   /** Em quantos produtos cada token aparece. */
   frequencia: Map<string, number>;
-  documentos: Map<string, { tokens: Set<string>; codigos: string[]; texto: string }>;
+  documentos: Map<string, { tokens: Set<string>; codigos: string[] }>;
 }
 
 // Indexar 95 produtos a cada linha da mensagem seria desperdicio: o operador
@@ -255,15 +284,13 @@ function indexar(products: BulkMatchProduct[]): IndiceCatalogo {
   if (guardado) return guardado;
 
   const frequencia = new Map<string, number>();
-  const documentos = new Map<string, { tokens: Set<string>; codigos: string[]; texto: string }>();
+  const documentos = new Map<string, { tokens: Set<string>; codigos: string[] }>();
 
   for (const product of products) {
-    const lista = tokens(`${product.name} ${product.sku}`);
-    const conjunto = new Set(lista);
+    const conjunto = new Set(tokens(`${product.name} ${product.sku}`));
     documentos.set(product.id, {
       tokens: conjunto,
       codigos: [...conjunto].filter((token) => ehCodigo(token) && token.length >= 4),
-      texto: lista.join(" "),
     });
     for (const token of conjunto) frequencia.set(token, (frequencia.get(token) ?? 0) + 1);
   }
@@ -307,8 +334,8 @@ function pontuar(busca: string[], produto: BulkMatchProduct, indice: IndiceCatal
 
   for (const token of busca) {
     // Codigo raro vale o triplo; codigo comum, nao. "220v" e "110v" tem a
-    // forma de codigo mas estao em meio catalogo — dar peso a eles fazia uma
-    // batedeira casar com um liquidificador so pela voltagem.
+    // forma de codigo mas sao atributo — dar peso a eles fazia uma batedeira
+    // casar com um liquidificador so pela voltagem.
     const raro = (indice.frequencia.get(token) ?? 0) <= 2 && !UNIDADE_DE_MEDIDA.test(token);
     const codigo = ehCodigo(token);
     const valor = peso(token, indice) * (codigo && raro ? 3 : 1);
@@ -316,6 +343,16 @@ function pontuar(busca: string[], produto: BulkMatchProduct, indice: IndiceCatal
 
     if (doc.tokens.has(token)) {
       obtido += valor;
+      continue;
+    }
+
+    // Abreviacao: as mensagens cortam palavra o tempo todo ("VENT.WAP",
+    // "SEC.BRITANIA", "INV. 9000BTUS", "BATED.PLANETARIA"). Se o token e
+    // inicio de uma palavra do produto, conta quase inteiro.
+    if (!codigo && token.length >= 3) {
+      for (const alvo of doc.tokens) {
+        if (alvo.length > token.length && alvo.startsWith(token)) { obtido += valor * 0.7; break; }
+      }
       continue;
     }
 
@@ -359,7 +396,7 @@ export function matchBulkProduct(rawName: string, products: BulkMatchProduct[]):
 
   const best = notas[0] ?? null;
   const segundo = notas[1];
-  const alternatives = notas.slice(0, 6);
+  const alternatives = notas.slice(0, 8);
 
   if (!best || best.score < 0.3) return { confidence: "nenhuma", best: null, alternatives };
   const folga = best.score - (segundo?.score ?? 0);
@@ -376,7 +413,7 @@ export function matchBulkProduct(rawName: string, products: BulkMatchProduct[]):
  */
 export function bulkRequestId(block: { channel: string; date: string | null; customerName: string; items: Array<{ quantity: number; name: string }> }): string {
   const assinatura = [
-    block.channel,
+    chave(block.channel),
     block.date ?? "sem-data",
     chave(block.customerName),
     ...block.items.map((item) => `${item.quantity}x${chave(item.name)}`).sort(),

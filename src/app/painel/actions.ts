@@ -470,6 +470,8 @@ const bulkBlockInput = z.object({
   customerName: z.string().trim().min(1).max(140),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   paid: z.boolean(),
+  paymentMethod: z.enum(["pix", "credit_card", "debit_card", "boleto", "cash_on_delivery", "to_confirm"]),
+  notes: z.array(z.string().trim().max(400)).max(40),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
     quantity: z.number().int().min(1).max(1_000),
@@ -518,6 +520,8 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
         // Meio-dia para a data nao escorregar de dia por fuso.
         createdAt: block.date ? new Date(`${block.date}T15:00:00.000Z`).toISOString() : new Date().toISOString(),
         paid: block.paid,
+        paymentMethod: block.paymentMethod,
+        notes: block.notes,
         items: block.items,
       }, owner.id);
       created.push({ requestId: block.requestId, number: order.number, customerName: block.customerName });

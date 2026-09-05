@@ -372,6 +372,9 @@ export interface ChannelOrderInput {
   /** Data da venda, nao a do lancamento: o pedido entra no dia certo do relatorio. */
   createdAt: string;
   paid: boolean;
+  paymentMethod: OrderPaymentMethod;
+  /** Endereco, recado e observacoes que vieram na mensagem e nao sao produto. */
+  notes: string[];
   items: Array<{ productId: string; quantity: number; unitPriceCents: number }>;
 }
 
@@ -420,7 +423,7 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     status: "completed",
     seller_id: seller.id,
     seller_name: seller.name,
-    payment_method: "to_confirm",
+    payment_method: input.paymentMethod,
     delivery_method: "shipping_to_confirm",
     // Campos vazios = desconhecido. A mensagem do grupo nao tem esses dados.
     customer: {
@@ -445,7 +448,9 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     discount_total_cents: prepared.reduce((sum, item) => sum + Math.max(0, item.gross - item.lineTotal), 0),
     total_cents: prepared.reduce((sum, item) => sum + item.lineTotal, 0),
     commission_total_cents: prepared.reduce((sum, item) => sum + item.commissionUnit * item.quantity, 0),
-    notes: `Lançamento em lote · ${anotacao}`,
+    // O endereco de entrega costuma estar nas anotacoes; preservar e o que
+    // impede a informacao de sumir no lancamento em lote.
+    notes: [`Lançamento em lote · ${anotacao}`, ...input.notes].join(" · ").slice(0, 2_000),
     created_by: actorId,
     created_at: input.createdAt,
     cancelled_at: null,
