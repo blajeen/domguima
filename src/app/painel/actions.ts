@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
-import { cancelSalesOrder, confirmPendingSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
@@ -458,4 +458,89 @@ function catalogStorageError(error: unknown): ActionState {
 function inventoryActionError(error: unknown): ActionState {
   if (error instanceof InventoryOperationError) return { message: error.message };
   return catalogStorageError(error);
+}
+
+// ---------------------------------------------------------------------------
+// Lancamento em lote a partir das mensagens do grupo de vendas
+// ---------------------------------------------------------------------------
+
+const bulkBlockInput = z.object({
+  requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/),
+  channelLabel: z.string().trim().min(1).max(120),
+  customerName: z.string().trim().min(1).max(140),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  paid: z.boolean(),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1).max(200),
+    quantity: z.number().int().min(1).max(1_000),
+    unitPriceCents: z.number().int().positive().max(100_000_000),
+  })).min(1).max(100),
+});
+
+export interface BulkImportResult {
+  ok: boolean;
+  message: string;
+  created: Array<{ requestId: string; number: string; customerName: string }>;
+  failed: Array<{ requestId: string; channelLabel: string; message: string }>;
+}
+
+/**
+ * Grava os lancamentos conferidos na tela de importacao.
+ *
+ * Cada bloco vira um pedido independente: um que falhe (produto sem estoque,
+ * por exemplo) nao impede os outros de entrar, e a tela mostra exatamente qual
+ * nao passou. Reenviar a mesma mensagem nao duplica — o `requestId` e derivado
+ * do conteudo e o banco tem indice unico nele.
+ */
+export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown): Promise<BulkImportResult> {
+  const owner = await ownerOrThrow();
+  const parsedSeller = z.string().trim().min(1).max(80).safeParse(sellerId);
+  const parsed = z.array(bulkBlockInput).min(1).max(60).safeParse(blocks);
+  if (!parsedSeller.success) return { ok: false, message: "Selecione um vendedor ativo.", created: [], failed: [] };
+  if (!parsed.success) return { ok: false, message: "Revise os lançamentos: algum item está sem produto ou sem valor.", created: [], failed: [] };
+
+  const repetidos = parsed.data.map((block) => block.requestId);
+  if (new Set(repetidos).size !== repetidos.length) {
+    return { ok: false, message: "Há dois lançamentos idênticos na lista. Remova a duplicata antes de gravar.", created: [], failed: [] };
+  }
+
+  const created: BulkImportResult["created"] = [];
+  const failed: BulkImportResult["failed"] = [];
+
+  for (const block of parsed.data) {
+    try {
+      // Leitura fresca a cada bloco: o anterior acabou de mexer no estoque.
+      const order = await createChannelSalesOrder(await readCatalogState(true), {
+        requestId: block.requestId,
+        sellerId: parsedSeller.data,
+        channelLabel: block.channelLabel,
+        customerName: block.customerName,
+        // Meio-dia para a data nao escorregar de dia por fuso.
+        createdAt: block.date ? new Date(`${block.date}T15:00:00.000Z`).toISOString() : new Date().toISOString(),
+        paid: block.paid,
+        items: block.items,
+      }, owner.id);
+      created.push({ requestId: block.requestId, number: order.number, customerName: block.customerName });
+    } catch (error) {
+      const message = error instanceof OrderOperationError ? error.message : "Não foi possível gravar este lançamento agora.";
+      failed.push({ requestId: block.requestId, channelLabel: block.channelLabel, message });
+    }
+  }
+
+  if (created.length) {
+    refreshCatalog();
+    revalidatePath("/painel/pedidos");
+    revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/historico");
+  }
+
+  const resumo = created.length === 1 ? "1 pedido gerado" : `${created.length} pedidos gerados`;
+  return {
+    ok: failed.length === 0,
+    message: failed.length === 0
+      ? `${resumo}. O estoque e a comissão foram atualizados.`
+      : `${resumo}, ${failed.length} com problema. Confira abaixo.`,
+    created,
+    failed,
+  };
 }

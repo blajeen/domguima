@@ -358,3 +358,123 @@ function traduzir(error: unknown, produtos: Array<{ id: string; name: string }>)
     ? new OrderOperationError(`O estoque de “${nome}” acabou de mudar. Atualize a página e confira o pedido.`)
     : new OrderOperationError(`O produto “${nome}” não está mais disponível.`);
 }
+
+// ---------------------------------------------------------------------------
+// Lancamento em lote (mensagens do grupo de vendas)
+// ---------------------------------------------------------------------------
+
+export interface ChannelOrderInput {
+  requestId: string;
+  sellerId: string;
+  /** Cabecalho da mensagem: "SHOPEE 04-09", "RETIRADA". Vai para as notas. */
+  channelLabel: string;
+  customerName: string;
+  /** Data da venda, nao a do lancamento: o pedido entra no dia certo do relatorio. */
+  createdAt: string;
+  paid: boolean;
+  items: Array<{ productId: string; quantity: number; unitPriceCents: number }>;
+}
+
+/**
+ * Cria um pedido a partir de uma mensagem do controle diario.
+ *
+ * Diferente de `createSalesOrder`, aqui nao ha CPF, telefone nem endereco — a
+ * mensagem so traz o primeiro nome do cliente, ou nem isso (Shopee). Os campos
+ * desconhecidos ficam VAZIOS de proposito; preenche-los com placeholder
+ * plausivel seria inventar dado de cliente.
+ *
+ * Tambem nao ha `expectedStock`: a mensagem nao carrega o estoque que o
+ * operador viu. Quem garante que nao se vende alem do saldo e a trava dentro
+ * da transacao, a mesma dos outros caminhos.
+ */
+export async function createChannelSalesOrder(state: CatalogState, input: ChannelOrderInput, actorId: string): Promise<SalesOrderRecord> {
+  const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
+  if (jaCriado) return jaCriado;
+  if (!input.items.length) throw new OrderOperationError("O lançamento não tem nenhum item.");
+  if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
+    throw new OrderOperationError("Há um produto repetido no mesmo lançamento. Some as quantidades numa linha só.");
+  }
+
+  const seller = state.operations.sellers.find((item) => item.id === input.sellerId && item.active);
+  if (!seller) throw new OrderOperationError("Selecione um vendedor ativo.");
+
+  const prepared = input.items.map((item) => {
+    const product = state.products.find((candidate) => candidate.id === item.productId && candidate.status !== "archived");
+    if (!product) throw new OrderOperationError("Um dos produtos do lançamento não existe mais no catálogo.");
+    if (item.unitPriceCents <= 0) throw new OrderOperationError(`Informe um valor válido para “${product.name}”.`);
+    const lineTotal = item.unitPriceCents * item.quantity;
+    return {
+      product,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      lineTotal,
+      gross: product.price_cents * item.quantity,
+      commissionUnit: commissionForUnit(item.unitPriceCents),
+    };
+  });
+
+  const anotacao = [input.channelLabel.trim(), input.paid ? "PAGO" : null].filter(Boolean).join(" · ");
+  const draft: OrderDraft = {
+    id: randomUUID(),
+    request_id: input.requestId,
+    status: "completed",
+    seller_id: seller.id,
+    seller_name: seller.name,
+    payment_method: "to_confirm",
+    delivery_method: "shipping_to_confirm",
+    // Campos vazios = desconhecido. A mensagem do grupo nao tem esses dados.
+    customer: {
+      name: input.customerName,
+      cpf: "", phone: "", cep: "", street: "", number: "",
+      complement: "", neighborhood: "", city: "", state: "",
+    },
+    items: prepared.map(({ product, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
+      product_id: product.id,
+      product_name: product.name,
+      sku: product.sku,
+      quantity,
+      list_unit_price_cents: product.price_cents,
+      unit_price_cents: unitPriceCents,
+      discount_cents: Math.max(0, gross - lineTotal),
+      line_total_cents: lineTotal,
+      commission_unit_cents: commissionUnit,
+      commission_total_cents: commissionUnit * quantity,
+    })),
+    total_units: prepared.reduce((sum, item) => sum + item.quantity, 0),
+    gross_total_cents: prepared.reduce((sum, item) => sum + item.gross, 0),
+    discount_total_cents: prepared.reduce((sum, item) => sum + Math.max(0, item.gross - item.lineTotal), 0),
+    total_cents: prepared.reduce((sum, item) => sum + item.lineTotal, 0),
+    commission_total_cents: prepared.reduce((sum, item) => sum + item.commissionUnit * item.quantity, 0),
+    notes: `Lançamento em lote · ${anotacao}`,
+    created_by: actorId,
+    created_at: input.createdAt,
+    cancelled_at: null,
+    cancelled_by: null,
+  };
+
+  const movements: LedgerMovementDraft[] = prepared.map((item) => {
+    const commissionTotal = item.commissionUnit * item.quantity;
+    return {
+      product_id: item.product.id,
+      quantity_delta: -item.quantity,
+      reason: "sale",
+      note: `{{number}} · ${anotacao}${input.customerName ? ` · ${input.customerName}` : ""}`,
+      commission_percent: item.lineTotal > 0 ? Number(((commissionTotal / item.lineTotal) * 100).toFixed(4)) : 0,
+      commission_cents: commissionTotal,
+      actor_id: actorId,
+      batch_id: input.requestId,
+    };
+  });
+
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.bulk_imported",
+    entity_type: "order",
+    entity_id: draft.id,
+    before_data: null,
+    after_data: { canal: input.channelLabel, seller: seller.name, customer: input.customerName, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents },
+  };
+
+  const { order } = await gravarPedido(() => createOrderRecord(draft, movements, audit), prepared.map((item) => item.product));
+  return order;
+}

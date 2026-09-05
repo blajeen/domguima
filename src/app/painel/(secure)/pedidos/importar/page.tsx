@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
-import { OrderComposer } from "@/components/admin/OrderComposer";
+import { BulkOrderImporter } from "@/components/admin/BulkOrderImporter";
 import { requireOwner } from "@/lib/admin/auth";
 import { getAdminProducts, getSellers } from "@/lib/admin/data";
 
-export default async function NewOrderPage() {
+export default async function BulkImportPage() {
   await requireOwner();
   const [products, sellers] = await Promise.all([getAdminProducts(), getSellers()]);
   const options = products.filter((product) => product.status !== "archived").map((product) => ({
@@ -18,10 +17,9 @@ export default async function NewOrderPage() {
   return <>
     <AdminPageHeader
       eyebrow="Venda assistida"
-      title="Novo pedido"
-      description="Cadastre o cliente, selecione o vendedor e finalize a venda com baixa automática no estoque."
-      actions={<Link href="/painel/pedidos/importar" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Lançar do grupo</Link>}
+      title="Lançar vendas do grupo"
+      description="Cole as mensagens do controle diário. Cada lançamento vira um pedido com baixa no estoque — depois de você conferir produto por produto."
     />
-    <OrderComposer products={options} sellers={sellers} />
+    <BulkOrderImporter products={options} sellers={sellers} />
   </>;
 }

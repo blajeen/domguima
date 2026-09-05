@@ -32,7 +32,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         eyebrow="Operação comercial"
         title="Pedidos"
         description={`${orders.length} de ${allOrders.length} pedidos`}
-        actions={<Link href="/painel/pedidos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950">+ Novo pedido</Link>}
+        actions={<div className="flex flex-wrap gap-2">
+          <Link href="/painel/pedidos/importar" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Lançar do grupo</Link>
+          <Link href="/painel/pedidos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950">+ Novo pedido</Link>
+        </div>}
       />
       {created && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {created.number} finalizado.</strong> O estoque e a comissão foram atualizados.</div>}
       {confirmed && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {confirmed.number} confirmado.</strong> O estoque e a comissão foram atualizados.</div>}
