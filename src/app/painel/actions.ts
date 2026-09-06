@@ -5,7 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
-import { createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { copyCatalogImage, createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
@@ -547,4 +547,122 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
     created,
     failed,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Duplicar produto
+// ---------------------------------------------------------------------------
+
+/** Garante endereco livre no catalogo: "copo-stanley-copia", "-copia-2"... */
+function slugLivre(base: string, ocupados: Set<string>): string {
+  const limpo = base.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "produto";
+  if (!ocupados.has(limpo)) return limpo;
+  for (let n = 2; n < 500; n += 1) {
+    const tentativa = `${limpo}-${n}`;
+    if (!ocupados.has(tentativa)) return tentativa;
+  }
+  return `${limpo}-${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * Cria uma copia de um produto para servir de ponto de partida a uma variacao
+ * (a mesma TV noutro tamanho, o mesmo suporte noutra cor).
+ *
+ * O que NAO e copiado, de proposito:
+ *
+ *   * `rating`, `review_count` e `sold_count` — sao a reputacao do anuncio
+ *     original. Herda-las daria a um produto recem-criado avaliacoes que ele
+ *     nunca recebeu, o que e inventar prova social.
+ *   * `is_featured` e `is_best_seller` — "mais vendido" num produto com zero
+ *     venda e afirmacao falsa. O operador liga de novo se quiser.
+ *   * `external_id` — e a identidade do anuncio de origem na importacao; dois
+ *     produtos com o mesmo valor confundiriam qualquer reimportacao.
+ *   * estoque, datas de venda e de entrada — comecam zerados.
+ *
+ * A copia nasce como rascunho: ela ainda precisa de foto propria e revisao
+ * antes de aparecer na loja.
+ */
+export async function duplicateProductAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return;
+
+  let destino = "";
+  try {
+    const atual = await readCatalogState(true);
+    const original = atual.products.find((item) => item.id === id);
+    if (!original) {
+      redirect("/painel/produtos?erro=Produto+nao+encontrado.");
+    }
+
+    const slugs = new Set(atual.products.map((item) => item.slug));
+    const ids = new Set(atual.products.map((item) => item.id));
+    const novoSlug = slugLivre(`${original.slug}-copia`, slugs);
+    const novoId = slugLivre(novoSlug, ids);
+    const proximoSku = buildCategorySkuChoices(atual.categories, atual.products)
+      .find((escolha) => escolha.categoryId === original.category_id)?.nextSku;
+
+    // As imagens sao copiadas de verdade no Storage antes da gravacao: se o
+    // arquivo nao puder ser duplicado, a linha entra sem storage_path e a
+    // duplicacao segue em vez de falhar inteira.
+    const imagens = await Promise.all((original.product_images ?? []).map(async (imagem, indice) => {
+      const copia = await copyCatalogImage(imagem.storage_path, imagem.src, novoId);
+      return {
+        id: randomUUID(),
+        product_id: novoId,
+        src: copia.src,
+        storage_path: copia.storagePath,
+        alt: imagem.alt,
+        sort_order: imagem.sort_order,
+        is_primary: imagem.is_primary || indice === 0,
+      };
+    }));
+
+    const agora = new Date().toISOString();
+    const copia: AdminProductRow = {
+      ...original,
+      id: novoId,
+      slug: novoSlug,
+      name: `${original.name} (cópia)`,
+      sku: proximoSku ?? `${original.sku}-COPIA`,
+      external_id: null,
+      stock: 0,
+      status: "draft",
+      rating: null,
+      review_count: null,
+      sold_count: null,
+      is_featured: false,
+      is_best_seller: false,
+      published_at: null,
+      last_stock_entry_at: null,
+      last_sale_at: null,
+      created_at: agora,
+      updated_at: agora,
+      product_images: imagens,
+    };
+
+    await mutateCatalogState((state) => {
+      // Reconfere na hora da gravacao: entre a leitura e agora outra sessao
+      // pode ter criado um produto com este mesmo endereco.
+      if (state.products.some((item) => item.id === copia.id || item.slug === copia.slug)) {
+        copia.slug = slugLivre(`${copia.slug}-${randomUUID().slice(0, 4)}`, new Set(state.products.map((item) => item.slug)));
+        copia.id = copia.slug;
+        for (const imagem of copia.product_images ?? []) imagem.product_id = copia.id;
+      }
+      state.products.unshift(copia);
+      audit(state, owner.id, "product.duplicated", "product", copia.id, { id: original.id, name: original.name, sku: original.sku }, { id: copia.id, name: copia.name, sku: copia.sku });
+    });
+
+    refreshCatalog();
+    revalidatePath("/painel/produtos");
+    destino = `/painel/produtos/${encodeURIComponent(copia.id)}?duplicado=1`;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) throw error;
+    console.error("Falha ao duplicar produto:", error);
+    destino = "/painel/produtos?erro=Nao+foi+possivel+duplicar+o+produto+agora.";
+  }
+  // Fora do try: redirect() funciona lancando, e dentro do bloco o proprio
+  // catch o transformaria em mensagem de erro.
+  redirect(destino);
 }

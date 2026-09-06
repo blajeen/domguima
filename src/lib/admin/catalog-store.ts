@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -162,6 +162,45 @@ export async function uploadCatalogImage(file: File, productId: string): Promise
   const absolute = join(process.cwd(), "public", relative);
   await mkdir(dirname(absolute), { recursive: true });
   await writeFile(absolute, Buffer.from(await file.arrayBuffer()));
+  return { src: `/${relative}`, storagePath: relative };
+}
+
+/**
+ * Duplica o arquivo de uma imagem para um produto novo.
+ *
+ * Copia de verdade em vez de reaproveitar o mesmo caminho: se os dois produtos
+ * apontassem para o mesmo arquivo, apagar a foto de um deixaria o outro sem
+ * imagem — `deleteCatalogImage` remove o arquivo do Storage, nao so a
+ * referencia.
+ *
+ * Imagem sem `storagePath` veio de URL externa; nesse caso nao ha arquivo
+ * nosso para copiar e a propria URL e reaproveitada.
+ */
+export async function copyCatalogImage(storagePath: string | null, src: string, productId: string): Promise<{ src: string; storagePath: string | null }> {
+  if (!storagePath) return { src, storagePath: null };
+  const safeProduct = productId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const extension = storagePath.split(".").at(-1)?.toLowerCase() || "jpg";
+
+  if (hasSupabaseConfig() && !storagePath.startsWith("/")) {
+    const destino = `products/${safeProduct}/${Date.now()}-${randomUUID()}.${extension}`;
+    const storage = createSupabaseAdminClient().storage.from(PRODUCT_BUCKET);
+    const { error } = await storage.copy(storagePath, destino);
+    // Falhar a copia nao pode derrubar a duplicacao inteira: sem a imagem o
+    // produto novo ainda serve, e o operador sobe a foto na tela seguinte.
+    if (error) return { src, storagePath: null };
+    return { src: storage.getPublicUrl(destino).data.publicUrl, storagePath: destino };
+  }
+
+  if (process.env.VERCEL) return { src, storagePath: null };
+  const relative = join("uploads", safeProduct, `${Date.now()}-${randomUUID()}.${extension}`).replace(/\\/g, "/");
+  const origem = resolve(process.cwd(), "public", storagePath.replace(/^\//, ""));
+  const destino = join(process.cwd(), "public", relative);
+  try {
+    await mkdir(dirname(destino), { recursive: true });
+    await copyFile(origem, destino);
+  } catch {
+    return { src, storagePath: null };
+  }
   return { src: `/${relative}`, storagePath: relative };
 }
 
