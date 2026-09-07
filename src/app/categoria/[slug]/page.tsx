@@ -12,6 +12,16 @@ interface PageProps {
 }
 
 /** Pré-gera as rotas de categoria — todas conhecidas em tempo de build. */
+/**
+ * Rede de seguranca do cache.
+ *
+ * O salvamento do painel ja revalida esta rota na hora (refreshCatalog). Este
+ * teto existe para o caso de a revalidacao falhar: sem ele a pagina ficava
+ * congelada no build ate o proximo deploy, e um produto reabastecido continuava
+ * anunciado como indisponivel por dias.
+ */
+export const revalidate = 300;
+
 export async function generateStaticParams() {
   return (await getCatalogCategories()).map((category) => ({ slug: category.slug }));
 }

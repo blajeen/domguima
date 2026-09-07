@@ -470,9 +470,28 @@ export async function importCurrentCatalogAction(_: ActionState, formData: FormD
   return { ok: true, message: "Catalogo atual ativado sem sobrescrever edicoes existentes." };
 }
 
+/**
+ * Invalida o que o cliente ve depois de qualquer mudanca no catalogo.
+ *
+ * As paginas publicas de produto e categoria sao geradas estaticamente
+ * (generateStaticParams). Sem revalidar o PADRAO da rota, elas ficavam
+ * congeladas no momento do build: preco, estoque e variacao so chegavam na
+ * loja no proximo deploy. Foi assim que um produto com 30 unidades em estoque
+ * continuou anunciado como indisponivel.
+ *
+ * Rota com segmento dinamico exige o segundo parametro "page" — sem ele o
+ * Next nao sabe se e a pagina ou o layout, e a chamada nao pega nada.
+ */
 function refreshCatalog() {
   updateTag("catalog");
-  for (const path of ["/", "/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes", "/painel/pedidos", "/painel/financeiro"]) revalidatePath(path);
+
+  // Publico: tudo que lista ou detalha produto.
+  revalidatePath("/produto/[slug]", "page");
+  revalidatePath("/categoria/[slug]", "page");
+  for (const path of ["/", "/busca", "/ofertas", "/mais-vendidos", "/sitemap.xml"]) revalidatePath(path);
+
+  // Painel.
+  for (const path of ["/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes", "/painel/pedidos", "/painel/financeiro"]) revalidatePath(path);
 }
 
 function audit(state: CatalogState, actorId: string, action: string, entityType: string, entityId: string, beforeData: unknown, afterData: unknown) {
