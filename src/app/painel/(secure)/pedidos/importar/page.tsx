@@ -13,6 +13,8 @@ export default async function BulkImportPage() {
     stock: product.stock,
     price_cents: product.price_cents,
     category_name: product.categories?.name ?? product.category_id,
+    variants: (product.product_variants ?? []).filter((linha) => linha.active)
+      .map((linha) => ({ id: linha.id, label: linha.label, sku: linha.sku, stock: linha.stock, price_cents: linha.price_cents })),
   }));
   return <>
     <AdminPageHeader

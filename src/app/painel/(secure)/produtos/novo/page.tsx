@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { requireOwner } from "@/lib/admin/auth";
+import { areVariantsSupported } from "@/lib/admin/catalog-store";
 import { getAdminCategories, getAdminProducts, getProductAssistTemplates } from "@/lib/admin/data";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 
@@ -36,6 +37,6 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
       <span>Setor selecionado: <strong>{selected.categoryName}</strong></span>
       <span>Próximo código: <strong className="font-mono">{selected.nextSku}</strong></span>
     </div>
-    <ProductForm categories={categories} initialCategoryId={selected.categoryId} skuChoices={skuChoices} templates={templates} />
+    <ProductForm variantsSupported={areVariantsSupported()} categories={categories} initialCategoryId={selected.categoryId} skuChoices={skuChoices} templates={templates} />
   </>;
 }

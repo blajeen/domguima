@@ -14,9 +14,11 @@ interface LinhaConferida {
   raw: string;
   quantity: number;
   productId: string;
+  /** Opcao escolhida, quando o produto vende por cor/voltagem. */
+  variantId: string | null;
   unitPriceCents: number;
   confidence: BulkMatchConfidence;
-  alternativas: Array<{ productId: string; name: string; stock: number; priceCents: number }>;
+  alternativas: Array<{ productId: string; variantId: string | null; name: string; stock: number; priceCents: number }>;
 }
 
 interface BlocoConferido {
@@ -65,7 +67,12 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
 
   // Memorizado para o indice do catalogo ser montado uma vez so, e nao a cada
   // uma das dezenas de linhas coladas.
-  const catalogo = useMemo(() => products.map((p) => ({ id: p.id, name: p.name, sku: p.sku, stock: p.stock, price_cents: p.price_cents })), [products]);
+  const catalogo = useMemo(() => products.map((p) => ({ id: p.id, name: p.name, sku: p.sku, stock: p.stock, price_cents: p.price_cents, variants: p.variants })), [products]);
+
+  // O seletor lista o que de fato se vende: produto, ou cada opcao dele.
+  const vendaveis = useMemo(() => catalogo.flatMap((p) => (p.variants?.length
+    ? p.variants.map((v) => ({ chave: `${p.id}::${v.id}`, productId: p.id, variantId: v.id as string | null, name: `${p.name} · ${v.label}`, stock: v.stock, priceCents: v.price_cents }))
+    : [{ chave: p.id, productId: p.id, variantId: null as string | null, name: p.name, stock: p.stock, priceCents: p.price_cents }])), [catalogo]);
 
   function interpretar() {
     setResultado(null);
@@ -92,6 +99,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
             raw: item.raw,
             quantity: item.quantity,
             productId: reconhecido?.productId ?? "",
+            variantId: reconhecido?.variantId ?? null,
             // Um item, um valor na mensagem: nao ha ambiguidade sobre a que
             // ele se refere. Com mais de um, o operador escolhe nos atalhos.
             unitPriceCents: umValorSo ? bloco.priceHints[0] : reconhecido?.priceCents ?? 0,
@@ -119,12 +127,13 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
     }) ?? null);
   }
 
-  function escolherProduto(blocoKey: string, linhaKey: string, productId: string) {
-    const produto = catalogo.find((item) => item.id === productId);
+  function escolherProduto(blocoKey: string, linhaKey: string, chave: string) {
+    const escolhido = vendaveis.find((item) => item.chave === chave);
     alterarLinha(blocoKey, linhaKey, {
-      productId,
-      unitPriceCents: produto?.price_cents ?? 0,
-      confidence: produto ? "alta" : "nenhuma",
+      productId: escolhido?.productId ?? "",
+      variantId: escolhido?.variantId ?? null,
+      unitPriceCents: escolhido?.priceCents ?? 0,
+      confidence: escolhido ? "alta" : "nenhuma",
     });
   }
 
@@ -147,7 +156,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
         channel: bloco.channelLabel,
         date: bloco.date,
         customerName: bloco.customerName,
-        items: linhas.map((linha) => ({ quantity: linha.quantity, name: linha.productId })),
+        items: linhas.map((linha) => ({ quantity: linha.quantity, name: `${linha.productId}${linha.variantId ?? ""}` })),
       }),
       channelLabel: bloco.channelLabel,
       customerName: bloco.customerName,
@@ -155,7 +164,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
       paid: bloco.paid,
       paymentMethod: bloco.paymentMethod,
       notes: bloco.notas,
-      items: linhas.map((linha) => ({ productId: linha.productId, quantity: linha.quantity, unitPriceCents: linha.unitPriceCents })),
+      items: linhas.map((linha) => ({ productId: linha.productId, variantId: linha.variantId, quantity: linha.quantity, unitPriceCents: linha.unitPriceCents })),
     }));
 
     startTransition(async () => {
@@ -231,8 +240,8 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
           ) : (
             <ul className="divide-y divide-ink-100">
               {bloco.linhas.map((linha) => {
-                const produto = catalogo.find((item) => item.id === linha.productId);
-                const semEstoque = produto ? produto.stock < linha.quantity : false;
+                const escolhido = vendaveis.find((item) => item.productId === linha.productId && item.variantId === linha.variantId);
+                const semEstoque = escolhido ? escolhido.stock < linha.quantity : false;
                 return (
                   <li key={linha.key} className="px-5 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -243,14 +252,15 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
                     <div className="mt-2 grid gap-3 sm:grid-cols-[1fr_5rem_8rem]">
                       <div>
                         <label htmlFor={`prod-${linha.key}`} className="sr-only">Produto do catálogo</label>
-                        <select id={`prod-${linha.key}`} value={linha.productId} onChange={(e) => escolherProduto(bloco.key, linha.key, e.target.value)}
+                        <select id={`prod-${linha.key}`} value={linha.productId ? `${linha.productId}${linha.variantId ? `::${linha.variantId}` : ""}` : ""}
+                          onChange={(e) => escolherProduto(bloco.key, linha.key, e.target.value)}
                           className={`${campo} ${linha.productId ? "" : "border-red-300 bg-red-50"}`}>
                           <option value="">— escolha o produto —</option>
                           {linha.alternativas.map((alternativa) => (
-                            <option key={alternativa.productId} value={alternativa.productId}>{alternativa.name} · estoque {alternativa.stock}</option>
+                            <option key={`${alternativa.productId}::${alternativa.variantId ?? ""}`} value={`${alternativa.productId}${alternativa.variantId ? `::${alternativa.variantId}` : ""}`}>{alternativa.name} · estoque {alternativa.stock}</option>
                           ))}
                           <optgroup label="Catálogo completo">
-                            {catalogo.map((item) => <option key={`todos-${item.id}`} value={item.id}>{item.name} · estoque {item.stock}</option>)}
+                            {vendaveis.map((item) => <option key={`todos-${item.chave}`} value={item.chave}>{item.name} · estoque {item.stock}</option>)}
                           </optgroup>
                         </select>
                       </div>
@@ -285,7 +295,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
                       {linha.confidence === "duvidosa" && <span className="font-bold text-amber-700">Confira: há mais de um produto parecido.</span>}
                       {linha.confidence === "nenhuma" && !linha.productId && <span className="font-bold text-red-700">Não achei no catálogo. Escolha na lista ou remova a linha.</span>}
                       {!linha.unitPriceCents && linha.productId && <span className="ml-2 font-bold text-red-700">Informe o valor unitário.</span>}
-                      {semEstoque && <span className="ml-2 font-bold text-red-700">Estoque atual ({produto?.stock}) menor que a quantidade.</span>}
+                      {semEstoque && <span className="ml-2 font-bold text-red-700">Estoque atual ({escolhido?.stock}) menor que a quantidade.</span>}
                     </p>
                   </li>
                 );

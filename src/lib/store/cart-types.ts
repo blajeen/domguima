@@ -13,9 +13,15 @@ export interface CartItem {
   weight: number;
   /** Ex.: "110V" */
   variant?: string;
+  /**
+   * Id da opcao quando ela tem estoque e preco proprios. E o que o pedido usa
+   * para dar baixa na cor certa; `variant` sozinho e so o rotulo exibido.
+   */
+  variantId?: string;
 }
 
 /** Produto + variação são linhas distintas no carrinho (110V não é 220V). */
-export function lineKey(item: Pick<CartItem, "productId" | "variant">): string {
-  return item.variant ? `${item.productId}::${item.variant}` : item.productId;
+export function lineKey(item: Pick<CartItem, "productId" | "variant" | "variantId">): string {
+  const opcao = item.variantId ?? item.variant;
+  return opcao ? `${item.productId}::${opcao}` : item.productId;
 }

@@ -37,7 +37,7 @@ interface CartContextValue {
   isOpen: boolean;
   /** Id do item recém-adicionado, para o feedback visual do header. */
   lastAdded: string | null;
-  addItem: (product: Product, quantity?: number, variant?: string) => void;
+  addItem: (product: Product, quantity?: number, variant?: string, variantId?: string) => void;
   removeItem: (key: string) => void;
   setQuantity: (key: string, quantity: number) => void;
   clear: () => void;
@@ -67,20 +67,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addItem = useCallback(
-    (product: Product, quantity = 1, variant?: string) => {
-      if (product.stock <= 0) return;
+    (product: Product, quantity = 1, variant?: string, variantId?: string) => {
+      // Com variacao, quem manda em preco e estoque e a OPCAO escolhida, nao o
+      // produto: o produto so guarda o menor preco e a soma dos estoques.
+      const opcao = variantId ? product.variantOptions?.find((item) => item.id === variantId) : undefined;
+      const estoque = opcao ? opcao.stock : product.stock;
+      if (estoque <= 0) return;
 
       const incoming: CartItem = {
         productId: product.id,
         slug: product.slug,
         name: product.name,
         image: product.images[0]?.src ?? "",
-        price: product.price,
-        oldPrice: product.oldPrice,
+        price: opcao ? opcao.price : product.price,
+        oldPrice: opcao ? undefined : product.oldPrice,
         quantity,
-        stock: product.stock,
+        stock: estoque,
         weight: product.shipping.weight,
-        variant,
+        variant: opcao ? opcao.label : variant,
+        ...(opcao ? { variantId: opcao.id } : {}),
       };
 
       const key = lineKey(incoming);

@@ -5,7 +5,10 @@ import type { InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/
 
 export default async function InventoryPage() {
   const [products, movements] = await Promise.all([getAdminProducts(), getInventoryMovements(200)]);
-  const sheetProducts: InventorySheetProduct[] = products.map((product) => {
+  // Produto com variacao fica fora da planilha: o estoque dele e a soma das
+  // opcoes e so pode ser ajustado na ficha, opcao por opcao.
+  const comVariacao = products.filter((product) => (product.product_variants ?? []).some((linha) => linha.active));
+  const sheetProducts: InventorySheetProduct[] = products.filter((product) => !comVariacao.includes(product)).map((product) => {
     const image = [...(product.product_images ?? [])].sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order)[0];
     return {
       id: product.id, name: product.name, sku: product.sku, price_cents: product.price_cents,
@@ -28,6 +31,9 @@ export default async function InventoryPage() {
 
   return <>
     <AdminPageHeader eyebrow="Operação de estoque" title="Estoque" description="Uma visão rápida para conferir preços, corrigir quantidades e registrar as saídas do dia com segurança." />
+    {comVariacao.length > 0 && <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+      <strong>{comVariacao.length} produto(s) com variação não aparecem aqui.</strong> O estoque deles é a soma das opções — ajuste cor por cor na ficha do produto: {comVariacao.slice(0, 5).map((item) => item.name).join(", ")}{comVariacao.length > 5 ? "…" : ""}
+    </div>}
     <PanelCard className="!p-0"><InventorySpreadsheet products={sheetProducts} movements={sheetMovements} todayUnits={todayUnits} /></PanelCard>
   </>;
 }

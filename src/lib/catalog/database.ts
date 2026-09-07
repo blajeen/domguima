@@ -33,10 +33,18 @@ export async function loadPublicStoreSettings(): Promise<StoreSettings> {
 
 function toProduct(row: Record<string, unknown>): Product {
   const imageRows = (Array.isArray(row.product_images) ? row.product_images : []) as Array<Record<string, unknown>>;
+  // Só as opcoes ativas chegam na loja: opcao desligada e cor que saiu de
+  // linha, nao pode aparecer para o cliente escolher.
+  const variantRows = (Array.isArray(row.product_variants) ? row.product_variants : []) as Array<Record<string, unknown>>;
+  const variantOptions = variantRows
+    .filter((item) => item.active !== false)
+    .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+    .map((item) => ({ id: String(item.id), label: String(item.label), sku: String(item.sku), price: Number(item.price_cents), stock: Number(item.stock) }));
   const images: ProductImage[] = imageRows.sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)) || Number(a.sort_order) - Number(b.sort_order)).map((image) => ({ src: String(image.src), alt: String(image.alt ?? row.name) }));
   const shipping = (row.shipping ?? {}) as Product["shipping"];
   return {
     id: String(row.id), ...(row.external_id != null ? { externalId: Number(row.external_id) } : {}), name: String(row.name), slug: String(row.slug), description: String(row.description ?? ""), price: Number(row.price_cents), ...(row.old_price_cents != null ? { oldPrice: Number(row.old_price_cents) } : {}), categoryId: String(row.category_id), ...(row.brand ? { brand: String(row.brand) } : {}), sku: String(row.sku), stock: Number(row.stock), images,
+    ...(variantOptions.length ? { variantOptions, variantAxis: String(row.variant_axis ?? "Variação") } : {}),
     variants: Array.isArray(row.variants) ? row.variants as Product["variants"] : [], specifications: Array.isArray(row.specifications) ? row.specifications as Product["specifications"] : [],
     shipping: { weight: Number(shipping?.weight ?? 0), dimensions: { length: Number(shipping?.dimensions?.length ?? 0), width: Number(shipping?.dimensions?.width ?? 0), height: Number(shipping?.dimensions?.height ?? 0) }, origin: String(shipping?.origin ?? "Minas Gerais") },
     ...(row.rating != null ? { rating: Number(row.rating) } : {}), ...(row.review_count != null ? { reviewCount: Number(row.review_count) } : {}), ...(row.sold_count != null ? { soldCount: Number(row.sold_count) } : {}), isFeatured: Boolean(row.is_featured), isBestSeller: Boolean(row.is_best_seller), isOffer: Boolean(row.is_offer), isExclusive: Boolean(row.is_exclusive), tags: Array.isArray(row.tags) ? row.tags.map(String) : [], dataSource: (row.data_source ?? "loja-verified") as Product["dataSource"], ...(row.source_url ? { sourceUrl: String(row.source_url) } : {}), ...(row.card_installment ? { cardInstallment: row.card_installment as Product["cardInstallment"] } : {}), ...(row.seller_note ? { sellerNote: String(row.seller_note) } : {}), ...(row.published_at ? { publishedAt: String(row.published_at) } : {}), ...(row.last_stock_entry_at ? { lastStockEntryAt: String(row.last_stock_entry_at) } : {}), ...(row.last_sale_at ? { lastSaleAt: String(row.last_sale_at) } : {}), heroEnabled: row.hero_enabled !== false, heroPriority: Number(row.hero_priority ?? 0),

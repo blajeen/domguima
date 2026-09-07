@@ -21,6 +21,8 @@ export interface CreateOrderInput {
     quantity: number;
     expectedStock: number;
     unitPriceCents: number;
+    /** Obrigatorio quando o produto tem variacoes ativas. */
+    variantId?: string | null;
   }>;
 }
 
@@ -34,6 +36,8 @@ export interface CreatePendingOrderInput {
     productId: string;
     quantity: number;
     variant?: string | null;
+    /** Opcao escolhida quando o produto tem estoque por variacao. */
+    variantId?: string | null;
   }>;
 }
 
@@ -68,14 +72,19 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
   const prepared = input.items.map((item) => {
     const product = state.products.find((candidate) => candidate.id === item.productId && candidate.status !== "archived");
     if (!product) throw new OrderOperationError("Um dos produtos não está mais disponível.");
-    if (product.stock !== item.expectedStock) throw new OrderOperationError(`O estoque de “${product.name}” mudou. Atualize a página e confira o pedido.`);
-    if (item.quantity > product.stock) throw new OrderOperationError(`Há somente ${product.stock} unidade(s) de “${product.name}” em estoque.`);
-    if (item.unitPriceCents <= 0) throw new OrderOperationError(`Informe um valor válido para “${product.name}”.`);
+    const opcao = resolverVariacao(product, item.variantId);
+    const disponivel = opcao ? opcao.stock : product.stock;
+    const rotulo = opcao ? `${product.name} (${opcao.label})` : product.name;
+
+    if (disponivel !== item.expectedStock) throw new OrderOperationError(`O estoque de “${rotulo}” mudou. Atualize a página e confira o pedido.`);
+    if (item.quantity > disponivel) throw new OrderOperationError(`Há somente ${disponivel} unidade(s) de “${rotulo}” em estoque.`);
+    if (item.unitPriceCents <= 0) throw new OrderOperationError(`Informe um valor válido para “${rotulo}”.`);
     const lineTotal = item.unitPriceCents * item.quantity;
-    const gross = product.price_cents * item.quantity;
+    const gross = (opcao ? opcao.price_cents : product.price_cents) * item.quantity;
     const commissionUnit = commissionForUnit(item.unitPriceCents);
     return {
       product,
+      opcao,
       quantity: item.quantity,
       unitPriceCents: item.unitPriceCents,
       lineTotal,
@@ -94,12 +103,13 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     payment_method: "to_confirm",
     delivery_method: "shipping_to_confirm",
     customer: input.customer,
-    items: prepared.map(({ product, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
+    items: prepared.map(({ product, opcao, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
       product_id: product.id,
       product_name: product.name,
-      sku: product.sku,
+      sku: opcao?.sku ?? product.sku,
+      ...(opcao ? { variant: opcao.label, variant_id: opcao.id } : {}),
       quantity,
-      list_unit_price_cents: product.price_cents,
+      list_unit_price_cents: opcao?.price_cents ?? product.price_cents,
       unit_price_cents: unitPriceCents,
       discount_cents: Math.max(0, gross - lineTotal),
       line_total_cents: lineTotal,
@@ -123,6 +133,7 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     const commissionTotal = item.commissionUnit * item.quantity;
     return {
       product_id: item.product.id,
+      variant_id: item.opcao?.id ?? null,
       quantity_delta: -item.quantity,
       reason: "sale",
       note: `{{number}} · ${seller.name} · ${input.customer.name}`,
@@ -164,11 +175,23 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
   const prepared = input.items.map((item) => {
     const product = state.products.find((candidate) => candidate.id === item.productId && candidate.status === "active");
     if (!product) throw new OrderOperationError("Um dos produtos nao esta mais disponivel.");
-    if (item.quantity > product.stock) throw new OrderOperationError(`Ha somente ${product.stock} unidade(s) de “${product.name}”.`);
-    if (product.price_cents <= 0) throw new OrderOperationError(`O produto “${product.name}” esta sem preco valido.`);
-    const lineTotal = product.price_cents * item.quantity;
-    const commissionUnit = commissionForUnit(product.price_cents);
-    return { product, quantity: item.quantity, variant: item.variant ?? null, lineTotal, gross: lineTotal, commissionUnit };
+
+    // Com variacao, preco e estoque sao os da OPCAO. Aceitar o preco do
+    // produto aqui venderia a cor cara pelo valor da barata.
+    const opcoes = product.product_variants ?? [];
+    const opcao = item.variantId ? opcoes.find((linha) => linha.id === item.variantId && linha.active) : undefined;
+    if (opcoes.some((linha) => linha.active) && !opcao) {
+      throw new OrderOperationError(`Escolha uma opcao de “${product.name}” antes de finalizar.`);
+    }
+
+    const disponivel = opcao ? opcao.stock : product.stock;
+    const precoUnitario = opcao ? opcao.price_cents : product.price_cents;
+    if (item.quantity > disponivel) throw new OrderOperationError(`Ha somente ${disponivel} unidade(s) de “${product.name}”${opcao ? ` (${opcao.label})` : ""}.`);
+    if (precoUnitario <= 0) throw new OrderOperationError(`O produto “${product.name}” esta sem preco valido.`);
+
+    const lineTotal = precoUnitario * item.quantity;
+    const commissionUnit = commissionForUnit(precoUnitario);
+    return { product, opcao, quantity: item.quantity, variant: opcao?.label ?? item.variant ?? null, precoUnitario, lineTotal, gross: lineTotal, commissionUnit };
   });
 
   const now = new Date().toISOString();
@@ -181,14 +204,15 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     payment_method: input.paymentMethod,
     delivery_method: input.deliveryMethod,
     customer: input.customer,
-    items: prepared.map(({ product, quantity, variant, lineTotal, commissionUnit }) => ({
+    items: prepared.map(({ product, opcao, quantity, variant, precoUnitario, lineTotal, commissionUnit }) => ({
       product_id: product.id,
       product_name: product.name,
-      sku: product.sku,
+      sku: opcao?.sku ?? product.sku,
       variant,
+      ...(opcao ? { variant_id: opcao.id } : {}),
       quantity,
-      list_unit_price_cents: product.price_cents,
-      unit_price_cents: product.price_cents,
+      list_unit_price_cents: precoUnitario,
+      unit_price_cents: precoUnitario,
       discount_cents: 0,
       line_total_cents: lineTotal,
       commission_unit_cents: commissionUnit,
@@ -233,7 +257,9 @@ export async function confirmPendingSalesOrder(state: CatalogState, orderId: str
   const produtos = order.items.map((item) => {
     const product = state.products.find((candidate) => candidate.id === item.product_id && candidate.status !== "archived");
     if (!product) throw new OrderOperationError(`O produto “${item.product_name}” nao esta mais disponivel.`);
-    if (item.quantity > product.stock) throw new OrderOperationError(`Ha somente ${product.stock} unidade(s) de “${product.name}” no estoque.`);
+    const opcao = item.variant_id ? (product.product_variants ?? []).find((linha) => linha.id === item.variant_id) : undefined;
+    const disponivel = opcao ? opcao.stock : product.stock;
+    if (item.quantity > disponivel) throw new OrderOperationError(`Ha somente ${disponivel} unidade(s) de “${product.name}”${opcao ? ` (${opcao.label})` : ""} no estoque.`);
     return product;
   });
 
@@ -241,6 +267,7 @@ export async function confirmPendingSalesOrder(state: CatalogState, orderId: str
     const commissionTotal = item.commission_unit_cents * item.quantity;
     return {
       product_id: item.product_id,
+      variant_id: item.variant_id ?? null,
       quantity_delta: -item.quantity,
       reason: "sale",
       note: `${order.number} · ${seller.name} · ${order.customer.name}`,
@@ -303,6 +330,7 @@ export async function cancelSalesOrder(state: CatalogState, orderId: string, act
   const movements: LedgerMovementDraft[] = statusAnterior === "completed"
     ? order.items.map((item) => ({
         product_id: item.product_id,
+        variant_id: item.variant_id ?? null,
         quantity_delta: item.quantity,
         reason: "cancellation",
         note: `Cancelamento ${order.number}`,
@@ -351,6 +379,21 @@ async function gravarAtualizacao(
   }
 }
 
+/**
+ * Resolve a opcao escolhida e recusa o pedido que esqueceu de escolher.
+ *
+ * Deixar passar sem opcao seria pior que barrar: a baixa iria no estoque do
+ * produto, que e apenas a SOMA das variacoes e e reescrito pelo banco na
+ * proxima sincronizacao — a venda sumiria do estoque sem ninguem perceber.
+ */
+function resolverVariacao(product: CatalogState["products"][number], variantId?: string | null) {
+  const ativas = (product.product_variants ?? []).filter((linha) => linha.active);
+  if (!ativas.length) return undefined;
+  const opcao = variantId ? ativas.find((linha) => linha.id === variantId) : undefined;
+  if (!opcao) throw new OrderOperationError(`Escolha a variação de “${product.name}” antes de finalizar.`);
+  return opcao;
+}
+
 function traduzir(error: unknown, produtos: Array<{ id: string; name: string }>): unknown {
   if (!(error instanceof LedgerStockError)) return error;
   const nome = produtos.find((product) => product.id === error.productId)?.name ?? "um dos produtos";
@@ -375,7 +418,7 @@ export interface ChannelOrderInput {
   paymentMethod: OrderPaymentMethod;
   /** Endereco, recado e observacoes que vieram na mensagem e nao sao produto. */
   notes: string[];
-  items: Array<{ productId: string; quantity: number; unitPriceCents: number }>;
+  items: Array<{ productId: string; quantity: number; unitPriceCents: number; variantId?: string | null }>;
 }
 
 /**
@@ -404,14 +447,16 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
   const prepared = input.items.map((item) => {
     const product = state.products.find((candidate) => candidate.id === item.productId && candidate.status !== "archived");
     if (!product) throw new OrderOperationError("Um dos produtos do lançamento não existe mais no catálogo.");
+    const opcao = resolverVariacao(product, item.variantId);
     if (item.unitPriceCents <= 0) throw new OrderOperationError(`Informe um valor válido para “${product.name}”.`);
     const lineTotal = item.unitPriceCents * item.quantity;
     return {
       product,
+      opcao,
       quantity: item.quantity,
       unitPriceCents: item.unitPriceCents,
       lineTotal,
-      gross: product.price_cents * item.quantity,
+      gross: (opcao?.price_cents ?? product.price_cents) * item.quantity,
       commissionUnit: commissionForUnit(item.unitPriceCents),
     };
   });
@@ -431,12 +476,13 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
       cpf: "", phone: "", cep: "", street: "", number: "",
       complement: "", neighborhood: "", city: "", state: "",
     },
-    items: prepared.map(({ product, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
+    items: prepared.map(({ product, opcao, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
       product_id: product.id,
       product_name: product.name,
-      sku: product.sku,
+      sku: opcao?.sku ?? product.sku,
+      ...(opcao ? { variant: opcao.label, variant_id: opcao.id } : {}),
       quantity,
-      list_unit_price_cents: product.price_cents,
+      list_unit_price_cents: opcao?.price_cents ?? product.price_cents,
       unit_price_cents: unitPriceCents,
       discount_cents: Math.max(0, gross - lineTotal),
       line_total_cents: lineTotal,
@@ -461,6 +507,7 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     const commissionTotal = item.commissionUnit * item.quantity;
     return {
       product_id: item.product.id,
+      variant_id: item.opcao?.id ?? null,
       quantity_delta: -item.quantity,
       reason: "sale",
       note: `{{number}} · ${anotacao}${input.customerName ? ` · ${input.customerName}` : ""}`,

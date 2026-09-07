@@ -226,6 +226,8 @@ export function parseBulkSalesText(text: string, hoje: Date = new Date()): BulkP
 
 export interface BulkMatchCandidate {
   productId: string;
+  /** Preenchido quando o casamento foi com uma opcao (cor, voltagem). */
+  variantId: string | null;
   name: string;
   sku: string;
   stock: number;
@@ -248,6 +250,45 @@ export interface BulkMatchProduct {
   sku: string;
   stock: number;
   price_cents: number;
+  /** Opcoes ativas. Cada uma concorre sozinha no casamento. */
+  variants?: Array<{ id: string; label: string; sku: string; stock: number; price_cents: number }>;
+}
+
+/**
+ * Unidade que o casamento compara: o produto, ou cada opcao dele.
+ *
+ * "SUPORTE STARLINK PRETO" precisa cair na opcao Preto, nao no produto
+ * generico — e o rotulo da opcao entra no texto comparado justamente para
+ * isso. Sem separar, "PRETO" e "BRANCO" dariam a mesma nota.
+ */
+interface Comparavel {
+  chave: string;
+  productId: string;
+  variantId: string | null;
+  nomeExibido: string;
+  textoBusca: string;
+  sku: string;
+  stock: number;
+  priceCents: number;
+}
+
+function expandir(products: BulkMatchProduct[]): Comparavel[] {
+  return products.flatMap<Comparavel>((product) => {
+    const ativas = product.variants ?? [];
+    if (!ativas.length) {
+      return [{
+        chave: product.id, productId: product.id, variantId: null,
+        nomeExibido: product.name, textoBusca: `${product.name} ${product.sku}`,
+        sku: product.sku, stock: product.stock, priceCents: product.price_cents,
+      }];
+    }
+    return ativas.map((variante) => ({
+      chave: variante.id, productId: product.id, variantId: variante.id,
+      nomeExibido: `${product.name} · ${variante.label}`,
+      textoBusca: `${product.name} ${variante.label} ${variante.sku}`,
+      sku: variante.sku, stock: variante.stock, priceCents: variante.price_cents,
+    }));
+  });
 }
 
 function tokens(texto: string): string[] {
@@ -270,9 +311,10 @@ function ehCodigo(token: string): boolean {
 
 interface IndiceCatalogo {
   total: number;
-  /** Em quantos produtos cada token aparece. */
+  /** Em quantos itens comparaveis cada token aparece. */
   frequencia: Map<string, number>;
   documentos: Map<string, { tokens: Set<string>; codigos: string[] }>;
+  comparaveis: Comparavel[];
 }
 
 // Indexar 95 produtos a cada linha da mensagem seria desperdicio: o operador
@@ -283,19 +325,20 @@ function indexar(products: BulkMatchProduct[]): IndiceCatalogo {
   const guardado = indices.get(products);
   if (guardado) return guardado;
 
+  const comparaveis = expandir(products);
   const frequencia = new Map<string, number>();
   const documentos = new Map<string, { tokens: Set<string>; codigos: string[] }>();
 
-  for (const product of products) {
-    const conjunto = new Set(tokens(`${product.name} ${product.sku}`));
-    documentos.set(product.id, {
+  for (const item of comparaveis) {
+    const conjunto = new Set(tokens(item.textoBusca));
+    documentos.set(item.chave, {
       tokens: conjunto,
       codigos: [...conjunto].filter((token) => ehCodigo(token) && token.length >= 4),
     });
     for (const token of conjunto) frequencia.set(token, (frequencia.get(token) ?? 0) + 1);
   }
 
-  const indice = { total: products.length, frequencia, documentos };
+  const indice = { total: comparaveis.length, frequencia, documentos, comparaveis };
   indices.set(products, indice);
   return indice;
 }
@@ -325,8 +368,8 @@ function peso(token: string, indice: IndiceCatalogo): number {
  * Normalizar pelo maximo possivel deixa a nota comparavel entre linhas curtas
  * ("FONE OEX PRETO HS409") e longas ("AR CONDICIONADO CONSUL TRIPLE INV...").
  */
-function pontuar(busca: string[], produto: BulkMatchProduct, indice: IndiceCatalogo): number {
-  const doc = indice.documentos.get(produto.id);
+function pontuar(busca: string[], item: Comparavel, indice: IndiceCatalogo): number {
+  const doc = indice.documentos.get(item.chave);
   if (!doc || !busca.length) return 0;
 
   let obtido = 0;
@@ -382,14 +425,15 @@ export function matchBulkProduct(rawName: string, products: BulkMatchProduct[]):
   const indice = indexar(products);
   const busca = tokens(rawName);
 
-  const notas = products
-    .map((product) => ({
-      productId: product.id,
-      name: product.name,
-      sku: product.sku,
-      stock: product.stock,
-      priceCents: product.price_cents,
-      score: Math.round(pontuar(busca, product, indice) * 1000) / 1000,
+  const notas = indice.comparaveis
+    .map((item) => ({
+      productId: item.productId,
+      variantId: item.variantId,
+      name: item.nomeExibido,
+      sku: item.sku,
+      stock: item.stock,
+      priceCents: item.priceCents,
+      score: Math.round(pontuar(busca, item, indice) * 1000) / 1000,
     }))
     .filter((item) => item.score > 0.05)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));

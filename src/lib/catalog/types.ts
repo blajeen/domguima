@@ -37,6 +37,16 @@ export interface Shipping {
   origin: string;
 }
 
+/** Opcao vendavel: e ela que tem preco e estoque, nao o produto. */
+export interface ProductVariantOption {
+  id: string;
+  label: string;
+  sku: string;
+  /** Centavos. */
+  price: number;
+  stock: number;
+}
+
 export interface Product {
   id: string;
   /** ID na Shopee, quando o produto veio de lá. */
@@ -54,6 +64,13 @@ export interface Product {
   stock: number;
   images: ProductImage[];
   variants?: ProductVariant[];
+  /** Nome do eixo quando o produto tem variacoes com estoque proprio. */
+  variantAxis?: string;
+  /**
+   * Opcoes vendaveis, cada uma com preco e estoque proprios. Quando existe,
+   * `price` e o menor preco entre elas e `stock` e a soma.
+   */
+  variantOptions?: ProductVariantOption[];
   specifications: Specification[];
   shipping: Shipping;
   /** 0–5. Ausente quando o produto ainda não tem avaliação real. */

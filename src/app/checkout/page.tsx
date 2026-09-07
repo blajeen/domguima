@@ -171,7 +171,7 @@ export default function CheckoutPage() {
           notes: form.notes,
           paymentMethod: form.paymentMethod,
           deliveryMethod: isUberlandia(form.city) ? "uberlandia_delivery" : "shipping_to_confirm",
-          items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, variant: item.variant })),
+          items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, variant: item.variant, variantId: item.variantId })),
         }),
       });
       const data = (await response.json()) as { message?: string; orderNumber?: string };

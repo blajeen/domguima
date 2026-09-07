@@ -33,6 +33,7 @@ export function applyInventoryCounts(
   const changes = updates.map((update) => {
     const product = state.products.find((item) => item.id === update.productId);
     if (!product) throw new InventoryOperationError("Um dos produtos não existe mais. Atualize a página e tente novamente.");
+    assertSemVariacao(product);
     if (product.stock !== update.expectedStock) {
       throw new InventoryOperationError(`A planilha ficou desatualizada para “${product.name}”. Atualize a página antes de salvar.`);
     }
@@ -86,6 +87,7 @@ export function applyDailySales(
   const operations = updates.map((update) => {
     const product = state.products.find((item) => item.id === update.productId);
     if (!product) throw new InventoryOperationError("Um dos produtos não existe mais. Atualize a página e tente novamente.");
+    assertSemVariacao(product);
     if (product.stock !== update.expectedStock) {
       throw new InventoryOperationError(`A planilha ficou desatualizada para “${product.name}”. Atualize a página antes de registrar as saídas.`);
     }
@@ -113,6 +115,17 @@ export function applyDailySales(
   }
   appendAudit(state, actorId, "inventory.daily_sales", "inventory", batchId, null, { products: operations.length, units, note });
   return { products: operations.length, units, alreadyApplied: false };
+}
+
+/**
+ * Produto com variacao tem estoque por opcao, e `products.stock` e apenas a
+ * SOMA delas, recalculada pelo banco. Aceitar uma contagem aqui gravaria um
+ * numero que a proxima sincronizacao apagaria — a correcao sumiria sem aviso.
+ */
+function assertSemVariacao(product: CatalogState["products"][number]) {
+  if ((product.product_variants ?? []).some((linha) => linha.active)) {
+    throw new InventoryOperationError(`“${product.name}” tem variações. Ajuste o estoque de cada opção na ficha do produto.`);
+  }
 }
 
 function assertUniqueProductIds(ids: string[]) {

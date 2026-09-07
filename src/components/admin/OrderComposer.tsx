@@ -15,11 +15,49 @@ export interface OrderProductOption {
   stock: number;
   price_cents: number;
   category_name: string;
+  /** Opcoes ativas, quando o produto vende por cor/voltagem/tamanho. */
+  variants?: Array<{ id: string; label: string; sku: string; stock: number; price_cents: number }>;
 }
 
-interface OrderLine extends OrderProductOption {
+/**
+ * O que de fato se vende: o produto, ou cada uma de suas opcoes.
+ *
+ * Produto com variacao nao pode ser adicionado "inteiro" — a baixa iria no
+ * estoque somado e o banco a sobrescreveria na proxima sincronizacao.
+ */
+interface ItemVendavel {
+  key: string;
+  productId: string;
+  variantId: string | null;
+  name: string;
+  sku: string;
+  stock: number;
+  price_cents: number;
+  category_name: string;
+}
+
+interface OrderLine extends ItemVendavel {
   quantity: number;
   unitPriceCents: number;
+}
+
+function expandirVendaveis(products: OrderProductOption[]): ItemVendavel[] {
+  return products.flatMap<ItemVendavel>((product) => {
+    const ativas = product.variants ?? [];
+    if (!ativas.length) {
+      return [{ key: product.id, productId: product.id, variantId: null, name: product.name, sku: product.sku, stock: product.stock, price_cents: product.price_cents, category_name: product.category_name }];
+    }
+    return ativas.map((variante) => ({
+      key: variante.id,
+      productId: product.id,
+      variantId: variante.id,
+      name: `${product.name} · ${variante.label}`,
+      sku: variante.sku,
+      stock: variante.stock,
+      price_cents: variante.price_cents,
+      category_name: product.category_name,
+    }));
+  });
 }
 
 const emptyCustomer = { name: "", cpf: "", phone: "", cep: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "" };
@@ -37,11 +75,13 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
   const [cepStatus, setCepStatus] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  const vendaveis = useMemo(() => expandirVendaveis(products), [products]);
+
   const matches = useMemo(() => {
     const term = normalize(query);
     if (!term) return [];
-    return products.filter((product) => product.stock > 0 && normalize(`${product.name} ${product.sku} ${product.category_name}`).includes(term) && !lines.some((line) => line.id === product.id)).slice(0, 8);
-  }, [lines, products, query]);
+    return vendaveis.filter((item) => item.stock > 0 && normalize(`${item.name} ${item.sku} ${item.category_name}`).includes(term) && !lines.some((line) => line.key === item.key)).slice(0, 8);
+  }, [lines, vendaveis, query]);
 
   const gross = lines.reduce((sum, line) => sum + line.price_cents * line.quantity, 0);
   const total = lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
@@ -54,13 +94,13 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
     setFeedback({});
   }
 
-  function addProduct(product: OrderProductOption) {
-    setLines((current) => [...current, { ...product, quantity: 1, unitPriceCents: product.price_cents }]);
+  function addProduct(item: ItemVendavel) {
+    setLines((current) => [...current, { ...item, quantity: 1, unitPriceCents: item.price_cents }]);
     setQuery("");
   }
 
-  function changeLine(id: string, change: Partial<Pick<OrderLine, "quantity" | "unitPriceCents">>) {
-    setLines((current) => current.map((line) => line.id === id ? { ...line, ...change, quantity: Math.max(1, Math.min(line.stock, change.quantity ?? line.quantity)), unitPriceCents: Math.max(1, change.unitPriceCents ?? line.unitPriceCents) } : line));
+  function changeLine(key: string, change: Partial<Pick<OrderLine, "quantity" | "unitPriceCents">>) {
+    setLines((current) => current.map((line) => line.key === key ? { ...line, ...change, quantity: Math.max(1, Math.min(line.stock, change.quantity ?? line.quantity)), unitPriceCents: Math.max(1, change.unitPriceCents ?? line.unitPriceCents) } : line));
     setFeedback({});
   }
 
@@ -95,7 +135,7 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
         sellerId,
         customer: { ...customer, cpf: onlyDigits(customer.cpf), phone: onlyDigits(customer.phone), cep: onlyDigits(customer.cep) },
         notes,
-        items: lines.map((line) => ({ productId: line.id, quantity: line.quantity, expectedStock: line.stock, unitPriceCents: line.unitPriceCents })),
+        items: lines.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, expectedStock: line.stock, unitPriceCents: line.unitPriceCents })),
       });
       setFeedback(result);
       if (result.ok && result.orderId) router.push(`/painel/pedidos?criado=${encodeURIComponent(result.orderId)}`);
@@ -122,8 +162,8 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
 
       <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
         <div><h2 className="text-lg font-black">Itens do pedido</h2><p className="mt-1 text-xs text-ink-500">Busque pelo nome ou SKU. O preço pode ser ajustado antes de finalizar.</p></div>
-        <div className="relative mt-5"><label className={labelClass}>Adicionar produto<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: ferro, Starlink ou SKU" className={fieldClass} /></label>{query && <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl">{matches.map((product) => <button key={product.id} type="button" onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-4 border-b border-ink-100 px-4 py-3 text-left last:border-0 hover:bg-gold-50"><span><strong className="block text-sm">{product.name}</strong><small className="text-ink-500">SKU {product.sku} · {product.stock} em estoque</small></span><b className="shrink-0 text-sm">{formatPrice(product.price_cents)}</b></button>)}{!matches.length && <p className="px-4 py-5 text-center text-sm text-ink-500">Nenhum produto disponível encontrado.</p>}</div>}</div>
-        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wide text-ink-400"><tr><th className="py-2">Produto</th><th>Estoque</th><th>Quantidade</th><th>Preço tabela</th><th>Preço aplicado</th><th>Total</th><th /></tr></thead><tbody className="divide-y divide-ink-100">{lines.map((line) => <tr key={line.id}><td className="py-3"><strong className="block">{line.name}</strong><small className="text-ink-400">SKU {line.sku}</small></td><td>{line.stock}</td><td><div className="inline-flex overflow-hidden rounded-lg border border-ink-200"><button type="button" onClick={() => changeLine(line.id, { quantity: line.quantity - 1 })} className="h-9 w-9 font-bold">−</button><input type="number" min={1} max={line.stock} value={line.quantity} onChange={(event) => changeLine(line.id, { quantity: Number(event.target.value) })} className="h-9 w-12 border-x border-ink-200 text-center font-bold outline-none" /><button type="button" onClick={() => changeLine(line.id, { quantity: line.quantity + 1 })} className="h-9 w-9 font-bold">+</button></div></td><td>{formatPrice(line.price_cents)}</td><td><div className="flex items-center rounded-lg border border-ink-200 px-2"><span className="text-xs text-ink-400">R$</span><input type="number" min="0.01" step="0.01" value={(line.unitPriceCents / 100).toFixed(2)} onChange={(event) => changeLine(line.id, { unitPriceCents: Math.round(Number(event.target.value) * 100) })} className="h-9 w-24 px-2 font-bold outline-none" /></div></td><td className="font-black">{formatPrice(line.unitPriceCents * line.quantity)}</td><td><button type="button" onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))} className="text-xs font-bold text-red-600">Remover</button></td></tr>)}</tbody></table>{!lines.length && <div className="rounded-xl border border-dashed border-ink-200 py-10 text-center text-sm text-ink-500">Pesquise um produto acima para começar o pedido.</div>}</div>
+        <div className="relative mt-5"><label className={labelClass}>Adicionar produto<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: ferro, Starlink ou SKU" className={fieldClass} /></label>{query && <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl">{matches.map((item) => <button key={item.key} type="button" onClick={() => addProduct(item)} className="flex w-full items-center justify-between gap-4 border-b border-ink-100 px-4 py-3 text-left last:border-0 hover:bg-gold-50"><span><strong className="block text-sm">{item.name}</strong><small className="text-ink-500">SKU {item.sku} · {item.stock} em estoque</small></span><b className="shrink-0 text-sm">{formatPrice(item.price_cents)}</b></button>)}{!matches.length && <p className="px-4 py-5 text-center text-sm text-ink-500">Nenhum produto disponível encontrado.</p>}</div>}</div>
+        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-[11px] uppercase tracking-wide text-ink-400"><tr><th className="py-2">Produto</th><th>Estoque</th><th>Quantidade</th><th>Preço tabela</th><th>Preço aplicado</th><th>Total</th><th /></tr></thead><tbody className="divide-y divide-ink-100">{lines.map((line) => <tr key={line.key}><td className="py-3"><strong className="block">{line.name}</strong><small className="text-ink-400">SKU {line.sku}</small></td><td>{line.stock}</td><td><div className="inline-flex overflow-hidden rounded-lg border border-ink-200"><button type="button" onClick={() => changeLine(line.key, { quantity: line.quantity - 1 })} className="h-9 w-9 font-bold">−</button><input type="number" min={1} max={line.stock} value={line.quantity} onChange={(event) => changeLine(line.key, { quantity: Number(event.target.value) })} className="h-9 w-12 border-x border-ink-200 text-center font-bold outline-none" /><button type="button" onClick={() => changeLine(line.key, { quantity: line.quantity + 1 })} className="h-9 w-9 font-bold">+</button></div></td><td>{formatPrice(line.price_cents)}</td><td><div className="flex items-center rounded-lg border border-ink-200 px-2"><span className="text-xs text-ink-400">R$</span><input type="number" min="0.01" step="0.01" value={(line.unitPriceCents / 100).toFixed(2)} onChange={(event) => changeLine(line.key, { unitPriceCents: Math.round(Number(event.target.value) * 100) })} className="h-9 w-24 px-2 font-bold outline-none" /></div></td><td className="font-black">{formatPrice(line.unitPriceCents * line.quantity)}</td><td><button type="button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} className="text-xs font-bold text-red-600">Remover</button></td></tr>)}</tbody></table>{!lines.length && <div className="rounded-xl border border-dashed border-ink-200 py-10 text-center text-sm text-ink-500">Pesquise um produto acima para começar o pedido.</div>}</div>
       </section>
     </div>
 

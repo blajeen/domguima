@@ -27,6 +27,7 @@ const publicOrderInput = z.object({
     productId: z.string().trim().min(1).max(200),
     quantity: z.number().int().min(1).max(100),
     variant: z.string().trim().max(100).nullable().optional(),
+    variantId: z.string().trim().max(120).nullable().optional(),
   })).min(1).max(50),
 });
 

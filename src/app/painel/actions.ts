@@ -9,7 +9,7 @@ import { copyCatalogImage, createInitialState, deleteCatalogImage, mutateCatalog
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
-import type { ActionState, AdminProductRow, StoreSettings } from "@/lib/admin/types";
+import type { ActionState, AdminProductRow, AdminProductVariant, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
@@ -47,6 +47,7 @@ const orderInput = z.object({
   notes: z.string().trim().max(500),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
+    variantId: z.string().trim().max(120).nullable().optional(),
     quantity: z.number().int().min(1).max(10_000),
     expectedStock: z.number().int().min(0),
     unitPriceCents: z.number().int().positive().max(100_000_000),
@@ -160,10 +161,46 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
       categories: { name: state.categories.find((category) => category.id === value.categoryId)?.name ?? value.categoryId },
     };
 
+    // Variacoes: quando existem, elas mandam no estoque e no preco-base.
+    const variacoes = parseVariantRows(formData.get("variantRows"), id);
+    const anteriores = new Map((before?.product_variants ?? []).map((item) => [item.id, item]));
+    if (variacoes) {
+      const ativas = variacoes.rows.filter((linha) => linha.active);
+      product.product_variants = variacoes.rows;
+      product.variant_axis = variacoes.axis;
+      // `stock` do produto e a soma das variacoes ativas — mesma conta que o
+      // banco refaz em sync_product_stock. Manter aqui evita a lista do painel
+      // mostrar o numero velho ate a proxima leitura.
+      product.stock = ativas.reduce((soma, linha) => soma + linha.stock, 0);
+      // O preco do produto passa a ser o menor entre as opcoes: e o que a
+      // vitrine mostra como "a partir de".
+      if (ativas.length) product.price_cents = Math.min(...ativas.map((linha) => linha.price_cents));
+      // A lista de rotulos alimenta a vitrine, que ja sabe exibir variants.
+      product.variants = [{ name: variacoes.axis, options: ativas.map((linha) => linha.label) }];
+    } else {
+      product.product_variants = [];
+      product.variant_axis = null;
+    }
+
     await mutateCatalogState((draft) => {
       const index = draft.products.findIndex((item) => item.id === id);
       if (index >= 0) draft.products[index] = product; else draft.products.push(product);
-      if (!before && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now });
+      if (!before && !variacoes && value.stock > 0) draft.inventoryMovements.unshift({ id: randomUUID(), product_id: id, quantity_delta: value.stock, stock_before: 0, stock_after: value.stock, reason: "initial_import", note: "Estoque informado no cadastro", commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now });
+
+      // Mudanca de estoque de variacao vira movimento, igual a contagem da
+      // planilha. Sem isso o historico ficaria cego justamente no caminho que
+      // o lojista mais usa para acertar quantidade de cor e voltagem.
+      for (const linha of variacoes?.rows ?? []) {
+        const antes = anteriores.get(linha.id)?.stock ?? 0;
+        if (antes === linha.stock) continue;
+        draft.inventoryMovements.unshift({
+          id: randomUUID(), product_id: id, variant_id: linha.id,
+          quantity_delta: linha.stock - antes, stock_before: antes, stock_after: linha.stock,
+          reason: anteriores.has(linha.id) ? "correction" : "initial_import",
+          note: `${variacoes!.axis}: ${linha.label}`,
+          commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now,
+        });
+      }
       draft.operations.product_meta[id] = { ncm, cost_cents: costCents, model, gtin };
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
@@ -445,6 +482,48 @@ function audit(state: CatalogState, actorId: string, action: string, entityType:
 
 function splitCommaList(value: FormDataEntryValue | null): string[] { return String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean); }
 function parseSpecifications(value: FormDataEntryValue | null) { return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [label, ...rest] = line.split(":"); return { label: label.trim(), value: rest.join(":").trim() }; }).filter((item) => item.label && item.value); }
+const variantRowInput = z.object({
+  id: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(60),
+  sku: z.string().trim().min(2).max(60),
+  priceCents: z.number().int().positive().max(100_000_000),
+  stock: z.number().int().min(0).max(1_000_000),
+  active: z.boolean(),
+});
+
+/**
+ * Le a grade de variacoes enviada pela ficha do produto.
+ *
+ * Devolve `null` quando o produto nao tem variacao — diferente de lista vazia,
+ * que significaria "tinha e o lojista apagou todas".
+ */
+function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { axis: string; rows: AdminProductVariant[] } | null {
+  const texto = String(raw ?? "").trim();
+  if (!texto) return null;
+  let bruto: unknown;
+  try { bruto = JSON.parse(texto); } catch { return null; }
+  const parsed = z.object({
+    axis: z.string().trim().min(1).max(40),
+    rows: z.array(variantRowInput).min(1).max(60),
+  }).safeParse(bruto);
+  if (!parsed.success) return null;
+
+  const vistos = new Set<string>();
+  const rows: AdminProductVariant[] = [];
+  for (const [indice, linha] of parsed.data.rows.entries()) {
+    const sku = linha.sku.toUpperCase();
+    // SKU repetido dentro do mesmo produto viraria erro de indice unico no
+    // banco depois de a tela ja ter dito "salvo".
+    if (vistos.has(sku)) continue;
+    vistos.add(sku);
+    rows.push({
+      id: linha.id, product_id: productId, label: linha.label, sku,
+      price_cents: linha.priceCents, stock: linha.stock, sort_order: indice, active: linha.active,
+    });
+  }
+  return rows.length ? { axis: parsed.data.axis, rows } : null;
+}
+
 function parseVariants(value: FormDataEntryValue | null) { return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [name, ...rest] = line.split(":"); return { name: name.trim(), options: rest.join(":").split(",").map((item) => item.trim()).filter(Boolean) }; }).filter((item) => item.name && item.options.length); }
 function validationState(errors: Record<string, string[] | undefined>): ActionState { return { message: "Revise os campos destacados.", errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string[]] => Boolean(entry[1]))) }; }
 function catalogStorageError(error: unknown): ActionState {
@@ -474,6 +553,7 @@ const bulkBlockInput = z.object({
   notes: z.array(z.string().trim().max(400)).max(40),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
+    variantId: z.string().trim().max(120).nullable().optional(),
     quantity: z.number().int().min(1).max(1_000),
     unitPriceCents: z.number().int().positive().max(100_000_000),
   })).min(1).max(100),
@@ -522,7 +602,7 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
         paid: block.paid,
         paymentMethod: block.paymentMethod,
         notes: block.notes,
-        items: block.items,
+        items: block.items.map((item) => ({ productId: item.productId, variantId: item.variantId ?? null, quantity: item.quantity, unitPriceCents: item.unitPriceCents })),
       }, owner.id);
       created.push({ requestId: block.requestId, number: order.number, customerName: block.customerName });
     } catch (error) {
@@ -619,11 +699,26 @@ export async function duplicateProductAction(formData: FormData) {
       };
     }));
 
+    // Variacoes ganham id e SKU proprios: o indice unico de sku recusaria a
+    // copia, e id repetido faria as duas fichas apontarem para a mesma linha.
+    const skusUsados = new Set([
+      ...atual.products.map((item) => item.sku.toUpperCase()),
+      ...atual.products.flatMap((item) => (item.product_variants ?? []).map((linha) => linha.sku.toUpperCase())),
+    ]);
+    const baseSku = proximoSku ?? `${original.sku}-COPIA`;
+    const variacoes = (original.product_variants ?? []).map((linha, indice) => {
+      let sku = `${baseSku}-${linha.label.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 12) || indice + 1}`;
+      for (let n = 2; skusUsados.has(sku.toUpperCase()); n += 1) sku = `${baseSku}-${indice + 1}-${n}`;
+      skusUsados.add(sku.toUpperCase());
+      return { ...linha, id: randomUUID(), product_id: novoId, sku, stock: 0 };
+    });
+
     const agora = new Date().toISOString();
     const copia: AdminProductRow = {
       ...original,
       id: novoId,
       slug: novoSlug,
+      product_variants: variacoes,
       name: `${original.name} (cópia)`,
       sku: proximoSku ?? `${original.sku}-COPIA`,
       external_id: null,
@@ -649,6 +744,7 @@ export async function duplicateProductAction(formData: FormData) {
         copia.slug = slugLivre(`${copia.slug}-${randomUUID().slice(0, 4)}`, new Set(state.products.map((item) => item.slug)));
         copia.id = copia.slug;
         for (const imagem of copia.product_images ?? []) imagem.product_id = copia.id;
+        for (const linha of copia.product_variants ?? []) linha.product_id = copia.id;
       }
       state.products.unshift(copia);
       audit(state, owner.id, "product.duplicated", "product", copia.id, { id: original.id, name: original.name, sku: original.sku }, { id: copia.id, name: copia.name, sku: copia.sku });

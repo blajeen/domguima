@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
-import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, SalesOrderRecord, StoreSettings } from "./types";
+import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, StoreSettings } from "./types";
 
 export interface InventoryMovementRecord {
   id: string;
@@ -20,6 +20,8 @@ export interface InventoryMovementRecord {
   commission_cents: number;
   actor_id: string;
   created_at: string;
+  /** Preenchido quando a baixa foi de uma variacao especifica, nao do produto. */
+  variant_id?: string | null;
   /** Idempotency key for a daily sales batch, when applicable. */
   batch_id?: string;
   products?: { name: string; sku: string };
@@ -52,6 +54,24 @@ const LOCAL_FILE = join(process.cwd(), "data", "admin-catalog.json");
 const PRODUCT_BUCKET = "ecommerce-products";
 let remoteStatePromise: Promise<CatalogState> | null = null;
 let remoteStateExpiresAt = 0;
+
+/**
+ * Falso enquanto a migracao de variacoes nao foi aplicada ao banco.
+ *
+ * Serve para o painel avisar em vez de deixar o lojista montar uma grade de
+ * cores que nao teria onde ser gravada. E atualizado a cada leitura.
+ */
+let variantesSuportadas = true;
+
+export function areVariantsSupported(): boolean {
+  return variantesSuportadas;
+}
+
+/** Tabela/coluna que ainda nao existe no banco, e nao uma falha de rede. */
+function ehTabelaAusente(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST205" || error.code === "42P01" || /could not find the table/i.test(error.message ?? "");
+}
 
 export function createInitialState(): CatalogState {
   return {
@@ -220,11 +240,12 @@ export async function deleteCatalogImage(storagePath: string): Promise<void> {
 
 async function readSupabaseCatalogState(): Promise<CatalogState> {
   const supabase = createSupabaseAdminClient();
-  const [settingsResult, categoriesResult, productsResult, imagesResult, movementsResult, auditResult, ordersResult] = await Promise.all([
+  const [settingsResult, categoriesResult, productsResult, imagesResult, variantsResult, movementsResult, auditResult, ordersResult] = await Promise.all([
     supabase.from("store_settings").select("*").eq("id", "store").maybeSingle(),
     supabase.from("categories").select("*").order("sort_order", { ascending: true }),
     supabase.from("products").select("*").order("updated_at", { ascending: false }),
     supabase.from("product_images").select("*").order("sort_order", { ascending: true }),
+    supabase.from("product_variants").select("*").order("sort_order", { ascending: true }),
     supabase.from("inventory_movements").select("*").order("created_at", { ascending: false }).limit(200),
     supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(1_000),
     // Pedidos agora tem tabela propria. O limite aqui e so da leitura: como
@@ -233,7 +254,17 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
     // financeiros somam esta lista, e um teto apertado daria numero errado.
     supabase.from("sales_orders").select("*").order("created_at", { ascending: false }).limit(5_000),
   ]);
-  const firstError = [settingsResult, categoriesResult, productsResult, imagesResult, movementsResult, auditResult, ordersResult].find((result) => result.error)?.error;
+  // A tabela de variacoes e tratada a parte: enquanto a migracao nao roda, a
+  // ausencia dela nao pode derrubar a leitura do catalogo inteiro. Qualquer
+  // OUTRO erro dela continua fatal de proposito — devolver lista vazia num
+  // erro transitorio faria o proximo salvamento apagar as variacoes de todos
+  // os produtos, porque o banco remove o que nao vem no payload.
+  variantesSuportadas = !ehTabelaAusente(variantsResult.error);
+  if (variantsResult.error && !variantesSuportadas) {
+    console.warn("Variacoes indisponiveis: aplique a migracao 202609060001_variacoes.sql.");
+  }
+  const firstError = [settingsResult, categoriesResult, productsResult, imagesResult, movementsResult, auditResult, ordersResult].find((result) => result.error)?.error
+    ?? (variantesSuportadas ? variantsResult.error : null);
   if (firstError) throw new Error(`Nao foi possivel ler o catalogo no Supabase: ${firstError.message}`);
 
   if (!settingsResult.data && !categoriesResult.data?.length && !productsResult.data?.length) return createInitialState();
@@ -249,9 +280,16 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
   const settingsRow = settingsResult.data as { catalog_enabled?: boolean; settings?: Partial<StoreSettings> & { __operations?: AdminOperationsState }; updated_at?: string } | null;
   const persistedSettings = settingsRow?.settings ?? {};
   const { __operations, ...publicSettings } = persistedSettings;
+  const variantsByProduct = new Map<string, AdminProductVariant[]>();
+  for (const variant of (variantsResult.data ?? []) as AdminProductVariant[]) {
+    const lista = variantsByProduct.get(variant.product_id) ?? [];
+    lista.push(variant);
+    variantsByProduct.set(variant.product_id, lista);
+  }
   const products = ((productsResult.data ?? []) as AdminProductRow[]).map((product) => ({
     ...product,
     product_images: imagesByProduct.get(product.id) ?? [],
+    product_variants: variantsByProduct.get(product.id) ?? [],
     categories: { name: categoryNames.get(product.category_id) ?? product.category_id },
   }));
 
@@ -341,6 +379,8 @@ const NUMERO_DO_PEDIDO = "{{number}}";
 export interface LedgerMovementDraft {
   id?: string;
   product_id: string;
+  /** Quando presente, a baixa sai do estoque desta opcao, nao do produto. */
+  variant_id?: string | null;
   /** Negativo baixa estoque, positivo devolve. */
   quantity_delta: number;
   reason: string;
@@ -466,7 +506,8 @@ export async function updateOrderRecord(
  * dois pedidos com itens em comum travem em ordem invertida (deadlock).
  */
 function ordenarPorProduto(movements: LedgerMovementDraft[]): LedgerMovementDraft[] {
-  return [...movements].sort((a, b) => a.product_id.localeCompare(b.product_id));
+  return [...movements].sort((a, b) =>
+    a.product_id.localeCompare(b.product_id) || (a.variant_id ?? "").localeCompare(b.variant_id ?? ""));
 }
 
 /** Reconhece as excecoes que `apply_order_stock` levanta e devolve algo tratavel. */
@@ -497,11 +538,22 @@ function aplicarMovimentosLocais(state: CatalogState, movements: LedgerMovementD
   for (const movement of movements) {
     const product = state.products.find((item) => item.id === movement.product_id);
     if (!product) throw new LedgerStockError("missing", movement.product_id);
-    const antes = product.stock;
+
+    // Mesma regra do banco: com variacao, o saldo mexido e o da opcao, e o
+    // estoque do produto vira a soma das opcoes ativas.
+    const opcao = movement.variant_id ? (product.product_variants ?? []).find((item) => item.id === movement.variant_id) : undefined;
+    if (movement.variant_id && !opcao) throw new LedgerStockError("missing", movement.product_id);
+
+    const antes = opcao ? opcao.stock : product.stock;
     const depois = antes + movement.quantity_delta;
     if (depois < 0) throw new LedgerStockError("insufficient", movement.product_id);
 
-    product.stock = depois;
+    if (opcao) {
+      opcao.stock = depois;
+      product.stock = (product.product_variants ?? []).filter((item) => item.active).reduce((soma, item) => soma + item.stock, 0);
+    } else {
+      product.stock = depois;
+    }
     product.updated_at = agora;
     if (movement.quantity_delta < 0) product.last_sale_at = agora;
     if (movement.quantity_delta > 0) product.last_stock_entry_at = agora;
@@ -509,6 +561,7 @@ function aplicarMovimentosLocais(state: CatalogState, movements: LedgerMovementD
     state.inventoryMovements.unshift({
       id: movement.id ?? randomUUID(),
       product_id: movement.product_id,
+      variant_id: movement.variant_id ?? null,
       quantity_delta: movement.quantity_delta,
       stock_before: antes,
       stock_after: depois,

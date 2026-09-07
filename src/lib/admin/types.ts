@@ -68,6 +68,8 @@ export interface SalesOrderItem {
   product_name: string;
   sku: string;
   variant?: string | null;
+  /** Opcao vendida, quando o produto tem estoque por variacao. */
+  variant_id?: string | null;
   quantity: number;
   list_unit_price_cents: number;
   unit_price_cents: number;
@@ -147,6 +149,13 @@ export interface AdminProductRow {
   created_at: string;
   updated_at: string;
   product_images?: AdminProductImage[];
+  /** Nome do eixo escolhido pelo lojista: "Cor", "Voltagem", "Tamanho". */
+  variant_axis?: string | null;
+  /**
+   * Opcoes com preco, estoque e SKU proprios. Quando existe pelo menos uma,
+   * `stock` do produto e a SOMA delas — mantida pelo banco.
+   */
+  product_variants?: AdminProductVariant[];
   categories?: { name: string } | null;
 }
 
@@ -178,6 +187,24 @@ export interface InventorySheetMovement {
   reason: string;
   note: string | null;
   created_at: string;
+}
+
+/**
+ * Uma opcao de variacao com preco, estoque e SKU proprios.
+ *
+ * Antes disso, "variants" era so um rotulo no produto e a loja acabou com tres
+ * cadastros separados para as tres cores do mesmo suporte.
+ */
+export interface AdminProductVariant {
+  id: string;
+  product_id: string;
+  /** Rotulo da opcao: "Preto", "220V", "GG". */
+  label: string;
+  sku: string;
+  price_cents: number;
+  stock: number;
+  sort_order: number;
+  active: boolean;
 }
 
 export interface AdminProductImage {

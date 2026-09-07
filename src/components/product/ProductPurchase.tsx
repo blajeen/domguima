@@ -27,20 +27,34 @@ export function ProductPurchase({
   const router = useRouter();
   const { addItem, openCart } = useCart();
 
-  const variantGroup = product.variants?.[0];
+  // Opcoes com estoque proprio tem prioridade sobre o rotulo antigo, que
+  // continua servindo para produto sem variacao de verdade.
+  const opcoes = product.variantOptions ?? [];
+  const temOpcoes = opcoes.length > 0;
+  const variantGroup = temOpcoes ? undefined : product.variants?.[0];
+
+  const [variantId, setVariantId] = useState<string | undefined>(
+    // Comeca na primeira opcao COM estoque: abrir numa cor esgotada faria o
+    // cliente ver "indisponivel" num produto que tem outras cores disponiveis.
+    opcoes.find((item) => item.stock > 0)?.id ?? opcoes[0]?.id,
+  );
   const [variant, setVariant] = useState<string | undefined>(
     variantGroup?.options[0],
   );
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
 
-  const outOfStock = product.stock <= 0;
-  const discount = discountPercent(product.price, product.oldPrice);
+  const opcao = opcoes.find((item) => item.id === variantId);
+  const preco = opcao ? opcao.price : product.price;
+  const estoque = opcao ? opcao.stock : product.stock;
+
+  const outOfStock = estoque <= 0;
+  const discount = discountPercent(preco, opcao ? undefined : product.oldPrice);
   // Parcelamento real informado pelo lojista (com taxa) tem prioridade sobre
   // o cálculo "sem juros" — este site nunca promete uma condição melhor do
   // que a real.
-  const installment = product.cardInstallment ?? bestInstallment(product.price);
-  const pix = pixPrice(product.price);
+  const installment = product.cardInstallment ?? bestInstallment(preco);
+  const pix = pixPrice(preco);
   // Quando o lojista já informou o preço à vista/Pix diretamente (produtos da
   // lista de vendas), `price` JÁ É esse valor — não inflamos com um desconto
   // extra de Pix inventado por cima.
@@ -48,14 +62,14 @@ export function ProductPurchase({
 
   function add() {
     if (outOfStock) return;
-    addItem(product, quantity, variant);
+    addItem(product, quantity, variant, variantId);
     setAdded(true);
     setTimeout(() => setAdded(false), 1600);
   }
 
   function buyNow() {
     if (outOfStock) return;
-    addItem(product, quantity, variant);
+    addItem(product, quantity, variant, variantId);
     router.push("/checkout");
   }
 
@@ -63,7 +77,7 @@ export function ProductPurchase({
     <div className="space-y-5">
       {/* Preço */}
       <div>
-        {product.oldPrice && (
+        {product.oldPrice && !opcao && (
           <p className="flex items-center gap-2">
             <span className="text-sm text-ink-400 line-through">
               {formatPrice(product.oldPrice)}
@@ -76,7 +90,7 @@ export function ProductPurchase({
           </p>
         )}
         <p className="mt-1 text-4xl font-extrabold tracking-tight text-ink-900">
-          {formatPrice(product.price)}
+          {formatPrice(preco)}
         </p>
         {installment && (
           <p className="mt-1.5 text-sm text-ink-600">
@@ -95,7 +109,7 @@ export function ProductPurchase({
         )}
         {product.cardInstallment && (
           <p className="mt-1 text-sm font-semibold text-success">
-            {formatPrice(product.price)} à vista no Pix ou dinheiro
+            {formatPrice(preco)} à vista no Pix ou dinheiro
           </p>
         )}
       </div>
@@ -106,18 +120,53 @@ export function ProductPurchase({
           <span className="font-semibold text-promo">
             ● Produto indisponível no momento
           </span>
-        ) : product.stock <= 3 ? (
+        ) : estoque <= 3 ? (
           <span className="font-semibold text-promo">
-            {product.stock === 1
+            {estoque === 1
               ? "● Última unidade em estoque"
-              : `● Últimas ${product.stock} unidades em estoque`}
+              : `● Últimas ${estoque} unidades em estoque`}
           </span>
         ) : (
           <span className="font-semibold text-success">● Disponível em estoque</span>
         )}
       </p>
 
-      {/* Variação */}
+      {/* Variação com estoque próprio */}
+      {temOpcoes && (
+        <fieldset>
+          <legend className="mb-2 text-sm font-bold text-ink-900">
+            {product.variantAxis ?? "Variação"}:{" "}
+            <span className="font-medium text-ink-600">{opcao?.label}</span>
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {opcoes.map((item) => {
+              const esgotada = item.stock <= 0;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => { setVariantId(item.id); setQuantity(1); }}
+                  aria-pressed={item.id === variantId}
+                  className={`rounded-lg border-2 px-4 py-2 text-left text-sm font-semibold transition-colors ${
+                    item.id === variantId
+                      ? "border-gold-400 bg-gold-50 text-gold-900"
+                      : esgotada
+                        ? "border-ink-100 text-ink-300"
+                        : "border-ink-200 text-ink-600 hover:border-ink-400"
+                  }`}
+                >
+                  {item.label}
+                  <span className="mt-0.5 block text-[11px] font-medium">
+                    {esgotada ? "Sem estoque" : formatPrice(item.price)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
+      {/* Variação apenas informativa (produto sem estoque por opção) */}
       {variantGroup && (
         <fieldset>
           <legend className="mb-2 text-sm font-bold text-ink-900">
@@ -163,8 +212,8 @@ export function ProductPurchase({
             </span>
             <button
               type="button"
-              onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
-              disabled={quantity >= product.stock}
+              onClick={() => setQuantity((q) => Math.min(estoque, q + 1))}
+              disabled={quantity >= estoque}
               aria-label="Aumentar quantidade"
               className="flex h-10 w-10 items-center justify-center text-lg font-bold text-ink-600 transition-colors hover:bg-ink-50 disabled:text-ink-300"
             >
@@ -172,7 +221,7 @@ export function ProductPurchase({
             </button>
           </div>
           <span className="text-xs text-ink-400">
-            {product.stock} {product.stock === 1 ? "disponível" : "disponíveis"}
+            {estoque} {estoque === 1 ? "disponível" : "disponíveis"}
           </span>
         </div>
       )}

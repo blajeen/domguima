@@ -4,6 +4,7 @@ import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { ProductImages } from "@/components/admin/ProductImages";
 import { requireOwner } from "@/lib/admin/auth";
+import { areVariantsSupported } from "@/lib/admin/catalog-store";
 import { getAdminCategories, getAdminProduct, getProductAssistTemplates, getProductOperationalMeta } from "@/lib/admin/data";
 
 type EditProductPageProps = {
@@ -30,7 +31,7 @@ export default async function EditProductPage({ params, searchParams }: EditProd
     {created === "1" && <div role="status" className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
       <strong>Produto criado e publicado com sucesso.</strong> Agora você já pode adicionar todas as fotos de uma vez abaixo.
     </div>}
-    <ProductForm product={product} categories={categories} operationalMeta={operationalMeta} templates={templates} />
+    <ProductForm variantsSupported={areVariantsSupported()} product={product} categories={categories} operationalMeta={operationalMeta} templates={templates} />
     <ProductImages productId={product.id} images={product.product_images ?? []} />
   </>;
 }
