@@ -5,7 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
-import { copyCatalogImage, createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { copyCatalogImage, countProductMovements, createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
@@ -762,5 +762,60 @@ export async function duplicateProductAction(formData: FormData) {
   }
   // Fora do try: redirect() funciona lancando, e dentro do bloco o proprio
   // catch o transformaria em mensagem de erro.
+  redirect(destino);
+}
+
+/**
+ * Exclui um produto em definitivo — fotos, variacoes e cadastro.
+ *
+ * Recusa quando o produto ja tem historico. inventory_movements.product_id tem
+ * ON DELETE CASCADE: excluir apagaria junto cada entrada e cada baixa de
+ * estoque desse produto, e os relatorios passariam a mentir sobre o passado.
+ * Nesse caso o certo e arquivar, que tira da loja e da lista sem destruir nada.
+ *
+ * Pedido antigo (o pedido guarda nome, SKU e preco no proprio registro) nao
+ * impede a exclusao: ele nao perde informacao nenhuma.
+ */
+export async function deleteProductAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return;
+
+  let destino = "/painel/produtos";
+  try {
+    const atual = await readCatalogState(true);
+    const produto = atual.products.find((item) => item.id === id);
+    if (!produto) {
+      redirect("/painel/produtos?erro=Produto+nao+encontrado.");
+    }
+
+    const movimentos = await countProductMovements(id);
+    if (movimentos > 0) {
+      const recado = `“${produto.name}” tem ${movimentos} movimento(s) de estoque. Excluir apagaria esse histórico — use Arquivar, que tira da loja e da lista sem perder nada.`;
+      redirect(`/painel/produtos?erro=${encodeURIComponent(recado)}`);
+    }
+
+    // Os arquivos saem do Storage antes do cadastro: depois de removida a
+    // linha nao haveria mais como saber o caminho e eles ficariam orfaos.
+    for (const imagem of produto.product_images ?? []) {
+      if (imagem.storage_path) await deleteCatalogImage(imagem.storage_path).catch(() => undefined);
+    }
+
+    await mutateCatalogState((state) => {
+      state.products = state.products.filter((item) => item.id !== id);
+      delete state.operations.product_meta[id];
+      // O log fica: audit_logs nao tem vinculo com products e sobrevive.
+      audit(state, owner.id, "product.deleted", "product", id, { name: produto.name, sku: produto.sku, stock: produto.stock }, null);
+    });
+
+    refreshCatalog();
+    revalidatePath("/painel/produtos");
+    destino = `/painel/produtos?excluido=${encodeURIComponent(produto.name)}`;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) throw error;
+    console.error("Falha ao excluir produto:", error);
+    destino = "/painel/produtos?erro=Nao+foi+possivel+excluir+o+produto+agora.";
+  }
+  // Fora do try: redirect() funciona lancando e o catch o converteria em erro.
   redirect(destino);
 }

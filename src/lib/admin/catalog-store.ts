@@ -224,6 +224,28 @@ export async function copyCatalogImage(storagePath: string | null, src: string, 
   return { src: `/${relative}`, storagePath: relative };
 }
 
+/**
+ * Quantos movimentos de estoque o produto ja tem.
+ *
+ * Usado antes de excluir: inventory_movements.product_id tem ON DELETE
+ * CASCADE, entao apagar o produto levaria junto todo o historico de venda e
+ * entrada dele. Com historico, o caminho certo e arquivar.
+ */
+export async function countProductMovements(productId: string): Promise<number> {
+  if (hasSupabaseConfig()) {
+    const { count, error } = await createSupabaseAdminClient()
+      .from("inventory_movements")
+      .select("*", { count: "exact", head: true })
+      .eq("product_id", productId);
+    // Na duvida, trata como "tem historico": e melhor barrar uma exclusao
+    // legitima do que apagar historico por causa de uma falha de leitura.
+    if (error) return 1;
+    return count ?? 0;
+  }
+  const state = await readCatalogState(true);
+  return state.inventoryMovements.filter((item) => item.product_id === productId).length;
+}
+
 export async function deleteCatalogImage(storagePath: string): Promise<void> {
   if (hasSupabaseConfig() && !storagePath.startsWith("/")) {
     const { error } = await createSupabaseAdminClient().storage.from(PRODUCT_BUCKET).remove([storagePath]);
