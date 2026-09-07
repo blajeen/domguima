@@ -45,6 +45,8 @@ export interface ProductVariantOption {
   /** Centavos. */
   price: number;
   stock: number;
+  /** Foto desta opcao. Ausente = usa a imagem principal do produto. */
+  image?: string;
 }
 
 export interface Product {

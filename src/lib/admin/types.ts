@@ -205,6 +205,12 @@ export interface AdminProductVariant {
   stock: number;
   sort_order: number;
   active: boolean;
+  /**
+   * URL da foto desta opcao, escolhida entre as imagens do produto.
+   * Guardamos a URL e nao o id da imagem porque replace_catalog_state apaga e
+   * reinsere product_images a cada salvamento — um vinculo por id se perderia.
+   */
+  image_src?: string | null;
 }
 
 export interface AdminProductImage {

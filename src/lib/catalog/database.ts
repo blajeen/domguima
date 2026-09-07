@@ -39,7 +39,13 @@ function toProduct(row: Record<string, unknown>): Product {
   const variantOptions = variantRows
     .filter((item) => item.active !== false)
     .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
-    .map((item) => ({ id: String(item.id), label: String(item.label), sku: String(item.sku), price: Number(item.price_cents), stock: Number(item.stock) }));
+    .map((item) => ({
+      id: String(item.id), label: String(item.label), sku: String(item.sku),
+      price: Number(item.price_cents), stock: Number(item.stock),
+      // So aponta para foto que ainda existe no produto: imagem removida
+      // depois de marcada cairia num link morto na vitrine.
+      ...(item.image_src && imageRows.some((img) => img.src === item.image_src) ? { image: String(item.image_src) } : {}),
+    }));
   const images: ProductImage[] = imageRows.sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)) || Number(a.sort_order) - Number(b.sort_order)).map((image) => ({ src: String(image.src), alt: String(image.alt ?? row.name) }));
   const shipping = (row.shipping ?? {}) as Product["shipping"];
   return {

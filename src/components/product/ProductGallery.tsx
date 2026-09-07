@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRef, useState } from "react";
 import type { ProductImage } from "@/lib/catalog/types";
+import { useVariantImage } from "./VariantImageContext";
 
 /**
  * Galeria do produto.
@@ -10,6 +11,7 @@ import type { ProductImage } from "@/lib/catalog/types";
  *  - Mobile: faixa deslizante com snap; o swipe é o nativo do sistema.
  */
 export function ProductGallery({ images }: { images: ProductImage[] }) {
+  const { src: variantSrc, escolher } = useVariantImage();
   const [active, setActive] = useState(0);
   const [zooming, setZooming] = useState(false);
   const [origin, setOrigin] = useState("50% 50%");
@@ -21,10 +23,16 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
     </div>;
   }
 
-  const current = images[active];
+  // A foto da variação manda enquanto estiver marcada; derivar em vez de
+  // sincronizar com efeito evita o piscar entre a imagem antiga e a nova.
+  const daVariacao = variantSrc ? images.findIndex((image) => image.src === variantSrc) : -1;
+  const activeIndex = daVariacao >= 0 ? daVariacao : active;
+  const current = images[activeIndex];
   const hasMany = images.length > 1;
 
   function select(index: number) {
+    // Clique manual na miniatura vence a variação até a próxima troca de cor.
+    escolher(null);
     setActive(index);
     const track = trackRef.current;
     const slide = track?.children[index] as HTMLElement | undefined;
@@ -60,12 +68,12 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
               key={image.src}
               type="button"
               role="tab"
-              aria-selected={i === active}
+              aria-selected={i === activeIndex}
               aria-label={`Ver imagem ${i + 1} de ${images.length}`}
               onClick={() => select(i)}
               onMouseEnter={() => setActive(i)}
               className={`relative aspect-square w-16 shrink-0 overflow-hidden rounded-lg border-2 bg-white transition-colors sm:w-full ${
-                i === active
+                i === activeIndex
                   ? "border-gold-400"
                   : "border-ink-100 hover:border-ink-300"
               }`}

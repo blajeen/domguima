@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ProductCarousel } from "@/components/product/ProductCarousel";
 import { ProductGallery } from "@/components/product/ProductGallery";
+import { VariantImageProvider } from "@/components/product/VariantImageContext";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
@@ -59,6 +60,9 @@ export default async function ProductPage({ params }: PageProps) {
   const related = await getRelatedProducts(product);
   const productUrl = absoluteUrl(`/produto/${product.slug}`);
   const discount = discountPercent(product.price, product.oldPrice);
+  // A pagina abre na mesma opcao que o seletor comeca marcada: a primeira com
+  // estoque. Calcular aqui evita a galeria trocar de foto depois de montar.
+  const opcaoInicial = product.variantOptions?.find((item) => item.stock > 0) ?? product.variantOptions?.[0];
 
   return (
     <div className="site-shell py-6">
@@ -75,6 +79,7 @@ export default async function ProductPage({ params }: PageProps) {
         siteUrl={site.url}
       />
 
+      <VariantImageProvider initialSrc={opcaoInicial?.image ?? null}>
       <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-10 xl:grid-cols-[minmax(0,1.15fr)_460px] xl:gap-14">
         <div>
           <ProductGallery images={product.images} />
@@ -135,6 +140,7 @@ export default async function ProductPage({ params }: PageProps) {
           </section>
         </div>
       </div>
+      </VariantImageProvider>
 
       {/* Descrição, especificações e envio */}
       <div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-10 xl:grid-cols-[minmax(0,1.15fr)_460px] xl:gap-14">

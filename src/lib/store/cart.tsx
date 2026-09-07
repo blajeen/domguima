@@ -78,7 +78,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         productId: product.id,
         slug: product.slug,
         name: product.name,
-        image: product.images[0]?.src ?? "",
+        // A foto da cor escolhida, para o carrinho nao mostrar a peca preta
+        // quando o cliente comprou a branca.
+        image: opcao?.image ?? product.images[0]?.src ?? "",
         price: opcao ? opcao.price : product.price,
         oldPrice: opcao ? undefined : product.oldPrice,
         quantity,

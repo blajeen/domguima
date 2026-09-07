@@ -6,6 +6,7 @@ import { commerce } from "@/config/site";
 import type { Product } from "@/lib/catalog/types";
 import { productMessage, whatsappLink } from "@/lib/services/whatsapp";
 import { useCart } from "@/lib/store/cart";
+import { useVariantImage } from "./VariantImageContext";
 import {
   bestInstallment,
   discountPercent,
@@ -26,6 +27,7 @@ export function ProductPurchase({
 }) {
   const router = useRouter();
   const { addItem, openCart } = useCart();
+  const { escolher: mostrarFotoDaVariacao } = useVariantImage();
 
   // Opcoes com estoque proprio tem prioridade sobre o rotulo antigo, que
   // continua servindo para produto sem variacao de verdade.
@@ -145,7 +147,7 @@ export function ProductPurchase({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => { setVariantId(item.id); setQuantity(1); }}
+                  onClick={() => { setVariantId(item.id); setQuantity(1); mostrarFotoDaVariacao(item.image ?? null); }}
                   aria-pressed={item.id === variantId}
                   className={`rounded-lg border-2 px-4 py-2 text-left text-sm font-semibold transition-colors ${
                     item.id === variantId

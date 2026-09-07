@@ -24,6 +24,8 @@ interface LinhaEditavel {
   price: string;
   stock: string;
   active: boolean;
+  /** URL de uma das fotos do produto. Vazio = usa a imagem principal. */
+  imageSrc: string;
 }
 
 const EIXOS_SUGERIDOS = ["Cor", "Voltagem", "Tamanho", "Modelo", "Sabor"];
@@ -44,7 +46,7 @@ function sugerirSku(skuBase: string, label: string, usados: Set<string>): string
 }
 
 function linhaVazia(): LinhaEditavel {
-  return { id: crypto.randomUUID(), label: "", sku: "", price: "", stock: "0", active: true };
+  return { id: crypto.randomUUID(), label: "", sku: "", price: "", stock: "0", active: true, imageSrc: "" };
 }
 
 export function VariantEditor({
@@ -52,6 +54,7 @@ export function VariantEditor({
   precoBase,
   variantAxis,
   variants,
+  imagens = [],
   disponivel = true,
 }: {
   skuBase: string;
@@ -59,6 +62,8 @@ export function VariantEditor({
   precoBase: number;
   variantAxis?: string | null;
   variants?: AdminProductVariant[];
+  /** Fotos ja enviadas do produto: sao elas que o lojista marca por cor. */
+  imagens?: Array<{ src: string; alt: string }>;
   /** Falso enquanto a migracao de variacoes nao foi aplicada ao banco. */
   disponivel?: boolean;
 }) {
@@ -74,6 +79,7 @@ export function VariantEditor({
           price: (item.price_cents / 100).toFixed(2),
           stock: String(item.stock),
           active: item.active,
+          imageSrc: item.image_src ?? "",
         }))
       : [linhaVazia()],
   );
@@ -111,6 +117,7 @@ export function VariantEditor({
           priceCents: Math.round(Number(linha.price) * 100),
           stock: Math.max(0, Math.trunc(Number(linha.stock) || 0)),
           active: linha.active,
+          imageSrc: linha.imageSrc || null,
         })),
       })
     : "";
@@ -171,6 +178,7 @@ export function VariantEditor({
                   <th className="pb-2 pr-3 font-bold">Preço</th>
                   <th className="pb-2 pr-3 font-bold">Estoque</th>
                   <th className="pb-2 pr-3 font-bold">SKU</th>
+                  <th className="pb-2 pr-3 font-bold">Foto</th>
                   <th className="pb-2 pr-3 font-bold">Ativa</th>
                   <th className="pb-2" />
                 </tr>
@@ -207,6 +215,23 @@ export function VariantEditor({
                           placeholder={sugerirSku(skuBase, linha.label, skusUsados) || "DG-ELT-002-PRETO"}
                           className={`${campo} font-mono text-xs ${skuRepetido ? "border-red-300 bg-red-50" : ""}`}
                           aria-label="SKU da opção" />
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        {imagens.length === 0 ? (
+                          <span className="block pt-2.5 text-[11px] text-ink-400">envie fotos abaixo</span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <select value={linha.imageSrc} onChange={(event) => alterar(linha.id, { imageSrc: event.target.value })}
+                              className={`${campo} w-32 text-xs`} aria-label={`Foto da opção ${linha.label || "nova"}`}>
+                              <option value="">Principal</option>
+                              {imagens.map((foto, posicao) => <option key={foto.src} value={foto.src}>Foto {posicao + 1}</option>)}
+                            </select>
+                            {linha.imageSrc && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={linha.imageSrc} alt="" className="h-9 w-9 shrink-0 rounded border border-ink-200 object-cover" />
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-1.5 pr-3">
                         <input type="checkbox" checked={linha.active} onChange={(event) => alterar(linha.id, { active: event.target.checked })}

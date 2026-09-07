@@ -489,6 +489,7 @@ const variantRowInput = z.object({
   priceCents: z.number().int().positive().max(100_000_000),
   stock: z.number().int().min(0).max(1_000_000),
   active: z.boolean(),
+  imageSrc: z.string().trim().max(600).nullable().optional(),
 });
 
 /**
@@ -519,6 +520,7 @@ function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { 
     rows.push({
       id: linha.id, product_id: productId, label: linha.label, sku,
       price_cents: linha.priceCents, stock: linha.stock, sort_order: indice, active: linha.active,
+      image_src: linha.imageSrc || null,
     });
   }
   return rows.length ? { axis: parsed.data.axis, rows } : null;
