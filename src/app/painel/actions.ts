@@ -5,7 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
-import { copyCatalogImage, countProductMovements, createInitialState, deleteCatalogImage, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { copyCatalogImage, countProductMovements, createInitialState, deleteCatalogImage, deleteOrderRecords, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
@@ -836,5 +836,88 @@ export async function deleteProductAction(formData: FormData) {
     destino = "/painel/produtos?erro=Nao+foi+possivel+excluir+o+produto+agora.";
   }
   // Fora do try: redirect() funciona lancando e o catch o converteria em erro.
+  redirect(destino);
+}
+
+// ---------------------------------------------------------------------------
+// Pedidos em massa: cancelar e excluir varios de uma vez
+// ---------------------------------------------------------------------------
+
+/**
+ * Cancela ou exclui os pedidos marcados na lista.
+ *
+ * Existe porque um lancamento em lote que sai errado deixa dezenas de pedidos
+ * para desfazer, e faze-lo um a um e inviavel.
+ *
+ * A diferenca entre as duas acoes importa:
+ *
+ *   * CANCELAR devolve o estoque e mantem o pedido no historico, marcado como
+ *     cancelado. E o certo para venda que nao aconteceu.
+ *   * EXCLUIR remove o pedido dos relatorios. Se ele estava finalizado, o
+ *     estoque e devolvido ANTES de apagar — senao as unidades sumiriam do
+ *     saldo sem nenhum pedido para justificar.
+ *
+ * Os movimentos de estoque ficam nos dois casos: inventory_movements nao tem
+ * vinculo com o pedido, entao a baixa e a devolucao continuam no historico.
+ */
+export async function bulkOrdersAction(formData: FormData): Promise<void> {
+  const owner = await ownerOrThrow();
+  const ids = formData.getAll("orderIds").map((valor) => String(valor).trim()).filter(Boolean);
+  const acao = String(formData.get("acao") ?? "");
+
+  let destino = "/painel/pedidos";
+  try {
+    if (!ids.length) {
+      redirect("/painel/pedidos?erro=Marque+pelo+menos+um+pedido.");
+    }
+    if (acao !== "cancelar" && acao !== "excluir") {
+      redirect("/painel/pedidos?erro=Acao+invalida.");
+    }
+
+    const falhas: string[] = [];
+    const cancelados: string[] = [];
+
+    for (const id of ids) {
+      try {
+        // Leitura fresca a cada pedido: o anterior acabou de mexer no estoque.
+        const estado = await readCatalogState(true);
+        const pedido = estado.operations.orders.find((item) => item.id === id);
+        if (!pedido) continue;
+        // Excluir um pedido finalizado sem devolver o estoque antes deixaria o
+        // saldo menor sem nenhum registro explicando por quê.
+        if (pedido.status !== "cancelled") {
+          await cancelSalesOrder(estado, id, owner.id);
+          cancelados.push(pedido.number);
+        }
+      } catch (error) {
+        falhas.push(error instanceof OrderOperationError ? error.message : `Pedido ${id} falhou.`);
+      }
+    }
+
+    let excluidos = 0;
+    if (acao === "excluir") {
+      excluidos = await deleteOrderRecords(ids);
+      await mutateCatalogState((state) => {
+        audit(state, owner.id, "order.bulk_deleted", "order", ids[0], { ids, total: ids.length }, null);
+      });
+    }
+
+    refreshCatalog();
+    revalidatePath("/painel/pedidos");
+    revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/historico");
+
+    const resumo = acao === "excluir"
+      ? `${excluidos} pedido(s) excluído(s)${cancelados.length ? ` · estoque devolvido de ${cancelados.length}` : ""}.`
+      : `${cancelados.length} pedido(s) cancelado(s) e estoque devolvido.`;
+    destino = falhas.length
+      ? `/painel/pedidos?erro=${encodeURIComponent(`${resumo} ${falhas.length} com problema: ${falhas[0]}`)}`
+      : `/painel/pedidos?feito=${encodeURIComponent(resumo)}`;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) throw error;
+    console.error("Falha na acao em massa de pedidos:", error);
+    destino = "/painel/pedidos?erro=Nao+foi+possivel+concluir+a+acao+agora.";
+  }
+  // Fora do try: redirect() funciona lancando e o catch o viraria erro.
   redirect(destino);
 }

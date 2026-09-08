@@ -190,11 +190,19 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
         </p>
         <textarea id="mensagens" value={texto} onChange={(event) => setTexto(event.target.value)} rows={10} placeholder={EXEMPLO}
           className={`${campo} mt-3 font-mono text-xs leading-relaxed`} />
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          {/* O vendedor fica aqui em cima, e nao no rodape: e a primeira
+              decisao do lancamento, e no fim da tela passava batido. */}
+          <div>
+            <label htmlFor="vendedor" className="block text-xs font-bold text-ink-600">Vendedor destes lançamentos</label>
+            <select id="vendedor" value={sellerId} onChange={(e) => setSellerId(e.target.value)} className={`${campo} mt-1 w-52`}>
+              {sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
+            </select>
+          </div>
           <button type="button" onClick={interpretar} disabled={!texto.trim()} className="rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-extrabold text-white disabled:opacity-40">
             Interpretar mensagens
           </button>
-          {blocos && <span className="text-xs text-ink-500">{blocos.length} lançamento(s) lido(s)</span>}
+          {blocos && <span className="pb-2.5 text-xs text-ink-500">{blocos.length} lançamento(s) lido(s)</span>}
         </div>
       </section>
 
@@ -322,14 +330,9 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
       {blocos && blocos.length > 0 && (
         <section className="sticky bottom-0 rounded-xl border border-ink-200 bg-white p-5 shadow-lg">
           <div className="flex flex-wrap items-end gap-4">
-            <div>
-              <label htmlFor="vendedor" className="block text-xs font-bold text-ink-600">Vendedor</label>
-              <select id="vendedor" value={sellerId} onChange={(e) => setSellerId(e.target.value)} className={`${campo} mt-1`}>
-                {sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
-              </select>
-            </div>
             <p className="flex-1 text-sm text-ink-600">
               <strong>{prontos.length}</strong> pedido(s) prontos · {totalUnidades} unidade(s) · {formatPrice(totalCentavos)}
+              <span className="block text-xs text-ink-500">Vendedor: <strong>{sellers.find((item) => item.id === sellerId)?.name ?? "não escolhido"}</strong></span>
               {pendentes > 0 && <span className="block font-bold text-red-700">{pendentes} linha(s) sem produto ou sem valor — elas não serão gravadas.</span>}
             </p>
             <button type="button" onClick={gravar} disabled={isPending || !prontos.length || !sellerId} className="rounded-lg bg-gold-400 px-5 py-3 text-sm font-extrabold text-ink-950 disabled:opacity-40">

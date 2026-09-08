@@ -41,6 +41,17 @@ export interface CreatePendingOrderInput {
   }>;
 }
 
+/**
+ * Identidade de uma linha do pedido: produto MAIS a opcao escolhida.
+ *
+ * Duas cores do mesmo produto compartilham o product_id e sao duas linhas
+ * legitimas. Conferir so pelo product_id recusava "1 preto + 1 branco" como se
+ * fosse item repetido — era o erro que aparecia ao montar pedido com duas cores.
+ */
+function linhaDoPedido(item: { productId: string; variantId?: string | null }): string {
+  return `${item.productId}::${item.variantId ?? ""}`;
+}
+
 export class OrderOperationError extends Error {
   constructor(message: string) {
     super(message);
@@ -62,8 +73,8 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
   const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
   if (jaCriado) return jaCriado;
   if (!input.items.length) throw new OrderOperationError("Adicione pelo menos um produto ao pedido.");
-  if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
-    throw new OrderOperationError("Há um produto repetido no pedido. Ajuste a quantidade em uma única linha.");
+  if (new Set(input.items.map(linhaDoPedido)).size !== input.items.length) {
+    throw new OrderOperationError("Essa mesma opção aparece duas vezes no pedido. Some as quantidades numa linha só.");
   }
 
   const seller = state.operations.sellers.find((item) => item.id === input.sellerId && item.active);
@@ -168,8 +179,8 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
   const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
   if (jaCriado) return jaCriado;
   if (!input.items.length) throw new OrderOperationError("Adicione pelo menos um produto ao pedido.");
-  if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
-    throw new OrderOperationError("Ha um produto repetido no pedido. Ajuste a quantidade em uma unica linha.");
+  if (new Set(input.items.map(linhaDoPedido)).size !== input.items.length) {
+    throw new OrderOperationError("Essa mesma opcao aparece duas vezes no pedido. Some as quantidades numa linha so.");
   }
 
   const prepared = input.items.map((item) => {
@@ -437,8 +448,8 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
   const jaCriado = state.operations.orders.find((order) => order.request_id === input.requestId);
   if (jaCriado) return jaCriado;
   if (!input.items.length) throw new OrderOperationError("O lançamento não tem nenhum item.");
-  if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
-    throw new OrderOperationError("Há um produto repetido no mesmo lançamento. Some as quantidades numa linha só.");
+  if (new Set(input.items.map(linhaDoPedido)).size !== input.items.length) {
+    throw new OrderOperationError("Essa mesma opção aparece duas vezes no lançamento. Some as quantidades numa linha só.");
   }
 
   const seller = state.operations.sellers.find((item) => item.id === input.sellerId && item.active);

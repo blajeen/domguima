@@ -225,6 +225,32 @@ export async function copyCatalogImage(storagePath: string | null, src: string, 
 }
 
 /**
+ * Apaga pedidos em definitivo.
+ *
+ * Os movimentos de estoque NAO saem junto: inventory_movements nao tem vinculo
+ * com sales_orders, entao a entrada e a baixa continuam no historico com o
+ * numero do pedido na nota. Apagar o pedido some com ele dos relatorios, nao
+ * com o rastro do que aconteceu no estoque.
+ */
+export async function deleteOrderRecords(ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
+  if (hasSupabaseConfig()) {
+    const { error } = await createSupabaseAdminClient().from("sales_orders").delete().in("id", ids);
+    if (error) throw new Error(`Nao foi possivel excluir o(s) pedido(s): ${error.message}`);
+    invalidarCacheRemoto();
+    return ids.length;
+  }
+  const alvo = new Set(ids);
+  let removidos = 0;
+  await mutateCatalogState((state) => {
+    const antes = state.operations.orders.length;
+    state.operations.orders = state.operations.orders.filter((order) => !alvo.has(order.id));
+    removidos = antes - state.operations.orders.length;
+  });
+  return removidos;
+}
+
+/**
  * Quantos movimentos de estoque o produto ja tem.
  *
  * Usado antes de excluir: inventory_movements.product_id tem ON DELETE

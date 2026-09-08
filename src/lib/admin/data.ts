@@ -20,6 +20,17 @@ export async function getProductOperationalMeta(id: string) {
   return normalizeProductOperationalMeta((await readCatalogState()).operations.product_meta[id]);
 }
 
+/**
+ * Mapa de NCM, modelo e GTIN por produto.
+ *
+ * A lista do painel precisa disso para achar produto por NCM — o codigo fiscal
+ * nao fica na tabela de produtos, e sim nas anotacoes operacionais.
+ */
+export async function getAllProductOperationalMeta(): Promise<Map<string, ProductOperationalMeta>> {
+  const meta = (await readCatalogState()).operations.product_meta ?? {};
+  return new Map(Object.entries(meta).map(([id, value]) => [id, normalizeProductOperationalMeta(value)]));
+}
+
 export async function getProductAssistTemplates(excludeId?: string): Promise<ProductAssistTemplate[]> {
   const state = await readCatalogState();
   const categoryNames = new Map(state.categories.map((category) => [category.id, category.name]));

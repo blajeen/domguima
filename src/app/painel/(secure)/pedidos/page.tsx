@@ -2,6 +2,8 @@ import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
 import { ConfirmOrderForm } from "@/components/admin/ConfirmOrderForm";
+import { bulkOrdersAction } from "@/app/painel/actions";
+import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
 import { ORDER_PAYMENT_METHOD_LABELS, type SalesOrderRecord } from "@/lib/admin/types";
@@ -25,6 +27,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const confirmed = typeof params.confirmado === "string" ? allOrders.find((order) => order.id === params.confirmado) : null;
   const cancelled = typeof params.cancelado === "string";
   const errorMessage = typeof params.erro === "string" ? params.erro : "";
+  const feito = typeof params.feito === "string" ? params.feito : "";
 
   return (
     <>
@@ -40,6 +43,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       {created && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {created.number} finalizado.</strong> O estoque e a comissão foram atualizados.</div>}
       {confirmed && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {confirmed.number} confirmado.</strong> O estoque e a comissão foram atualizados.</div>}
       {cancelled && <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Pedido cancelado.</div>}
+      {feito && <div role="status" className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{feito}</div>}
       {errorMessage && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>}
 
       <PanelCard>
@@ -51,10 +55,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         </form>
       </PanelCard>
 
-      <div className="mt-5 space-y-3">
-        {orders.map((order) => <OrderRow key={order.id} order={order} sellers={sellers} />)}
-        {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
-      </div>
+      <form action={bulkOrdersAction} className="mt-5">
+        {orders.length > 0 && <OrderBulkActions total={orders.length} />}
+        <div className="space-y-3">
+          {orders.map((order) => <OrderRow key={order.id} order={order} sellers={sellers} />)}
+          {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
+        </div>
+      </form>
     </>
   );
 }
@@ -65,7 +72,11 @@ function OrderRow({ order, sellers }: { order: SalesOrderRecord; sellers: Awaite
 
   return (
     <article className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
-      <div className="grid gap-4 p-5 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
+      <div className="grid gap-4 p-5 sm:grid-cols-[auto_1.2fr_1fr_auto] sm:items-center">
+        <label className="flex items-center gap-2 self-start sm:self-center">
+          <input type="checkbox" name="orderIds" value={order.id} className="h-4 w-4" aria-label={`Selecionar pedido ${order.number}`} />
+          <span className="text-xs font-bold text-ink-400 sm:hidden">Selecionar</span>
+        </label>
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-black text-ink-900">{order.number}</h2>
