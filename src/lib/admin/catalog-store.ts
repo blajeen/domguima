@@ -164,27 +164,6 @@ export function mutateCatalogState(change: (state: CatalogState) => void | Promi
   return result;
 }
 
-export async function uploadCatalogImage(file: File, productId: string): Promise<{ src: string; storagePath: string }> {
-  const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const safeProduct = productId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-  const storagePath = `products/${safeProduct}/${Date.now()}-${randomUUID()}.${extension}`;
-
-  if (hasSupabaseConfig()) {
-    const storage = createSupabaseAdminClient().storage.from(PRODUCT_BUCKET);
-    const { error } = await storage.upload(storagePath, file, { contentType: file.type, cacheControl: "31536000", upsert: false });
-    if (error) throw new Error(`Nao foi possivel enviar a imagem: ${error.message}`);
-    const { data } = storage.getPublicUrl(storagePath);
-    return { src: data.publicUrl, storagePath };
-  }
-
-  if (process.env.VERCEL) throw new Error("Configure o Supabase para enviar imagens em producao.");
-  const relative = join("uploads", safeProduct, storagePath.split("/").at(-1)!).replace(/\\/g, "/");
-  const absolute = join(process.cwd(), "public", relative);
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, Buffer.from(await file.arrayBuffer()));
-  return { src: `/${relative}`, storagePath: relative };
-}
-
 /**
  * Duplica o arquivo de uma imagem para um produto novo.
  *
@@ -655,4 +634,39 @@ function proximoNumeroLocal(state: CatalogState, createdAt: string): string {
 
 function dataEmSaoPaulo(value: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}
+
+/**
+ * URL para o NAVEGADOR enviar a foto direto ao Storage.
+ *
+ * O caminho antigo — arquivo dentro da Server Action — bate no teto de corpo
+ * de requisicao da hospedagem (~4,5 MB), medido em producao como HTTP 413
+ * FUNCTION_PAYLOAD_TOO_LARGE. Foto de celular passa disso sozinha, e o
+ * `bodySizeLimit` do next.config nao vence um limite de plataforma.
+ *
+ * Com a URL assinada o arquivo nunca passa pelo servidor: o limite que vale e
+ * o do bucket (4 MB por arquivo), aplicado pelo proprio Storage.
+ */
+export async function createImageUploadTarget(productId: string, extension: string): Promise<{ storagePath: string; signedUrl: string; src: string }> {
+  if (!hasSupabaseConfig()) throw new Error("Configure o Supabase para enviar imagens.");
+  const safeProduct = productId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const storagePath = `products/${safeProduct}/${Date.now()}-${randomUUID()}.${extension}`;
+  const storage = createSupabaseAdminClient().storage.from(PRODUCT_BUCKET);
+  const { data, error } = await storage.createSignedUploadUrl(storagePath);
+  if (error || !data) throw new Error(`Nao foi possivel preparar o envio: ${error?.message ?? "sem resposta"}`);
+  return { storagePath, signedUrl: data.signedUrl, src: storage.getPublicUrl(storagePath).data.publicUrl };
+}
+
+/**
+ * Confirma que o arquivo chegou mesmo ao Storage.
+ *
+ * Sem isso, um envio que falhou no meio do caminho gravaria no catalogo uma
+ * imagem que nao existe — a vitrine mostraria quadro quebrado.
+ */
+export async function imageExistsInStorage(storagePath: string): Promise<boolean> {
+  if (!hasSupabaseConfig()) return false;
+  const pasta = storagePath.split("/").slice(0, -1).join("/");
+  const arquivo = storagePath.split("/").at(-1)!;
+  const { data, error } = await createSupabaseAdminClient().storage.from(PRODUCT_BUCKET).list(pasta, { search: arquivo, limit: 1 });
+  return !error && (data ?? []).some((item) => item.name === arquivo);
 }

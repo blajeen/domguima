@@ -104,7 +104,7 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
             alt={current.alt}
             fill
             priority
-            sizes="(max-width: 1024px) 60vw, 520px"
+            sizes="(max-width: 1024px) 90vw, 600px"
             style={{ transformOrigin: origin }}
             className={`object-contain p-6 transition-transform duration-200 ${
               zooming ? "scale-[2] cursor-zoom-in" : "scale-100"

@@ -90,7 +90,11 @@ export default async function ProductPage({ params }: PageProps) {
       />
 
       <VariantImageProvider initialSrc={opcaoInicial?.image ?? null}>
-      <div className="mt-5 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-10 xl:grid-cols-[minmax(0,1.15fr)_460px] xl:gap-14">
+      {/* A coluna da galeria e limitada de proposito. Solta, ela esticava ate
+          ~1000px em tela grande e ampliava a foto muito alem do tamanho real,
+          borrando a imagem — era a queixa de "fica tao grande que perde
+          qualidade". O par fica centralizado em vez de espalhado. */}
+      <div className="mt-5 grid gap-8 lg:mx-auto lg:max-w-[1040px] lg:grid-cols-[minmax(0,540px)_minmax(0,440px)] lg:gap-10 xl:max-w-[1120px] xl:grid-cols-[minmax(0,600px)_minmax(0,460px)] xl:gap-14">
         <div>
           <ProductGallery images={product.images} />
         </div>
@@ -153,7 +157,7 @@ export default async function ProductPage({ params }: PageProps) {
       </VariantImageProvider>
 
       {/* Descrição, especificações e envio */}
-      <div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-10 xl:grid-cols-[minmax(0,1.15fr)_460px] xl:gap-14">
+      <div className="mt-12 grid gap-8 lg:mx-auto lg:max-w-[1040px] lg:grid-cols-[minmax(0,540px)_minmax(0,440px)] lg:gap-10 xl:max-w-[1120px] xl:grid-cols-[minmax(0,600px)_minmax(0,460px)] xl:gap-14">
         <div className="space-y-10">
           <section aria-labelledby="descricao">
             <h2
