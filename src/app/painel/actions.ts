@@ -15,6 +15,7 @@ import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
+  variantId: z.string().trim().max(120).nullable().optional(),
   expectedStock: z.number().int().min(0),
   stock: z.number().int().min(0).max(1_000_000),
   expectedPriceCents: z.number().int().positive().optional(),
@@ -25,6 +26,7 @@ const inventoryCountInput = z.object({
 
 const dailySaleInput = z.object({
   productId: z.string().trim().min(1).max(200),
+  variantId: z.string().trim().max(120).nullable().optional(),
   expectedStock: z.number().int().min(0),
   quantity: z.number().int().min(1).max(1_000_000),
 });

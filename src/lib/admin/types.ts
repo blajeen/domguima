@@ -160,8 +160,19 @@ export interface AdminProductRow {
 }
 
 /** Safe, compact payload used by the interactive inventory sheet. */
+/**
+ * Uma linha da planilha de estoque.
+ *
+ * `id` e a chave da LINHA. Produto com variacao vira uma linha por opcao
+ * (Preto, Cinza, Branco), cada uma com `variant_id` e o proprio saldo — e o
+ * unico jeito de o lojista ver e acertar o estoque de cada cor sem sair da
+ * planilha. Produto sem variacao continua uma linha so, com variant_id nulo.
+ */
 export interface InventorySheetProduct {
   id: string;
+  product_id: string;
+  variant_id: string | null;
+  variant_label: string | null;
   name: string;
   sku: string;
   price_cents: number;

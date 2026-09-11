@@ -87,14 +87,14 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
   function stepExit(productId: string, amount: number) { changeExit(productId, drafts[productId].exitQty + amount); }
 
   function saveCounts() {
-    const updates = sheetProducts.filter((product) => drafts[product.id].stock !== drafts[product.id].originalStock).map((product) => ({ productId: product.id, expectedStock: drafts[product.id].originalStock, stock: drafts[product.id].stock }));
+    const updates = sheetProducts.filter((product) => drafts[product.id].stock !== drafts[product.id].originalStock).map((product) => ({ productId: product.product_id, variantId: product.variant_id, rowId: product.id, expectedStock: drafts[product.id].originalStock, stock: drafts[product.id].stock }));
     if (!updates.length) return;
     setFeedback({});
     startTransition(async () => {
       const result = await saveInventoryCountsAction(updates);
       setFeedback(result);
       if (result.ok) {
-        setSheetProducts((current) => current.map((product) => { const update = updates.find((item) => item.productId === product.id); return update ? { ...product, stock: update.stock } : product; }));
+        setSheetProducts((current) => current.map((product) => { const update = updates.find((item) => item.rowId === product.id); return update ? { ...product, stock: update.stock } : product; }));
         setDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, draft]) => [id, { ...draft, originalStock: draft.stock }])));
       }
     });
@@ -102,7 +102,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
 
   function registerSales() {
     if (hasUnsavedCount || !pendingExits) return;
-    const updates = sheetProducts.filter((product) => drafts[product.id].exitQty > 0).map((product) => ({ productId: product.id, expectedStock: drafts[product.id].originalStock, quantity: drafts[product.id].exitQty }));
+    const updates = sheetProducts.filter((product) => drafts[product.id].exitQty > 0).map((product) => ({ productId: product.product_id, variantId: product.variant_id, rowId: product.id, expectedStock: drafts[product.id].originalStock, quantity: drafts[product.id].exitQty }));
     if (!updates.length) return;
     const batchId = salesBatchId.current ?? createBatchId();
     salesBatchId.current = batchId;
@@ -111,7 +111,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
       const result = await registerDailySalesAction(batchId, updates);
       setFeedback(result);
       if (result.ok) {
-        setSheetProducts((current) => current.map((product) => { const update = updates.find((item) => item.productId === product.id); return update ? { ...product, stock: product.stock - update.quantity } : product; }));
+        setSheetProducts((current) => current.map((product) => { const update = updates.find((item) => item.rowId === product.id); return update ? { ...product, stock: product.stock - update.quantity } : product; }));
         setDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, draft]) => draft.exitQty ? [id, { stock: draft.stock - draft.exitQty, originalStock: draft.originalStock - draft.exitQty, exitQty: 0 }] : [id, draft])));
         salesBatchId.current = null;
       }
@@ -195,7 +195,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
     if (!importPreview) return;
     const validRows = importPreview.rows.filter((row) => !row.issues.length && row.productId && row.stock !== null && row.priceCents !== null);
     if (!validRows.length) return;
-    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents, ...(row.cardInstallment !== undefined ? { cardInstallment: row.cardInstallment } : {}) }; });
+    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.product_id, variantId: product.variant_id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents, ...(row.cardInstallment !== undefined ? { cardInstallment: row.cardInstallment } : {}) }; });
     setFeedback({});
     startTransition(async () => {
       const result = await saveInventoryCountsAction(updates);
@@ -245,11 +245,11 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
           const dirty = draft.stock !== draft.originalStock;
           const afterExit = draft.stock - draft.exitQty;
           return <tr key={product.id} className={dirty ? "is-dirty" : ""}>
-            <td className="inventory-product-col"><div className="inventory-product"><div className="inventory-thumb">{product.image_src ? <Image src={product.image_src} alt={product.image_alt} width={48} height={48} sizes="48px" /> : <span aria-hidden="true">DG</span>}</div><div className="min-w-0"><p className="inventory-product-name" title={product.name}>{product.name}</p><p className="inventory-sku">SKU {product.sku}</p></div></div></td>
+            <td className="inventory-product-col"><div className="inventory-product"><div className="inventory-thumb">{product.image_src ? <Image src={product.image_src} alt={product.image_alt} width={48} height={48} sizes="48px" /> : <span aria-hidden="true">DG</span>}</div><div className="min-w-0"><p className="inventory-product-name" title={product.name}>{product.name}</p><p className="inventory-sku">SKU {product.sku}{product.variant_label ? <span className="ml-1.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">{product.variant_label}</span> : null}</p></div></div></td>
             <td><span className="inventory-category">{product.category_name}</span></td>
-            <td><div className="inventory-price">{formatPrice(product.price_cents)}<Link href={`/painel/produtos/${encodeURIComponent(product.id)}`} aria-label={`Editar preço de ${product.name}`}>Editar</Link></div></td>
+            <td><div className="inventory-price">{formatPrice(product.price_cents)}<Link href={`/painel/produtos/${encodeURIComponent(product.product_id)}`} aria-label={`Editar preço de ${product.name}`}>Editar</Link></div></td>
             {mode === "count" ? <><td><StockStepper value={draft.stock} onChange={(value) => changeStock(product.id, value)} onStep={(amount) => stepStock(product.id, amount)} label={`Estoque de ${product.name}`} /><span className={dirty ? "inventory-cell-note is-pending" : "inventory-cell-note"}>{dirty ? `era ${draft.originalStock}` : "sincronizado"}</span></td><td><StockStatus stock={draft.stock} threshold={product.low_stock_threshold} /></td></> : <><td><span className={`inventory-available ${draft.stock === 0 ? "is-out" : ""}`}>{draft.stock}</span><span className="inventory-cell-note">unidades</span></td><td><StockStepper value={draft.exitQty} max={draft.stock} onChange={(value) => changeExit(product.id, value)} onStep={(amount) => stepExit(product.id, amount)} label={`Saída de ${product.name}`} /></td><td><span className={`inventory-after ${afterExit === 0 ? "is-zero" : ""}`}>{afterExit}</span><span className="inventory-cell-note">restantes</span></td></>}
-            <td><Link href={`/painel/produtos/${encodeURIComponent(product.id)}`} className="inventory-row-action">Abrir</Link></td>
+            <td><Link href={`/painel/produtos/${encodeURIComponent(product.product_id)}`} className="inventory-row-action">Abrir</Link></td>
           </tr>;
         })}</tbody>
       </table>
