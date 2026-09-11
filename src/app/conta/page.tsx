@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { social, whatsapp } from "@/config/site";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 export const metadata: Metadata = {
   title: "Meus pedidos",
@@ -30,11 +31,8 @@ export default function AccountPage() {
           icon="📦"
           title="Acompanhar meu pedido"
           text="Mande o seu nome ou o número do pedido no WhatsApp e a gente te passa o status na hora."
-          href={whatsappLink(
-            "Olá! Gostaria de acompanhar o status do meu pedido na Dom Guima.",
-          )}
-          cta={`Falar no WhatsApp`}
-          external
+          whatsappMessage="Olá! Gostaria de acompanhar o status do meu pedido na Dom Guima."
+          cta="Falar no WhatsApp"
         />
         <Card
           icon="↩️"
@@ -64,14 +62,13 @@ export default function AccountPage() {
         <p className="text-sm text-ink-600">
           Precisa de ajuda com qualquer outra coisa?
         </p>
-        <a
-          href={whatsappLink(genericMessage)}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppChooser
+          message={genericMessage}
+          contacts={contactsFor()}
           className="mt-3 inline-block rounded-xl bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
         >
           Falar com a Dom Guima · {whatsapp.display}
-        </a>
+        </WhatsAppChooser>
       </div>
     </div>
   );
@@ -81,14 +78,17 @@ function Card({
   icon,
   title,
   text,
-  href,
+  href = "",
+  whatsappMessage,
   cta,
   external = false,
 }: {
   icon: string;
   title: string;
   text: string;
-  href: string;
+  href?: string;
+  /** Quando informado, o card abre a escolha de contato no WhatsApp em vez de um link. */
+  whatsappMessage?: string;
   cta: string;
   external?: boolean;
 }) {
@@ -102,7 +102,11 @@ function Card({
       </span>
       <h2 className="mt-2 text-base font-bold text-ink-900">{title}</h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-600">{text}</p>
-      {external ? (
+      {whatsappMessage ? (
+        <WhatsAppChooser message={whatsappMessage} contacts={contactsFor()} className={className}>
+          {cta} →
+        </WhatsAppChooser>
+      ) : external ? (
         <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
           {cta} →
         </a>

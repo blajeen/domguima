@@ -2,7 +2,8 @@ import Link from "next/link";
 import { company, shopeeStats, site, social, support, whatsapp } from "@/config/site";
 import { getCatalogCategories } from "@/lib/catalog/queries";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "./WhatsAppChooser";
 import { Logo } from "./Logo";
 
 export async function Footer() {
@@ -33,9 +34,15 @@ export async function Footer() {
           </FooterColumn>
 
           <FooterColumn title="Atendimento">
-            <FooterExternal href={whatsappLink(genericMessage, settings.whatsappNumber)}>
-              WhatsApp {settings.whatsappDisplay || whatsapp.display}
-            </FooterExternal>
+            <li>
+              <WhatsAppChooser
+                message={genericMessage}
+                contacts={contactsFor(settings)}
+                className={FOOTER_LINK_CLASS}
+              >
+                WhatsApp {settings.whatsappDisplay || whatsapp.display}
+              </WhatsAppChooser>
+            </li>
             <FooterExternal href={settings.instagramUrl || social.instagram}>
               Instagram {social.instagramHandle}
             </FooterExternal>
@@ -168,6 +175,8 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
   );
 }
 
+const FOOTER_LINK_CLASS = "text-sm text-ink-400 transition-colors hover:text-gold-300";
+
 function FooterExternal({
   href,
   children,
@@ -181,7 +190,7 @@ function FooterExternal({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm text-ink-400 transition-colors hover:text-gold-300"
+        className={FOOTER_LINK_CLASS}
       >
         {children}
       </a>

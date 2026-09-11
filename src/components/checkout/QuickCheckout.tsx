@@ -5,18 +5,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { site } from "@/config/site";
-import { quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
 import { useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 
 type DeliveryChoice = "local" | "combinar";
 
+const sellers = contactsFor();
+
 export function QuickCheckout() {
   const router = useRouter();
   const { items, ready, subtotal, clear } = useCart();
   const [name, setName] = useState("");
   const [delivery, setDelivery] = useState<DeliveryChoice>("local");
+  const [sellerId, setSellerId] = useState(sellers[0].id);
   const [neighborhood, setNeighborhood] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -48,7 +51,8 @@ export function QuickCheckout() {
       },
     );
 
-    window.open(whatsappLink(message), "_blank", "noopener,noreferrer");
+    const seller = sellers.find((contact) => contact.id === sellerId) ?? sellers[0];
+    window.open(whatsappLink(message, seller.number), "_blank", "noopener,noreferrer");
     setSubmitted(true);
     clear();
     router.push("/pedido-enviado");
@@ -102,17 +106,35 @@ export function QuickCheckout() {
             <legend className="text-sm font-bold text-ink-700">Como prefere receber?</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <Choice
+                name="delivery"
                 checked={delivery === "local"}
                 onChange={() => setDelivery("local")}
                 title="Entrega em Uberlândia"
                 text="Informe só o bairro, se quiser."
               />
               <Choice
+                name="delivery"
                 checked={delivery === "combinar"}
                 onChange={() => setDelivery("combinar")}
                 title="Combinar com o vendedor"
                 text="Retirada ou outra forma."
               />
+            </div>
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-bold text-ink-700">Enviar o pedido para quem?</legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {sellers.map((contact) => (
+                <Choice
+                  key={contact.id}
+                  name="seller"
+                  checked={sellerId === contact.id}
+                  onChange={() => setSellerId(contact.id)}
+                  title={contact.name}
+                  text={`${contact.role} · ${contact.display}`}
+                />
+              ))}
             </div>
           </fieldset>
 
@@ -178,10 +200,10 @@ export function QuickCheckout() {
   );
 }
 
-function Choice({ checked, onChange, title, text }: { checked: boolean; onChange: () => void; title: string; text: string }) {
+function Choice({ name, checked, onChange, title, text }: { name: string; checked: boolean; onChange: () => void; title: string; text: string }) {
   return (
     <label className={`cursor-pointer rounded-xl border p-3 transition ${checked ? "border-gold-500 bg-gold-50 ring-1 ring-gold-300" : "border-ink-200 hover:border-ink-300"}`}>
-      <input type="radio" name="delivery" checked={checked} onChange={onChange} className="sr-only" />
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="sr-only" />
       <span className="block text-sm font-bold text-ink-800">{title}</span>
       <span className="mt-0.5 block text-xs text-ink-500">{text}</span>
     </label>

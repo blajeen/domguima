@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { whatsapp } from "@/config/site";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { loadPublicStoreSettings } from "@/lib/catalog/database";
+import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 export const metadata: Metadata = {
   title: "Pedido enviado",
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function OrderSentPage({ searchParams }: { searchParams: Promise<{ tipo?: string; numero?: string }> }) {
-  const params = await searchParams;
+  const [params, settings] = await Promise.all([searchParams, loadPublicStoreSettings()]);
   const siteOrder = params.tipo === "site";
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
@@ -32,14 +34,13 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
       </p>
 
       <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <a
-          href={whatsappLink(genericMessage)}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppChooser
+          message={genericMessage}
+          contacts={contactsFor(settings)}
           className="rounded-xl bg-[#25D366] px-6 py-3 text-sm font-extrabold text-white transition-transform hover:scale-[1.02]"
         >
-          {siteOrder ? "Falar com a Dom Guima" : `Abrir WhatsApp ${whatsapp.display}`}
-        </a>
+          {siteOrder ? "Falar com a Dom Guima" : `Abrir WhatsApp ${settings.whatsappDisplay || whatsapp.display}`}
+        </WhatsAppChooser>
         <Link
           href="/"
           className="rounded-xl border border-ink-200 px-6 py-3 text-sm font-semibold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { social, whatsapp } from "@/config/site";
 import { getCatalogCategories } from "@/lib/catalog/queries";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "./WhatsAppChooser";
 import { CartButton } from "./CartButton";
 import { CategoryMenu } from "./CategoryMenu";
 import { Logo } from "./Logo";
@@ -37,14 +38,13 @@ export async function Header() {
             >
               Instagram
             </a>
-            <a
-              href={whatsappLink(genericMessage, settings.whatsappNumber)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <WhatsAppChooser
+              message={genericMessage}
+              contacts={contactsFor(settings)}
               className="font-semibold text-gold-300 transition-colors hover:text-gold-200"
             >
               WhatsApp {settings.whatsappDisplay || whatsapp.display}
-            </a>
+            </WhatsAppChooser>
           </div>
         </div>
       </div>

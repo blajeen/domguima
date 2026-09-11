@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { commerce } from "@/config/site";
 import type { Product } from "@/lib/catalog/types";
-import { productMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, productMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 import { useCart } from "@/lib/store/cart";
 import { useVariantImage } from "./VariantImageContext";
 import {
@@ -252,14 +253,13 @@ export function ProductPurchase({
           {added ? "Adicionado ✓ Ver carrinho" : "Adicionar ao carrinho"}
         </button>
 
-        <a
-          href={whatsappLink(productMessage(product, productUrl))}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppChooser
+          message={productMessage(product, productUrl)}
+          contacts={contactsFor()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#25D366] px-6 py-3 text-base font-bold text-[#128C7E] transition-colors hover:bg-[#25D366]/10"
         >
           Comprar pelo WhatsApp
-        </a>
+        </WhatsAppChooser>
       </div>
     </div>
   );

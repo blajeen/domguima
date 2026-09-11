@@ -7,7 +7,8 @@ import {
   getInstitutionalPage,
   institutionalPages,
 } from "@/lib/content/institucional";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -94,14 +95,13 @@ export default async function InstitutionalPage({ params }: PageProps) {
         <p className="mt-1 text-sm text-ink-600">
           Fale com a gente — respondemos rápido.
         </p>
-        <a
-          href={whatsappLink(genericMessage)}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppChooser
+          message={genericMessage}
+          contacts={contactsFor()}
           className="mt-4 inline-block rounded-xl bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
         >
           WhatsApp {whatsapp.display}
-        </a>
+        </WhatsAppChooser>
       </div>
 
       <nav aria-label="Outras páginas" className="mt-10">

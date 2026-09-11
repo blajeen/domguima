@@ -64,6 +64,26 @@ export const whatsapp = {
   display: "(34) 9874-8425",
 } as const;
 
+export interface WhatsappContact {
+  id: string;
+  name: string;
+  /** Função exibida abaixo do nome na hora de escolher com quem falar. */
+  role: string;
+  /** Formato internacional, somente dígitos. */
+  number: string;
+  display: string;
+}
+
+/**
+ * Quem atende no WhatsApp. Ao clicar em qualquer botão de WhatsApp o cliente
+ * escolhe um dos dois. O primeiro é o dono e usa o número principal acima
+ * (que o painel pode trocar); o segundo foi informado pelo lojista em 11/09/2026.
+ */
+export const whatsappContacts: readonly WhatsappContact[] = [
+  { id: "juliano", name: "Juliano", role: "Dono da loja", number: whatsapp.number, display: whatsapp.display },
+  { id: "gabriel", name: "Gabriel", role: "Vendedor", number: "5534998648425", display: "(34) 99864-8425" },
+];
+
 export const social = {
   /** VERIFICADO */
   instagram: "https://www.instagram.com/domguima/",

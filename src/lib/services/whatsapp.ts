@@ -1,6 +1,17 @@
-import { whatsapp } from "@/config/site";
+import { whatsapp, whatsappContacts, type WhatsappContact } from "@/config/site";
 import type { Product } from "@/lib/catalog/types";
 import { formatPrice } from "@/lib/utils/format";
+
+/**
+ * Lista de quem atende. O painel pode trocar o número do dono (primeiro da
+ * lista); os demais ficam como estão no `config/site`.
+ */
+export function contactsFor(primary?: { whatsappNumber?: string; whatsappDisplay?: string }): WhatsappContact[] {
+  return whatsappContacts.map((contact, index) => {
+    if (index !== 0 || !primary?.whatsappNumber) return contact;
+    return { ...contact, number: primary.whatsappNumber, display: primary.whatsappDisplay || contact.display };
+  });
+}
 
 /** Monta o link wa.me com a mensagem já preenchida. */
 export function whatsappLink(message?: string, number = whatsapp.number): string {

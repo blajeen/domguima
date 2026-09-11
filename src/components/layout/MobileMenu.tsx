@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Drawer } from "@/components/ui/Drawer";
 import { social } from "@/config/site";
 import type { Category } from "@/lib/catalog/types";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { WhatsAppChooser } from "./WhatsAppChooser";
 
 /** Menu lateral do celular — mesma navegação do desktop, em formato de gaveta. */
 export function MobileMenu({ categories }: { categories: Category[] }) {
@@ -78,14 +79,13 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
           </Item>
 
           <div className="mt-4 space-y-2 border-t border-ink-100 p-3">
-            <a
-              href={whatsappLink(genericMessage)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white"
+            <WhatsAppChooser
+              message={genericMessage}
+              contacts={contactsFor()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white"
             >
               Falar no WhatsApp
-            </a>
+            </WhatsAppChooser>
             <a
               href={social.instagram}
               target="_blank"
