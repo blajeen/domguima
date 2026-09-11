@@ -16,7 +16,8 @@
     "login:shopee": "node scripts/shopee-login-import.mjs",
     "setup:admin": "node scripts/setup-admin.mjs domguima",
     "inspect:supabase": "node scripts/inspect-supabase.mjs",
-    "verify:ledger": "node scripts/verify-ledger.mjs"
+    "verify:ledger": "node scripts/verify-ledger.mjs",
+    "criar:usuario": "node scripts/criar-usuario.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

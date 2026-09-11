@@ -5,7 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
-import { copyCatalogImage, countProductMovements, createInitialState, deleteCatalogImage, deleteOrderRecords, mutateCatalogState, readCatalogState, uploadCatalogImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
@@ -83,7 +83,8 @@ export async function loginAction(_: ActionState, formData: FormData): Promise<A
     return { message: `Muitas tentativas. Tente novamente em ${minutos} minuto(s).` };
   }
 
-  if (!(await verifyAdminCredentials(username, password))) {
+  const conta = await verifyAdminCredentials(username, password);
+  if (!conta) {
     // O contador só zera quando a JANELA expira. Usar `blockedUntil` para isso
     // reiniciava a contagem a cada tentativa (0 é sempre <= agora).
     const janelaViva = record && now - record.windowStart < LOGIN_WINDOW_MS;
@@ -97,7 +98,7 @@ export async function loginAction(_: ActionState, formData: FormData): Promise<A
   }
 
   loginAttempts.delete(key);
-  await createAdminSession();
+  await createAdminSession(conta);
   redirect("/painel");
 }
 
@@ -228,42 +229,6 @@ export async function archiveProductAction(formData: FormData) {
     audit(state, owner.id, "product.archived", "product", id, before, product);
   });
   refreshCatalog();
-}
-
-export async function uploadProductImagesAction(_: ActionState, formData: FormData): Promise<ActionState> {
-  const owner = await ownerOrThrow();
-  const productId = String(formData.get("productId") ?? "").trim();
-  const files = formData.getAll("images").filter((value): value is File => value instanceof File && value.size > 0);
-  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-  if (!files.length) return { message: "Escolha pelo menos uma imagem." };
-  if (files.length > 12) return { message: "Envie no máximo 12 fotos por vez." };
-  if (files.some((file) => !allowedTypes.has(file.type))) return { message: "Use apenas JPG, PNG ou WebP." };
-  if (files.some((file) => file.size > 4 * 1024 * 1024)) return { message: "Cada imagem deve ter no máximo 4 MB." };
-  if (files.reduce((total, file) => total + file.size, 0) > 40 * 1024 * 1024) return { message: "O lote deve ter no máximo 40 MB. Comprima as imagens e tente novamente." };
-  try {
-    if (!(await readCatalogState()).products.some((product) => product.id === productId)) return { message: "Produto não encontrado." };
-    const uploaded: Array<{ src: string; storagePath: string }> = [];
-    try {
-      for (const file of files) uploaded.push(await uploadCatalogImage(file, productId));
-      await mutateCatalogState((state) => {
-        const product = state.products.find((item) => item.id === productId);
-        if (!product) throw new Error("Produto não encontrado.");
-        const images = product.product_images ?? [];
-        const alt = String(formData.get("alt") || "Foto do produto").trim() || "Foto do produto";
-        uploaded.forEach((image, index) => images.push({ id: randomUUID(), product_id: productId, src: image.src, storage_path: image.storagePath, alt: `${alt}${uploaded.length > 1 ? ` ${index + 1}` : ""}`, sort_order: images.length, is_primary: images.length === 0 }));
-        product.product_images = images;
-        product.updated_at = new Date().toISOString();
-        audit(state, owner.id, "product.images_uploaded", "product", productId, null, { paths: uploaded.map((image) => image.storagePath), count: uploaded.length });
-      });
-    } catch (error) {
-      await Promise.all(uploaded.map((image) => deleteCatalogImage(image.storagePath).catch(() => undefined)));
-      throw error;
-    }
-    refreshCatalog();
-    return { ok: true, message: `${files.length} ${files.length === 1 ? "foto enviada" : "fotos enviadas"} com sucesso.` };
-  } catch (error) {
-    return catalogStorageError(error);
-  }
 }
 
 export async function removeProductImageAction(formData: FormData) {
@@ -922,4 +887,116 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
   }
   // Fora do try: redirect() funciona lancando e o catch o viraria erro.
   redirect(destino);
+}
+
+// ---------------------------------------------------------------------------
+// Envio de fotos direto do navegador para o Storage
+// ---------------------------------------------------------------------------
+
+const TIPOS_DE_IMAGEM: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+const TAMANHO_MAXIMO = 4 * 1024 * 1024;
+
+const arquivoParaEnviar = z.object({
+  type: z.string().trim().max(80),
+  size: z.number().int().positive(),
+});
+
+export interface UploadTarget {
+  storagePath: string;
+  signedUrl: string;
+  src: string;
+}
+
+/**
+ * Prepara o envio das fotos: devolve uma URL assinada por arquivo.
+ *
+ * O arquivo vai do navegador DIRETO para o Storage. Mandar pela Server Action
+ * batia no teto de corpo de requisicao da hospedagem — medido em producao como
+ * HTTP 413 com um lote de 8 MB — e foto de celular estoura isso sozinha.
+ */
+export async function createImageUploadTargetsAction(productId: unknown, arquivos: unknown): Promise<{ ok: boolean; message?: string; targets?: UploadTarget[] }> {
+  await ownerOrThrow();
+  const parsedId = z.string().trim().min(1).max(200).safeParse(productId);
+  const parsed = z.array(arquivoParaEnviar).min(1).max(12).safeParse(arquivos);
+  if (!parsedId.success || !parsed.success) return { ok: false, message: "Revise as fotos selecionadas." };
+
+  if (parsed.data.some((arquivo) => !TIPOS_DE_IMAGEM[arquivo.type])) return { ok: false, message: "Use apenas JPG, PNG ou WebP." };
+  if (parsed.data.some((arquivo) => arquivo.size > TAMANHO_MAXIMO)) return { ok: false, message: "Cada imagem deve ter no máximo 4 MB." };
+
+  const estado = await readCatalogState();
+  if (!estado.products.some((product) => product.id === parsedId.data)) return { ok: false, message: "Produto não encontrado." };
+
+  try {
+    const targets = await Promise.all(
+      parsed.data.map((arquivo) => createImageUploadTarget(parsedId.data, TIPOS_DE_IMAGEM[arquivo.type])),
+    );
+    return { ok: true, targets };
+  } catch (error) {
+    console.error("Falha ao preparar envio de imagens:", error);
+    return { ok: false, message: "Não foi possível preparar o envio agora. Tente novamente." };
+  }
+}
+
+/**
+ * Registra no catalogo as fotos que ja chegaram ao Storage.
+ *
+ * Cada caminho e conferido no Storage antes de entrar: um envio interrompido
+ * no meio gravaria uma imagem inexistente, e a vitrine mostraria quadro
+ * quebrado.
+ */
+export async function registerProductImagesAction(productId: unknown, caminhos: unknown, alt: unknown): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsedId = z.string().trim().min(1).max(200).safeParse(productId);
+  const parsed = z.array(z.string().trim().min(1).max(400)).min(1).max(12).safeParse(caminhos);
+  if (!parsedId.success || !parsed.success) return { message: "Nenhuma foto para registrar." };
+
+  const rotulo = String(alt ?? "").trim() || "Foto do produto";
+  try {
+    const presentes: string[] = [];
+    for (const caminho of parsed.data) {
+      if (await imageExistsInStorage(caminho)) presentes.push(caminho);
+    }
+    if (!presentes.length) return { message: "As fotos não chegaram ao servidor. Tente enviar novamente." };
+
+    await mutateCatalogState((state) => {
+      const product = state.products.find((item) => item.id === parsedId.data);
+      if (!product) throw new Error("Produto não encontrado.");
+      const images = product.product_images ?? [];
+      presentes.forEach((caminho, indice) => {
+        images.push({
+          id: randomUUID(), product_id: parsedId.data,
+          src: publicImageUrl(caminho),
+          storage_path: caminho,
+          alt: `${rotulo}${presentes.length > 1 ? ` ${indice + 1}` : ""}`,
+          sort_order: images.length,
+          is_primary: images.length === 0,
+        });
+      });
+      product.product_images = images;
+      product.updated_at = new Date().toISOString();
+      audit(state, owner.id, "product.images_uploaded", "product", parsedId.data, null, { paths: presentes, count: presentes.length });
+    });
+
+    refreshCatalog();
+    const faltaram = parsed.data.length - presentes.length;
+    return {
+      ok: true,
+      message: faltaram
+        ? `${presentes.length} foto(s) registrada(s). ${faltaram} não chegaram e precisam ser reenviadas.`
+        : `${presentes.length} ${presentes.length === 1 ? "foto enviada" : "fotos enviadas"} com sucesso.`,
+    };
+  } catch (error) {
+    console.error("Falha ao registrar imagens:", error);
+    return catalogStorageError(error);
+  }
+}
+
+/** Mesma URL publica que o Storage devolve, montada sem outra ida ao servidor. */
+function publicImageUrl(storagePath: string): string {
+  const base = process.env.SUPABASE_URL?.trim().replace(/\/$/, "") ?? "";
+  return `${base}/storage/v1/object/public/ecommerce-products/${storagePath}`;
 }
