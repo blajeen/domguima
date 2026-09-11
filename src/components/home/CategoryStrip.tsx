@@ -31,7 +31,9 @@ export async function CategoryStrip() {
       const preferredSlug = CATEGORY_COVER_SLUGS[category.id];
       return {
         category,
-        count: categoryProducts.length,
+        // Conta so o disponivel: a pagina da categoria agora esconde o zerado,
+        // e um atalho para pagina vazia e pior do que nao ter o atalho.
+        count: available.length,
         cover: available.find((product) => product.slug === preferredSlug) ?? available.sort((a, b) => b.price - a.price)[0],
       };
     })

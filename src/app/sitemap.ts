@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next";
 import { site } from "@/config/site";
-import { getAllProducts, getCatalogCategories } from "@/lib/catalog/queries";
+import { getCatalogCategories, getSellableProducts } from "@/lib/catalog/queries";
 import { institutionalPages } from "@/lib/content/institucional";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const [categories, products] = await Promise.all([getCatalogCategories(), getAllProducts()]);
+  const [categories, products] = await Promise.all([getCatalogCategories(), getSellableProducts()]);
 
   return [
     { url: site.url, lastModified: now, changeFrequency: "daily", priority: 1 },

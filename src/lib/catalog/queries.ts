@@ -2,22 +2,42 @@ import { normalize } from "@/lib/utils/format";
 import { loadCatalogCategories, loadCatalogProducts } from "./database";
 import type { Category, Product, ProductFilters, SortKey } from "./types";
 
+/**
+ * Todos os produtos publicados, inclusive os sem estoque.
+ *
+ * Serve para a pagina do produto e para gerar as rotas: um link compartilhado
+ * ou indexado precisa continuar abrindo — mostrando "indisponivel" — em vez
+ * de virar 404. Para LISTAR, use getSellableProducts.
+ */
 export async function getAllProducts(): Promise<Product[]> { return loadCatalogProducts(); }
+
+/**
+ * So o que da para comprar agora. E a lista que a vitrine usa: home,
+ * categoria, busca, ofertas, mais vendidos, relacionados e sitemap.
+ *
+ * Produto zerado aparecendo na vitrine era a queixa: o cliente clicava e
+ * encontrava "indisponivel". Com variacao, `stock` ja e a soma das opcoes
+ * ativas, entao o filtro vale igual para os dois casos.
+ */
+export async function getSellableProducts(): Promise<Product[]> {
+  return (await loadCatalogProducts()).filter((product) => product.stock > 0);
+}
+
 export async function getProductBySlug(slug: string): Promise<Product | undefined> { return (await loadCatalogProducts()).find((product) => product.slug === slug); }
-export async function getProductsByCategory(categoryId: string): Promise<Product[]> { return (await loadCatalogProducts()).filter((product) => product.categoryId === categoryId); }
+export async function getProductsByCategory(categoryId: string): Promise<Product[]> { return (await getSellableProducts()).filter((product) => product.categoryId === categoryId); }
 
 export async function getOffers(limit?: number): Promise<Product[]> {
-  const list = (await loadCatalogProducts()).filter((product) => product.isOffer && product.oldPrice && product.oldPrice > product.price).sort((a, b) => (b.oldPrice! - b.price) / b.oldPrice! - (a.oldPrice! - a.price) / a.oldPrice!);
+  const list = (await getSellableProducts()).filter((product) => product.isOffer && product.oldPrice && product.oldPrice > product.price).sort((a, b) => (b.oldPrice! - b.price) / b.oldPrice! - (a.oldPrice! - a.price) / a.oldPrice!);
   return limit ? list.slice(0, limit) : list;
 }
 
 export async function getBestSellers(limit?: number): Promise<Product[]> {
-  const list = (await loadCatalogProducts()).filter((product) => product.isBestSeller).sort((a, b) => (b.soldCount ?? 0) - (a.soldCount ?? 0));
+  const list = (await getSellableProducts()).filter((product) => product.isBestSeller).sort((a, b) => (b.soldCount ?? 0) - (a.soldCount ?? 0));
   return limit ? list.slice(0, limit) : list;
 }
 
 export async function getFeatured(limit?: number): Promise<Product[]> {
-  const list = (await loadCatalogProducts()).filter((product) => product.isFeatured);
+  const list = (await getSellableProducts()).filter((product) => product.isFeatured);
   return limit ? list.slice(0, limit) : list;
 }
 
@@ -28,11 +48,11 @@ export async function getExclusiveProducts(limit = 8): Promise<Product[]> {
 }
 
 export async function getHomeSelection(limit = 12): Promise<Product[]> {
-  const [products, categories] = await Promise.all([loadCatalogProducts(), loadCatalogCategories()]);
+  const [products, categories] = await Promise.all([getSellableProducts(), loadCatalogCategories()]);
   return collectByCategories(products, categories.map((category) => category.id), limit);
 }
 
-export async function getHomeCollection(categoryIds: string[], limit = 12, excludeIds: ReadonlySet<string> = new Set()): Promise<Product[]> { return collectByCategories(await loadCatalogProducts(), categoryIds, limit, excludeIds); }
+export async function getHomeCollection(categoryIds: string[], limit = 12, excludeIds: ReadonlySet<string> = new Set()): Promise<Product[]> { return collectByCategories(await getSellableProducts(), categoryIds, limit, excludeIds); }
 export async function getCategoryCoverProduct(categoryId: string): Promise<Product | undefined> { return (await loadCatalogProducts()).filter((product) => product.categoryId === categoryId && product.stock > 0 && Boolean(product.images[0])).sort((a, b) => b.price - a.price)[0]; }
 
 function collectByCategories(products: Product[], categoryIds: string[], limit: number, excludeIds: ReadonlySet<string> = new Set()): Product[] {
@@ -47,7 +67,7 @@ function collectByCategories(products: Product[], categoryIds: string[], limit: 
 }
 
 export async function getRelatedProducts(product: Product, limit = 6): Promise<Product[]> {
-  const products = await loadCatalogProducts();
+  const products = await getSellableProducts();
   const sameCategory = products.filter((item) => item.id !== product.id && item.categoryId === product.categoryId);
   if (sameCategory.length >= limit) return sameCategory.slice(0, limit);
   const tags = new Set(product.tags);
@@ -77,7 +97,7 @@ function scoreProduct(product: Product, terms: string[], categoryMap: Map<string
 export async function searchProducts(query: string): Promise<Product[]> {
   const terms = normalize(query).split(/\s+/).filter(Boolean);
   if (!terms.length) return [];
-  const [products, categories] = await Promise.all([loadCatalogProducts(), loadCatalogCategories()]);
+  const [products, categories] = await Promise.all([getSellableProducts(), loadCatalogCategories()]);
   const categoryMap = new Map(categories.map((category) => [category.id, category]));
   return products.map((product) => ({ product, score: scoreProduct(product, terms, categoryMap) })).filter((result) => result.score > 0).sort((a, b) => b.score - a.score).map((result) => result.product);
 }
@@ -102,7 +122,7 @@ function sortProducts(list: Product[], sort: SortKey): Product[] {
 }
 
 export async function queryProducts(filters: ProductFilters): Promise<Product[]> {
-  let list = filters.query ? await searchProducts(filters.query) : [...await loadCatalogProducts()];
+  let list = filters.query ? await searchProducts(filters.query) : [...await getSellableProducts()];
   if (filters.categoryId) list = list.filter((product) => product.categoryId === filters.categoryId);
   if (filters.brands?.length) { const brands = new Set(filters.brands); list = list.filter((product) => product.brand && brands.has(product.brand)); }
   if (filters.minPrice !== undefined) list = list.filter((product) => product.price >= filters.minPrice!);
