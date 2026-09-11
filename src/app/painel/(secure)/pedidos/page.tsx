@@ -3,6 +3,7 @@ import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
 import { ConfirmOrderForm } from "@/components/admin/ConfirmOrderForm";
 import { bulkOrdersAction } from "@/app/painel/actions";
+import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
@@ -129,6 +130,7 @@ function OrderRow({ order, sellers }: { order: SalesOrderRecord; sellers: Awaite
               </div>}
               {order.status === "completed" && <div className="mt-4"><CancelOrderForm orderId={order.id} orderNumber={order.number} /></div>}
               {order.status === "cancelled" && <p className="mt-4 border-t border-ink-100 pt-4 text-xs text-ink-400">Pedido cancelado. Confira o histórico se precisar auditar a operação.</p>}
+              {order.status !== "cancelled" && <div className="mt-4 border-t border-ink-100 pt-4"><InstallmentSimulator cents={order.total_cents} titulo={`Parcelamento de ${order.number}`} /></div>}
             </div>
           </div>
         </div>
