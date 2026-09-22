@@ -135,15 +135,24 @@ levam ao perfil oficial; não dependem de API.
 
 ### Assistente inteligente de cadastro
 
-No cadastro de produto, informe o modelo e clique em **Pesquisar modelo**. Com
-`OPENAI_API_KEY` configurada na Vercel, o servidor usa pesquisa na web para
-priorizar o fabricante/site oficial e devolve uma prévia com nome, marca,
-descrição, especificações, fonte e NCM sugerido. O operador precisa revisar e
-clicar em **Aplicar dados pesquisados** antes de salvar. O NCM é sempre tratado
-como sugestão fiscal, não como classificação definitiva.
+No topo do cadastro de produto há um campo **Código de barras ou modelo**:
+escaneie o EAN/GTIN com o leitor (ou digite) e aperte Enter, ou informe o
+modelo e clique em **Buscar e preencher**. O painel consulta duas fontes, cada
+uma opcional:
 
-A chave fica somente no servidor e nunca é enviada ao navegador. A pesquisa não
-altera preço, custo, estoque, fotos, status ou publica o produto.
+| Variável | Fonte | O que traz |
+| --- | --- | --- |
+| `COSMOS_TOKEN` | Cosmos (Bluesoft), cadastro brasileiro de GTIN — token gratuito | nome, marca, NCM e peso, pelo código de barras |
+| `OPENAI_API_KEY` | pesquisa na web priorizando o fabricante | nome, marca, modelo, descrição, especificações e fonte, pelo código ou pelo modelo |
+
+Com as duas, o NCM e o peso vêm do cadastro do código de barras e o resto da
+web. O resultado preenche **só os campos vazios**; o que já foi digitado é
+mantido e pode ser substituído com um clique, e **Desfazer preenchimento**
+volta tudo ao estado anterior. O NCM é sempre tratado como sugestão fiscal,
+não como classificação definitiva.
+
+As chaves ficam somente no servidor e nunca são enviadas ao navegador. A
+pesquisa não altera preço, custo, estoque, fotos, status nem publica o produto.
 
 Para o passo a passo operacional do comparativo de preços e da pesquisa com IA,
 consulte o [Guia de pesquisa de produtos](docs/GUIA-PESQUISA-DE-PRODUTOS.md).

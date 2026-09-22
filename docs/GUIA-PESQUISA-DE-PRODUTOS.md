@@ -3,7 +3,7 @@
 O painel possui duas ferramentas para ajudar no cadastro:
 
 - **Comparativo de preços**: abre pesquisas no Google.
-- **Pesquisa inteligente**: usa IA para encontrar dados do produto.
+- **Busca pelo código de barras ou modelo**: encontra os dados do produto e preenche o cadastro.
 
 ## Acesso
 
@@ -22,19 +22,19 @@ O painel possui duas ferramentas para ajudar no cadastro:
 
 Essa ferramenta não copia preços nem altera o cadastro automaticamente.
 
-## 2. Pesquisar com IA
+## 2. Preencher pelo código de barras ou modelo
 
-1. Informe o **modelo completo**.
-2. Preencha a **marca** e o **EAN/GTIN**, se souber.
-3. Confirme a categoria.
-4. Clique em **Pesquisar modelo**.
-5. Revise nome, marca, descrição, especificações, NCM e fontes.
-6. Abra a fonte oficial e confirme se é o produto exato.
-7. Clique em **Aplicar dados pesquisados**.
+1. No topo do cadastro, clique no campo **Código de barras ou modelo** (ele já abre selecionado).
+2. **Escaneie o código de barras da caixa** com o leitor — ou digite os números e aperte Enter. Sem o código, digite o **modelo completo** e clique em **Buscar e preencher**.
+3. Aguarde: pode levar até 1 minuto.
+4. O painel preenche os campos que estavam vazios (nome, marca, modelo, EAN, NCM, descrição, especificações, peso) e mostra o que preencheu.
+5. Se você já tinha digitado algum campo, ele é mantido; clique em **Substituir pelos encontrados** se preferir os dados da busca.
+6. Não gostou? Clique em **Desfazer preenchimento** e tudo volta como estava.
+7. Abra a fonte e confirme se é o produto exato.
 8. Revise preço, estoque, imagens, voltagem e NCM.
 9. Clique em **Salvar produto**.
 
-A IA procura primeiro o fabricante. Se a marca não for informada, tenta identificá-la pelo modelo e depois consulta outras fontes.
+Pelo código de barras, o painel consulta o cadastro nacional de GTIN (Cosmos), que traz nome, marca, NCM e peso. A pesquisa na web procura primeiro o fabricante para completar descrição e especificações. Se o código não estiver no cadastro, a web continua a busca sozinha.
 
 ## NCM
 
@@ -43,10 +43,10 @@ O NCM é apenas uma **sugestão fiscal**. Confira com a contabilidade antes de e
 ## Atenção
 
 - **Confiança alta** não elimina a conferência da fonte.
-- Se aparecer produto parecido, não aplique os dados; informe modelo, marca ou EAN/GTIN mais completo.
-- O botão **Aplicar dados pesquisados** não salva o produto. O cadastro só muda depois de clicar em **Salvar produto**.
+- Se vier um produto parecido mas não o mesmo, clique em **Desfazer preenchimento** e busque de novo com o código de barras ou o modelo completo.
+- A busca não salva o produto. O cadastro só muda depois de clicar em **Salvar produto**.
 - Se a pesquisa demorar, tente novamente com mais informações.
 
 ### Fluxo recomendado
 
-**Selecionar setor → preencher modelo → pesquisar com IA → conferir fabricante → aplicar dados → comparar preço → revisar cadastro → salvar.**
+**Selecionar setor → escanear o código de barras (ou digitar o modelo) → conferir o que foi preenchido → comparar preço → revisar cadastro → salvar.**

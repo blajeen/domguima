@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getOwner } from "@/lib/admin/auth";
 import { ProductResearchError, researchProduct } from "@/lib/admin/product-research";
+import { isValidGTIN } from "@/lib/utils/validators";
 
 const requestSchema = z.object({
   name: z.string().trim().max(180),
   brand: z.string().trim().max(100),
-  model: z.string().trim().min(2).max(100),
+  model: z.string().trim().max(100),
   gtin: z.string().trim().max(14),
   category: z.string().trim().max(100),
-});
+}).refine((value) => value.model.length >= 2 || isValidGTIN(value.gtin));
 
 export const maxDuration = 60;
 const requestLog = new Map<string, { count: number; resetAt: number }>();
@@ -28,14 +29,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Não conseguimos ler os dados da pesquisa." }, { status: 400 });
   }
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ message: "Informe um modelo válido para pesquisar." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ message: "Informe um código de barras válido ou o modelo para pesquisar." }, { status: 400 });
 
   try {
     const result = await researchProduct(parsed.data);
     return NextResponse.json({ ok: true, result }, { status: 200 });
   } catch (error) {
     if (error instanceof ProductResearchError) {
-      const status = error.code === "not_configured" ? 503 : 502;
+      const status = error.code === "not_configured" ? 503 : error.code === "not_found" ? 404 : 502;
       return NextResponse.json({ message: error.message, code: error.code }, { status });
     }
     return NextResponse.json({ message: "Não foi possível pesquisar este modelo agora." }, { status: 502 });

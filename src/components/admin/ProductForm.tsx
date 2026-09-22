@@ -8,7 +8,7 @@ import type { ProductResearchResult } from "@/lib/admin/product-research-types";
 import { formatPrice, normalize } from "@/lib/utils/format";
 import { onlyDigits } from "@/lib/utils/validators";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
-import { ProductResearchAssistant } from "./ProductResearchAssistant";
+import { ProductResearchAssistant, type ResearchFillReport, type ResearchLookup } from "./ProductResearchAssistant";
 import { VariantEditor } from "./VariantEditor";
 
 interface ProductFormProps {
@@ -50,6 +50,14 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
   const [shipping, setShipping] = useState({ weight: String(product?.shipping.weight ?? 0), length: String(product?.shipping.dimensions.length ?? 0), width: String(product?.shipping.dimensions.width ?? 0), height: String(product?.shipping.dimensions.height ?? 0), origin: product?.shipping.origin ?? "Minas Gerais" });
   const [templateQuery, setTemplateQuery] = useState("");
   const [assistMessage, setAssistMessage] = useState("");
+  const [fillSnapshot, setFillSnapshot] = useState<FillSnapshot | null>(null);
+  // Valor que a ultima busca gravou em cada campo. Enquanto o campo continua
+  // com esse valor, ele e "da busca" e nao do lojista: escanear outro codigo
+  // pode troca-lo sem perguntar.
+  const [autoFilled, setAutoFilled] = useState<Record<string, string>>({});
+  // Trocar a chave recria a caixa de busca e some com o cartao do resultado:
+  // depois de copiar estrutura, o "Desfazer" ja nao descreveria o formulario.
+  const [assistKey, setAssistKey] = useState(0);
 
   const templateMatches = useMemo(() => {
     const term = normalize(templateQuery);
@@ -74,6 +82,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     setSlug(slugify(name)); setAutomaticSlug(true);
     setTags(buildTags(name, nextBrand, model, categoryNames.get(categoryId) ?? ""));
     if (!description.trim()) setDescription(buildDescription(name, nextBrand, model, categoryNames.get(categoryId) ?? ""));
+    forgetResearch();
     setAssistMessage("Sugestões aplicadas. Revise os textos antes de salvar.");
   }
   function copyTemplate(template: ProductAssistTemplate) {
@@ -81,25 +90,70 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     setSpecs(template.specifications.map((item) => `${item.label}: ${item.value}`).join("\n"));
     setVariants(template.variants.map((item) => `${item.name}: ${item.options.join(", ")}`).join("\n")); setSellerNote(template.seller_note);
     setShipping({ weight: String(template.shipping.weight), length: String(template.shipping.dimensions.length), width: String(template.shipping.dimensions.width), height: String(template.shipping.dimensions.height), origin: template.shipping.origin });
-    setTemplateQuery(""); setAssistMessage(`Estrutura copiada de “${template.name}”. Nome, modelo, EAN, preço, custo e estoque não foram copiados.`);
+    setTemplateQuery(""); forgetResearch(); setAssistMessage(`Estrutura copiada de “${template.name}”. Nome, modelo, EAN, preço, custo e estoque não foram copiados.`);
   }
 
-  function applyResearch(result: ProductResearchResult) {
-    if (!name.trim() && result.name) { setName(result.name); setSlug(slugify(result.name)); setAutomaticSlug(true); }
-    if (!brand.trim() && result.brand) setBrand(result.brand);
-    if (result.description) setDescription(result.description);
-    if (result.ncm) setNcm(result.ncm);
-    if (result.specifications.length) setSpecs(result.specifications.map((item) => `${item.label}: ${item.value}`).join("\n"));
-    if (!sourceUrl && result.primarySourceUrl) setSourceUrl(result.primarySourceUrl);
-    setTags(buildTags(result.name || name, result.brand || brand, model, categoryNames.get(categoryId) ?? ""));
-    setAssistMessage("Dados pesquisados aplicados. Revise a fonte oficial, o NCM e as especificações antes de salvar.");
+  /**
+   * Preenche so o que esta vazio (ou o que a busca anterior preencheu e
+   * ninguem mexeu); o que o lojista digitou fica, e volta como "mantido" para
+   * ele decidir. `replace` e o botao "Substituir pelos encontrados": troca
+   * exatamente os campos listados, nada alem. O GTIN/modelo pesquisado entra
+   * sempre, porque foi o lojista que digitou.
+   */
+  function applyResearch(result: ProductResearchResult, lookup: ResearchLookup, replace: string[] | null): ResearchFillReport {
+    const replacing = replace ? new Set(replace) : null;
+    if (!replacing) setFillSnapshot({ name, slug, automaticSlug, brand, model, gtin, ncm, description, specs, tags, sourceUrl, weight: shipping.weight, autoFilled });
+    const filled: string[] = [];
+    const kept: string[] = [];
+    const written: Record<string, string> = {};
+    function decide(label: string, current: string, next: string, set: (value: string) => void, force = false): string {
+      const atual = current.trim();
+      const novo = next.trim();
+      if (!novo || atual === novo) return atual;
+      const livre = !atual || autoFilled[label] === atual;
+      if (replacing ? replacing.has(label) : force || livre) { set(novo); filled.push(label); written[label] = novo; return novo; }
+      if (!replacing) kept.push(label);
+      return atual;
+    }
+    const knownBrand = knownBrands.find((item) => normalize(item) === normalize(result.brand)) ?? result.brand;
+    const finalName = decide("Nome", name, result.name, changeName);
+    const finalBrand = decide("Marca", brand, knownBrand, setBrand);
+    const finalModel = decide("Modelo", model, lookup.kind === "model" ? lookup.value : result.model, setModel, lookup.kind === "model");
+    decide("EAN/GTIN", gtin, lookup.kind === "gtin" ? lookup.value : result.gtin, setGtin, lookup.kind === "gtin");
+    decide("NCM", ncm, result.ncm, setNcm);
+    decide("Descrição", description, result.description, setDescription);
+    decide("Especificações", specs, result.specifications.map((item) => `${item.label}: ${item.value}`).join("\n"), setSpecs);
+    decide("Link da fonte", sourceUrl, result.primarySourceUrl, setSourceUrl);
+    decide("Peso", Number(shipping.weight) > 0 ? shipping.weight : "", result.weightGrams ? String(result.weightGrams) : "", (value) => setShipping((current) => ({ ...current, weight: value })));
+    if (finalName) decide("Palavras-chave", tags, buildTags(finalName, finalBrand, finalModel, categoryNames.get(categoryId) ?? ""), setTags);
+    setAutoFilled((current) => ({ ...current, ...written }));
+    setAssistMessage("");
+    return { filled, kept };
+  }
+
+  function undoResearch() {
+    if (!fillSnapshot) return;
+    setName(fillSnapshot.name); setSlug(fillSnapshot.slug); setAutomaticSlug(fillSnapshot.automaticSlug);
+    setBrand(fillSnapshot.brand); setModel(fillSnapshot.model); setGtin(fillSnapshot.gtin); setNcm(fillSnapshot.ncm);
+    setDescription(fillSnapshot.description); setSpecs(fillSnapshot.specs); setTags(fillSnapshot.tags); setSourceUrl(fillSnapshot.sourceUrl);
+    setShipping((current) => ({ ...current, weight: fillSnapshot.weight }));
+    setAutoFilled(fillSnapshot.autoFilled);
+    setFillSnapshot(null);
+  }
+
+  /** Outra ferramenta mexeu no formulario: o resultado da busca deixa de valer. */
+  function forgetResearch() {
+    setFillSnapshot(null);
+    setAutoFilled({});
+    setAssistKey((current) => current + 1);
   }
 
   return <form action={action} className="space-y-6">
     <input type="hidden" name="id" value={product?.id ?? ""} /><input type="hidden" name="skuMode" value={automaticSku ? "auto" : "manual"} />
 
     <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-card">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Assistente de cadastro</p><h2 className="mt-1 text-lg font-black text-ink-900">Preencher mais rápido</h2><p className="mt-1 text-xs text-ink-500">Use sugestões e modelos internos; nada é publicado sem você salvar.</p></div><button type="button" onClick={applySuggestions} disabled={!name.trim()} className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-black text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40">Preencher sugestões</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Assistente de cadastro</p><h2 className="mt-1 text-lg font-black text-ink-900">Preencher mais rápido</h2><p className="mt-1 text-xs text-ink-500">Escaneie o código de barras ou digite o modelo: o painel busca os dados e preenche o cadastro. Nada é publicado sem você salvar.</p></div><button type="button" onClick={applySuggestions} disabled={!name.trim()} title="Gera palavras-chave, marca e uma descrição-base a partir do nome" className="rounded-lg border border-blue-200 bg-white px-4 py-2.5 text-xs font-black text-blue-800 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">Sugestões pelo nome</button></div>
+      <ProductResearchAssistant key={assistKey} name={name} brand={brand} model={model} gtin={gtin} category={categoryNames.get(categoryId) ?? ""} autoFocus={!product && assistKey === 0} onApply={applyResearch} onUndo={undoResearch} />
       {!product && <div className="relative mt-4 max-w-2xl"><label className={labelClass}>Copiar estrutura de um produto semelhante<input value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder="Busque por nome, SKU, marca ou categoria" className={fieldClass} /></label>{templateQuery && <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl">{templateMatches.map((template) => <button key={template.id} type="button" onClick={() => copyTemplate(template)} className="flex w-full items-center justify-between gap-4 border-b border-ink-100 px-4 py-3 text-left last:border-0 hover:bg-blue-50"><span><strong className="block text-sm">{template.name}</strong><small className="text-ink-500">{template.category_name} · SKU {template.sku}</small></span><span className="shrink-0 text-[10px] font-black uppercase text-blue-700">Usar modelo</span></button>)}{!templateMatches.length && <p className="px-4 py-5 text-center text-sm text-ink-500">Nenhum produto semelhante encontrado.</p>}</div>}</div>}
       {suggestedBrand && !brand && <button type="button" onClick={() => setBrand(suggestedBrand)} className="mt-3 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800">Usar marca sugerida: {suggestedBrand}</button>}
       {assistMessage && <p role="status" className="mt-3 rounded-lg border border-gold-200 bg-gold-50 px-3 py-2 text-xs leading-relaxed text-gold-900">{assistMessage}</p>}
@@ -109,8 +163,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
       <Field name="name" label="Nome do produto" value={name} onChange={(event) => changeName(event.target.value)} required className="sm:col-span-2 lg:col-span-3" error={state.errors?.name} />
       <label className={labelClass}>Marca<input name="brand" value={brand} onChange={(event) => setBrand(event.target.value)} list="product-brand-options" className={fieldClass} /><datalist id="product-brand-options">{knownBrands.map((item) => <option key={item} value={item} />)}</datalist></label>
       <Field name="model" label="Modelo" value={model} onChange={(event) => setModel(event.target.value)} maxLength={100} placeholder="Ex.: 50UA8550PSA" hint="Ajuda a encontrar o produto exato na internet." />
-      <ProductResearchAssistant name={name} brand={brand} model={model} gtin={gtin} category={categoryNames.get(categoryId) ?? ""} onApply={applyResearch} />
-      <Field name="gtin" label="EAN / GTIN" value={gtin} onChange={(event) => setGtin(onlyDigits(event.target.value).slice(0, 14))} inputMode="numeric" maxLength={14} placeholder="Código de barras" hint="Aceita GTIN-8, UPC, EAN-13 ou GTIN-14." />
+      <Field name="gtin" label="EAN / GTIN" value={gtin} onChange={(event) => setGtin(onlyDigits(event.target.value).slice(0, 14))} inputMode="numeric" maxLength={14} placeholder="Código de barras" hint="Para preencher o cadastro pelo código, use a busca no topo." />
       <label className={labelClass}>Categoria<select name="categoryId" value={categoryId} onChange={(event) => changeCategory(event.target.value)} required className={fieldClass}><option value="">Selecione</option>{categories.filter((item) => item.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label className={labelClass}>SKU<div className="relative"><input name="sku" value={sku} onChange={(event) => { setSku(event.target.value.toUpperCase()); setAutomaticSku(false); }} required className={`${fieldClass} pr-24 font-mono font-bold`} /><span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[9px] font-black uppercase ${automaticSku ? "bg-green-50 text-green-700" : "bg-ink-50 text-ink-500"}`}>{automaticSku ? "Automático" : "Manual"}</span></div>{!product && choicesByCategory.get(categoryId) && <button type="button" onClick={() => { setSku(choicesByCategory.get(categoryId)!.nextSku); setAutomaticSku(true); }} className="mt-1 text-left text-[11px] font-bold text-blue-700 hover:underline">Usar próximo código: {choicesByCategory.get(categoryId)!.nextSku}</button>}{state.errors?.sku && <ErrorText value={state.errors.sku} />}</label>
       <label className={labelClass}>Endereço (slug)<div className="relative"><input name="slug" value={slug} onChange={(event) => { setSlug(slugify(event.target.value)); setAutomaticSlug(false); }} required className={`${fieldClass} pr-24`} /><span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[9px] font-black uppercase ${automaticSlug ? "bg-green-50 text-green-700" : "bg-ink-50 text-ink-500"}`}>{automaticSlug ? "Automático" : "Manual"}</span></div>{!product && <button type="button" onClick={() => { setSlug(slugify(name)); setAutomaticSlug(true); }} className="mt-1 text-[11px] font-bold text-blue-700 hover:underline">Gerar novamente pelo nome</button>}{state.errors?.slug && <ErrorText value={state.errors.slug} />}</label>
@@ -142,6 +195,8 @@ function Field({ name, label, hint, className = "", error, ...props }: { name: s
 function Check({ name, label, checked }: { name: string; label: string; checked?: boolean }) { return <label className="flex items-center gap-2 text-sm font-semibold text-ink-700"><input type="checkbox" name={name} defaultChecked={checked} className="h-4 w-4 accent-gold-500" />{label}</label>; }
 function ErrorText({ value }: { value: string[] }) { return <span className="mt-1 block font-normal text-red-600">{value[0]}</span>; }
 function SearchLink({ label, href }: { label: string; href: string }) { return href ? <a href={href} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white px-3 py-2 text-xs font-black text-blue-800 shadow-sm ring-1 ring-blue-200 hover:bg-blue-100">{label} ↗</a> : <span className="cursor-not-allowed rounded-lg bg-white/60 px-3 py-2 text-xs font-black text-blue-300">{label}</span>; }
+/** Campos que a busca pode mudar, guardados para o "Desfazer preenchimento". */
+interface FillSnapshot { name: string; slug: string; automaticSlug: boolean; brand: string; model: string; gtin: string; ncm: string; description: string; specs: string; tags: string; sourceUrl: string; weight: string; autoFilled: Record<string, string> }
 function cents(value?: number | null) { return value == null ? "" : (value / 100).toFixed(2).replace(".", ","); }
 function moneyInputToCents(value: string) { const raw = value.trim().replace(/\s/g, ""); if (!raw) return 0; const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw; const number = Number(normalized); return Number.isFinite(number) ? Math.round(number * 100) : 0; }
 function slugify(value: string) { return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90); }
