@@ -3,11 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { WhatsappContact } from "@/config/site";
 import { whatsappLink } from "@/lib/services/whatsapp";
+import { useAttendants } from "@/lib/store/attendants";
 
 interface WhatsAppChooserProps {
   /** Texto já preenchido na conversa. */
   message?: string;
-  contacts: WhatsappContact[];
+  /**
+   * Lista explícita de contatos. Normalmente omitida: os atendentes vêm do
+   * cadastro do painel via `AttendantsProvider`, o mesmo em todo o site.
+   */
+  contacts?: WhatsappContact[];
   /** Classes do botão que dispara a escolha — o mesmo visual do link antigo. */
   className?: string;
   "aria-label"?: string;
@@ -20,12 +25,13 @@ interface WhatsAppChooserProps {
  */
 export function WhatsAppChooser({ message, contacts, className, children, ...rest }: WhatsAppChooserProps) {
   const [open, setOpen] = useState(false);
+  const attendants = useAttendants();
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={className} aria-haspopup="dialog" {...rest}>
         {children}
       </button>
-      <ContactDialog open={open} onClose={() => setOpen(false)} message={message} contacts={contacts} />
+      <ContactDialog open={open} onClose={() => setOpen(false)} message={message} contacts={contacts ?? attendants.contacts} />
     </>
   );
 }

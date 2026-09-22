@@ -8,8 +8,9 @@ import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCrede
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
-import type { ActionState, AdminProductRow, AdminProductVariant, StoreSettings } from "@/lib/admin/types";
+import type { ActionState, AdminProductRow, AdminProductVariant, SellerRecord, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
@@ -410,14 +411,105 @@ export async function saveCategoryAction(_: ActionState, formData: FormData): Pr
 
 export async function saveSettingsAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
-  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "pixDiscountPercent", "maxInstallments"];
+  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "pixDiscountPercent", "maxInstallments", "leadDistributionMode"];
   await mutateCatalogState((state) => {
     const before = { ...state.settings };
     for (const key of keys) state.settings[key] = String(formData.get(key) ?? "").trim();
+    // Valor fora da lista (form adulterado ou versao antiga) volta ao padrao.
+    state.settings.leadDistributionMode = normalizeLeadDistributionMode(state.settings.leadDistributionMode);
     audit(state, owner.id, "settings.updated", "settings", "store", before, state.settings);
   });
   refreshCatalog();
   return { ok: true, message: "Configuracoes salvas." };
+}
+
+const sellerInput = z.object({
+  id: z.string().regex(SELLER_ID_PATTERN, "O identificador do atendente deve ter de 2 a 40 caracteres: letras minúsculas, números ou hífen."),
+  name: z.string().trim().min(2, "Informe o nome do atendente.").max(80, "O nome do atendente pode ter no máximo 80 caracteres."),
+  roleLabel: z.string().trim().max(40, "A função pode ter no máximo 40 caracteres."),
+  whatsappNumber: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 12 && value.length <= 13), "O WhatsApp do atendente precisa ter DDI, DDD e número (12 ou 13 dígitos) ou ficar em branco."),
+  whatsappDisplay: z.string().trim().max(30, "O número exibido pode ter no máximo 30 caracteres."),
+  receivesLeads: z.boolean(),
+  active: z.boolean(),
+  sortOrder: z.number().int().min(0).max(999),
+});
+
+/**
+ * Salva a lista de atendentes de Configuracoes.
+ *
+ * Cada linha do formulario vem com um `sellerRow` (chave da linha) e os campos
+ * `seller-<chave>-*`; checkbox desmarcado nao e enviado, por isso a leitura e
+ * por linha e nao por `getAll`. Linha existente manda o id escondido; linha
+ * nova recebe o id a partir do nome. Quem ja tem pedido nao pode sair da
+ * lista — so ser desativado — porque `sales_orders.seller_id` e texto sem FK
+ * e o relatorio ficaria orfao.
+ */
+export async function saveSellersAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const chaves = formData.getAll("sellerRow").map((value) => String(value)).filter(Boolean);
+  if (!chaves.length) return { message: "Cadastre pelo menos um atendente." };
+
+  const state = await readCatalogState(true);
+  const atuais = new Map(state.operations.sellers.map((seller) => [seller.id, seller]));
+  const pedidosPorAtendente = new Map<string, number>();
+  for (const order of state.operations.orders) {
+    const id = canonicalSellerId(order.seller_id);
+    pedidosPorAtendente.set(id, (pedidosPorAtendente.get(id) ?? 0) + 1);
+  }
+
+  const lista: SellerRecord[] = [];
+  for (const chave of chaves) {
+    const campo = (nome: string) => String(formData.get(`seller-${chave}-${nome}`) ?? "");
+    const name = campo("name").trim();
+    const idInformado = campo("id").trim().toLowerCase();
+    const parsed = sellerInput.safeParse({
+      // Canonico antes da checagem de duplicata: um "Dom Guima" novo viraria
+      // o id legado e se fundiria com o dono em silencio.
+      id: canonicalSellerId(idInformado || sellerIdFromName(name)),
+      name,
+      roleLabel: campo("roleLabel"),
+      whatsappNumber: campo("whatsappNumber"),
+      whatsappDisplay: campo("whatsappDisplay"),
+      receivesLeads: campo("receivesLeads") === "on",
+      active: campo("active") === "on",
+      sortOrder: Math.trunc(numberFrom(formData.get(`seller-${chave}-sortOrder`))),
+    });
+    if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados dos atendentes." };
+    const value = parsed.data;
+    if (lista.some((seller) => seller.id === value.id)) return { message: `O atendente “${value.name}” está repetido na lista.` };
+    lista.push({
+      id: value.id,
+      name: value.name,
+      role_label: value.roleLabel || "Vendedor",
+      whatsapp_number: value.whatsappNumber || null,
+      whatsapp_display: value.whatsappDisplay,
+      receives_leads: value.receivesLeads,
+      active: value.active,
+      sort_order: value.sortOrder,
+    });
+  }
+
+  const ativos = lista.filter((seller) => seller.active);
+  if (!ativos.length) return { message: "Mantenha pelo menos um atendente ativo: é ele quem assina os pedidos." };
+
+  const idsEnviados = new Set(lista.map((seller) => seller.id));
+  const removidoComPedidos = [...atuais.values()].find((seller) => !idsEnviados.has(seller.id) && (pedidosPorAtendente.get(seller.id) ?? 0) > 0);
+  if (removidoComPedidos) {
+    return { message: `“${removidoComPedidos.name}” já tem pedidos registrados e não pode ser removido. Desmarque “Ativo” para tirá-lo de circulação.` };
+  }
+
+  try {
+    await mutateCatalogState((current) => {
+      const before = current.operations.sellers;
+      current.operations.sellers = lista.map((seller, index) => normalizeSeller(seller, index));
+      audit(current, owner.id, "seller.updated", "seller", "all", before, current.operations.sellers);
+    });
+  } catch (error) {
+    console.error("Falha ao salvar atendentes:", error);
+    return catalogStorageError(error);
+  }
+  refreshCatalog();
+  return { ok: true, message: "Atendentes salvos. O site já mostra a lista nova." };
 }
 
 export async function importCurrentCatalogAction(_: ActionState, formData: FormData): Promise<ActionState> {

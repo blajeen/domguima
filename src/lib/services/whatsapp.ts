@@ -1,16 +1,40 @@
 import { whatsapp, whatsappContacts, type WhatsappContact } from "@/config/site";
+import type { SellerRecord } from "@/lib/admin/types";
 import type { Product } from "@/lib/catalog/types";
 import { formatPrice } from "@/lib/utils/format";
+import { formatPhone, onlyDigits } from "@/lib/utils/validators";
 
 /**
- * Lista de quem atende. O painel pode trocar o número do dono (primeiro da
- * lista); os demais ficam como estão no `config/site`.
+ * Lista de quem atende, como o cliente ve no dialogo do WhatsApp.
+ *
+ * Com `sellers` (os atendentes cadastrados no painel) cada um vira um contato:
+ * quem nao tem numero proprio usa o numero principal da loja, que o painel ja
+ * edita em Configuracoes. Sem `sellers` — catalogo indisponivel — cai na lista
+ * estatica de `config/site`, onde so o numero do dono (primeiro) segue o painel.
  */
-export function contactsFor(primary?: { whatsappNumber?: string; whatsappDisplay?: string }): WhatsappContact[] {
+export function contactsFor(primary?: { whatsappNumber?: string; whatsappDisplay?: string }, sellers?: readonly SellerRecord[]): WhatsappContact[] {
+  if (sellers) {
+    const numeroPrincipal = onlyDigits(primary?.whatsappNumber ?? "") || whatsapp.number;
+    const displayPrincipal = primary?.whatsappDisplay || whatsapp.display;
+    return sellers.map((seller) => ({
+      id: seller.id,
+      name: seller.name,
+      role: seller.role_label,
+      number: seller.whatsapp_number ?? numeroPrincipal,
+      display: seller.whatsapp_display || (seller.whatsapp_number ? internationalDisplay(seller.whatsapp_number) : displayPrincipal),
+    }));
+  }
   return whatsappContacts.map((contact, index) => {
     if (index !== 0 || !primary?.whatsappNumber) return contact;
     return { ...contact, number: primary.whatsappNumber, display: primary.whatsappDisplay || contact.display };
   });
+}
+
+/** "5534998648425" → "(34) 99864-8425"; numero fora do padrao brasileiro volta como esta. */
+function internationalDisplay(number: string): string {
+  const digits = onlyDigits(number);
+  const nacional = digits.startsWith("55") && (digits.length === 12 || digits.length === 13) ? digits.slice(2) : digits;
+  return nacional.length === 10 || nacional.length === 11 ? formatPhone(nacional) : digits;
 }
 
 /** Monta o link wa.me com a mensagem já preenchida. */

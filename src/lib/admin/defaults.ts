@@ -18,6 +18,7 @@ export const defaultStoreSettings: StoreSettings = {
   googleVerifiedAt: "2026-08-20",
   pixDiscountPercent: "5",
   maxInstallments: "3",
+  leadDistributionMode: "customer_choice",
 };
 
 export function initialProducts(): AdminProductRow[] { return fallbackProducts.map(fallbackProductRow); }

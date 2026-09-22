@@ -7,7 +7,7 @@ import {
   getInstitutionalPage,
   institutionalPages,
 } from "@/lib/content/institucional";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 interface PageProps {
@@ -97,7 +97,6 @@ export default async function InstitutionalPage({ params }: PageProps) {
         </p>
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor()}
           className="mt-4 inline-block rounded-xl bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
         >
           WhatsApp {whatsapp.display}

@@ -4,6 +4,7 @@
  * =====================================
  *
  *   npm run criar:usuario -- gabriel "Gabriel"
+ *   npm run criar:usuario -- gabriel "Gabriel" --vendedor gabriel
  *   npm run criar:usuario -- gabriel "Gabriel" --senha "minha-senha-forte"
  *   npm run criar:usuario -- gabriel --desativar
  *   npm run criar:usuario -- --listar
@@ -11,6 +12,11 @@
  * A senha e sorteada aqui e o hash scrypt e calculado AQUI. O banco recebe so
  * o hash — a senha em texto aparece uma unica vez, nesta tela, e nao fica
  * gravada em lugar nenhum. Se perder, gere outra rodando o comando de novo.
+ *
+ * --vendedor <id> vincula o login a um atendente da lista de Configuracoes
+ * (ids como "juliano" e "gabriel"). E assim que o painel sabe qual atendente
+ * esta logado. Sem a flag, um usuario ja vinculado continua como esta.
+ * Exige a migration 202609210001_atendentes.sql (coluna seller_id).
  *
  * Le SUPABASE_URL e SUPABASE_SECRET_KEY do .env.local; os valores nunca sao
  * impressos.
@@ -49,7 +55,9 @@ function gerarHash(senha) {
 const args = process.argv.slice(2);
 
 if (args.includes("--listar")) {
-  const { data, error } = await db.from("admin_users").select("username, name, active, created_at, updated_at").order("created_at");
+  // `*` e nao a lista de colunas: seller_id so existe depois da migration de
+  // atendentes, e a listagem tem de funcionar antes e depois dela.
+  const { data, error } = await db.from("admin_users").select("*").order("created_at");
   if (error) {
     console.error(`\n✗ ${error.message}`);
     console.error("  A tabela existe? Aplique supabase/migrations/202609110001_usuarios_do_painel.sql\n");
@@ -57,7 +65,7 @@ if (args.includes("--listar")) {
   }
   console.log(`\n▸ Usuarios do painel no banco: ${data.length}`);
   for (const u of data) {
-    console.log(`    ${u.username.padEnd(14)} ${u.name.padEnd(18)} ${u.active ? "ativo" : "DESATIVADO"}   criado ${u.created_at.slice(0, 10)}`);
+    console.log(`    ${u.username.padEnd(14)} ${u.name.padEnd(18)} ${(u.active ? "ativo" : "DESATIVADO").padEnd(11)} atendente: ${(u.seller_id ?? "-").padEnd(12)} criado ${u.created_at.slice(0, 10)}`);
   }
   console.log("\n  (a conta de ADMIN_USERNAME continua valendo mesmo sem estar nesta lista)\n");
   process.exit(0);
@@ -65,7 +73,7 @@ if (args.includes("--listar")) {
 
 const username = args[0]?.trim().toLowerCase();
 if (!username || username.startsWith("--")) {
-  console.error("\nUso: npm run criar:usuario -- <usuario> \"<Nome>\" [--senha \"...\"] [--desativar]\n      npm run criar:usuario -- --listar\n");
+  console.error("\nUso: npm run criar:usuario -- <usuario> \"<Nome>\" [--senha \"...\"] [--vendedor <atendente>] [--desativar]\n      npm run criar:usuario -- --listar\n");
   process.exit(1);
 }
 if (!/^[a-z0-9._-]{3,40}$/.test(username)) {
@@ -89,10 +97,20 @@ if (senhaInformada && senhaInformada.length < 10) {
 }
 const senha = senhaInformada || sortearSenha();
 
+const indiceVendedor = args.indexOf("--vendedor");
+const vendedor = indiceVendedor >= 0 ? (args[indiceVendedor + 1] ?? "").trim().toLowerCase() : null;
+if (vendedor !== null && !/^[a-z0-9-]{2,40}$/.test(vendedor)) {
+  console.error("\n✗ --vendedor precisa do identificador do atendente (2 a 40 caracteres: letras minusculas, numeros ou hifen), ex.: --vendedor gabriel\n");
+  process.exit(1);
+}
+
 const { data: existente } = await db.from("admin_users").select("username").eq("username", username).maybeSingle();
 
+// Sem --vendedor a coluna fica fora do payload e o upsert nao mexe no vinculo
+// que ja existe.
 const { error } = await db.from("admin_users").upsert({
   username, name: nome, password_hash: gerarHash(senha), active: true, updated_at: new Date().toISOString(),
+  ...(vendedor !== null ? { seller_id: vendedor } : {}),
 }, { onConflict: "username" });
 
 if (error) {
@@ -100,15 +118,23 @@ if (error) {
   if (/could not find the table|schema cache/i.test(error.message)) {
     console.error("  Aplique supabase/migrations/202609110001_usuarios_do_painel.sql no SQL Editor.\n");
   }
+  if (/seller_id/i.test(error.message)) {
+    console.error("  A coluna seller_id nao existe: aplique supabase/migrations/202609210001_atendentes.sql no SQL Editor.\n");
+  }
   process.exit(1);
 }
 
 console.log(`\n✓ Usuario ${existente ? "atualizado" : "criado"}\n`);
 console.log("  ┌─────────────────────────────────────────────");
-console.log(`  │  Usuario:  ${username}`);
-console.log(`  │  Senha:    ${senha}`);
-console.log(`  │  Nome:     ${nome}`);
+console.log(`  │  Usuario:    ${username}`);
+console.log(`  │  Senha:      ${senha}`);
+console.log(`  │  Nome:       ${nome}`);
+if (vendedor !== null) console.log(`  │  Atendente:  ${vendedor}`);
 console.log("  └─────────────────────────────────────────────\n");
+if (vendedor === null) {
+  console.log("  Sem vinculo novo com atendente. Para o painel saber quem esta logado, rode de novo com");
+  console.log("  --vendedor <id> (ex.: juliano, gabriel) — e --senha para nao sortear outra senha.");
+}
 console.log("  Acesso total ao painel, igual ao dono.");
 console.log("  A senha nao fica guardada em lugar nenhum — so o hash foi para o banco.");
 console.log("  Para trocar depois, rode o mesmo comando de novo.\n");

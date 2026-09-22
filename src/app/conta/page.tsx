@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { social, whatsapp } from "@/config/site";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 export const metadata: Metadata = {
@@ -64,7 +64,6 @@ export default function AccountPage() {
         </p>
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor()}
           className="mt-3 inline-block rounded-xl bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
         >
           Falar com a Dom Guima · {whatsapp.display}
@@ -103,7 +102,7 @@ function Card({
       <h2 className="mt-2 text-base font-bold text-ink-900">{title}</h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-600">{text}</p>
       {whatsappMessage ? (
-        <WhatsAppChooser message={whatsappMessage} contacts={contactsFor()} className={className}>
+        <WhatsAppChooser message={whatsappMessage} className={className}>
           {cta} →
         </WhatsAppChooser>
       ) : external ? (

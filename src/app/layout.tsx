@@ -5,6 +5,8 @@ import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { WhatsAppFloat } from "@/components/layout/WhatsAppFloat";
 import { site } from "@/config/site";
+import { loadPublicAttendants } from "@/lib/catalog/database";
+import { AttendantsProvider } from "@/lib/store/attendants";
 import { CartProvider } from "@/lib/store/cart";
 import { JsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/utils/seo";
 import "./globals.css";
@@ -67,9 +69,12 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Uma leitura so para todos os botoes de WhatsApp do site. Header, rodape e
+  // flutuante ja leem o catalogo; readCatalogState deduplica no cache de 5s.
+  const attendants = await loadPublicAttendants();
   return (
     <html lang="pt-BR" className={inter.variable}>
       <body className="antialiased">
@@ -83,13 +88,15 @@ export default function RootLayout({
           Pular para o conteúdo
         </a>
 
-        <CartProvider>
-          <Header />
-          <main id="conteudo">{children}</main>
-          <Footer />
-          <CartDrawer />
-          <WhatsAppFloat />
-        </CartProvider>
+        <AttendantsProvider value={attendants}>
+          <CartProvider>
+            <Header />
+            <main id="conteudo">{children}</main>
+            <Footer />
+            <CartDrawer />
+            <WhatsAppFloat />
+          </CartProvider>
+        </AttendantsProvider>
       </body>
     </html>
   );

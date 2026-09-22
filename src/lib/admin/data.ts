@@ -2,7 +2,8 @@ import "server-only";
 
 import { readCatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
-import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
+import { canonicalSellerId, sortSellers } from "./sellers";
+import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, SellerRecord, StoreSettings } from "./types";
 
 export { defaultStoreSettings } from "./defaults";
 
@@ -55,6 +56,25 @@ export async function getProductAssistTemplates(excludeId?: string): Promise<Pro
 
 export async function getSellers() {
   return [...(await readCatalogState()).operations.sellers].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/** Atendentes ativos, na ordem configurada — a lista que o site e os selects de atendimento usam. */
+export async function getAttendants(): Promise<SellerRecord[]> {
+  return sortSellers((await readCatalogState()).operations.sellers.filter((seller) => seller.active));
+}
+
+/**
+ * Quantos pedidos cada atendente ja tem (por id canonico: pedidos antigos
+ * gravados como "dom-guima" contam para "juliano"). Quem tem pedido nao pode
+ * ser removido da lista, so desativado — senao o relatorio ficaria orfao.
+ */
+export async function getSellerOrderCounts(): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const order of (await readCatalogState()).operations.orders) {
+    const id = canonicalSellerId(order.seller_id);
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export async function getSalesOrders() {

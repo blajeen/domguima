@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
+import { defaultSellers, normalizeSellers } from "./sellers";
 import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, StoreSettings } from "./types";
 
 export interface InventoryMovementRecord {
@@ -340,19 +341,18 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
 
 export function defaultOperationsState(): AdminOperationsState {
   return {
-    sellers: [
-      { id: "dom-guima", name: "Dom Guima", active: true },
-      { id: "gabriel", name: "Gabriel", active: true },
-    ],
+    sellers: defaultSellers(),
     orders: [],
     product_meta: {},
   };
 }
 
 function normalizeOperations(value?: Partial<AdminOperationsState> | null): AdminOperationsState {
-  const fallback = defaultOperationsState();
   return {
-    sellers: Array.isArray(value?.sellers) && value.sellers.length ? value.sellers : fallback.sellers,
+    // Cada atendente passa por normalizeSeller: registro antigo ({id, name,
+    // active}) ganha os campos novos e o id legado "dom-guima" vira "juliano".
+    // O JSONB so e corrigido de fato no proximo save do catalogo.
+    sellers: normalizeSellers(value?.sellers),
     orders: Array.isArray(value?.orders) ? value.orders : [],
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
   };

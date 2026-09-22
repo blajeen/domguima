@@ -4,22 +4,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { site } from "@/config/site";
-import { contactsFor, quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { site, whatsapp } from "@/config/site";
+import { quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { useAttendants } from "@/lib/store/attendants";
 import { useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 
 type DeliveryChoice = "local" | "combinar";
 
-const sellers = contactsFor();
-
 export function QuickCheckout() {
   const router = useRouter();
   const { items, ready, subtotal, clear } = useCart();
+  // Os mesmos atendentes do dialogo de WhatsApp, cadastrados no painel.
+  const { contacts: sellers } = useAttendants();
   const [name, setName] = useState("");
   const [delivery, setDelivery] = useState<DeliveryChoice>("local");
-  const [sellerId, setSellerId] = useState(sellers[0].id);
+  const [sellerId, setSellerId] = useState(sellers[0]?.id ?? "");
   const [neighborhood, setNeighborhood] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -51,8 +52,10 @@ export function QuickCheckout() {
       },
     );
 
+    // Lista vazia nunca deveria acontecer (o servidor sempre devolve ao menos
+    // um contato), mas o pedido tem de sair mesmo assim: cai no numero da loja.
     const seller = sellers.find((contact) => contact.id === sellerId) ?? sellers[0];
-    window.open(whatsappLink(message, seller.number), "_blank", "noopener,noreferrer");
+    window.open(whatsappLink(message, seller?.number ?? whatsapp.number), "_blank", "noopener,noreferrer");
     setSubmitted(true);
     clear();
     router.push("/pedido-enviado");

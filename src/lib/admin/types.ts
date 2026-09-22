@@ -21,10 +21,51 @@ export const ORDER_PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
   to_confirm: "Pagamento a combinar",
 };
 
+/**
+ * Como um atendimento novo vindo do site escolhe o atendente.
+ *
+ * `customer_choice` e o comportamento historico: o cliente escolhe no dialogo
+ * "Com quem voce quer falar?". Os modos automaticos existem na configuracao
+ * desde ja para o painel; a distribuicao em si e feita pelo fluxo de
+ * atendimentos.
+ */
+export type LeadDistributionMode = "customer_choice" | "round_robin" | "least_busy";
+
+export const LEAD_DISTRIBUTION_MODE_LABELS: Record<LeadDistributionMode, string> = {
+  customer_choice: "Cliente escolhe o atendente",
+  round_robin: "Rodízio entre os atendentes",
+  least_busy: "Atendente com menos atendimentos abertos",
+};
+
+/**
+ * Quem atende — a MESMA pessoa no site, no pedido e no login do painel.
+ *
+ * Antes eram tres listas soltas (whatsappContacts no site, sellers no painel,
+ * admin_users no login) com ids diferentes para o mesmo dono. O `id` daqui e o
+ * que vai em `sales_orders.seller_id` e em `admin_users.seller_id`, por isso
+ * nunca muda depois de criado: renomear apagaria o vinculo com os pedidos.
+ */
 export interface SellerRecord {
   id: string;
   name: string;
+  /** Funcao exibida no site abaixo do nome: "Dono da loja", "Vendedor". */
+  role_label: string;
+  /**
+   * WhatsApp proprio, so digitos com DDI (5534...). `null` = usa o numero
+   * principal da loja (`StoreSettings.whatsappNumber`), que o painel ja edita.
+   */
+  whatsapp_number: string | null;
+  /** Como o numero aparece para o cliente: "(34) 99864-8425". Vazio = formatado a partir do numero. */
+  whatsapp_display: string;
+  /**
+   * Aparece para o cliente escolher e entra na distribuicao automatica.
+   * Equivale ao "Receber novas conversas" de CRMs de WhatsApp: desligado, a
+   * pessoa continua podendo receber transferencias e lancar pedidos.
+   */
+  receives_leads: boolean;
   active: boolean;
+  /** Ordem de exibicao no site e nos selects do painel. */
+  sort_order: number;
 }
 
 export interface ProductOperationalMeta {
@@ -261,4 +302,10 @@ export interface StoreSettings {
   googleVerifiedAt: string;
   pixDiscountPercent: string;
   maxInstallments: string;
+  /**
+   * Um `LeadDistributionMode`. Fica como string porque StoreSettings inteiro e
+   * gravado como texto pelo formulario; `normalizeLeadDistributionMode()`
+   * devolve o valor tipado com fallback para "customer_choice".
+   */
+  leadDistributionMode: string;
 }

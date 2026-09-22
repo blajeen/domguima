@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { whatsapp } from "@/config/site";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
@@ -36,7 +36,6 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor(settings)}
           className="rounded-xl bg-[#25D366] px-6 py-3 text-sm font-extrabold text-white transition-transform hover:scale-[1.02]"
         >
           {siteOrder ? "Falar com a Dom Guima" : `Abrir WhatsApp ${settings.whatsappDisplay || whatsapp.display}`}

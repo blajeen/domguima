@@ -1,5 +1,5 @@
 import { whatsapp } from "@/config/site";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
 import { WhatsAppChooser, WhatsAppIcon } from "./WhatsAppChooser";
 
@@ -10,7 +10,6 @@ export async function WhatsAppFloat() {
     <div data-storefront-chrome className="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
       <WhatsAppChooser
         message={genericMessage}
-        contacts={contactsFor(settings)}
         aria-label={`Falar com a Dom Guima no WhatsApp ${settings.whatsappDisplay || whatsapp.display}`}
         className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-[#25D366]/30 transition-transform duration-200 hover:scale-105 active:scale-95"
       >

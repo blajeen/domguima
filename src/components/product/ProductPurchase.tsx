@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { commerce } from "@/config/site";
 import type { Product } from "@/lib/catalog/types";
-import { contactsFor, productMessage } from "@/lib/services/whatsapp";
+import { productMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 import { useCart } from "@/lib/store/cart";
 import { useVariantImage } from "./VariantImageContext";
@@ -255,7 +255,6 @@ export function ProductPurchase({
 
         <WhatsAppChooser
           message={productMessage(product, productUrl)}
-          contacts={contactsFor()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#25D366] px-6 py-3 text-base font-bold text-[#128C7E] transition-colors hover:bg-[#25D366]/10"
         >
           Comprar pelo WhatsApp
