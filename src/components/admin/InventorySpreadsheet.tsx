@@ -8,7 +8,15 @@ import type { ActionState, InventorySheetMovement, InventorySheetProduct } from 
 import { formatPrice, normalize } from "@/lib/utils/format";
 
 type ViewMode = "count" | "sales";
-type StockFilter = "all" | "attention" | "out";
+type StockFilter = "all" | "in" | "attention" | "out";
+
+/** "Com estoque" inclui o estoque baixo: e tudo que ainda pode ser vendido. */
+function matchesStockFilter(filter: StockFilter, stock: number, lowStockThreshold: number): boolean {
+  if (filter === "in") return stock > 0;
+  if (filter === "attention") return stock > 0 && stock <= lowStockThreshold;
+  if (filter === "out") return stock === 0;
+  return true;
+}
 type SortKey = "name" | "price" | "stock";
 type Draft = { stock: number; originalStock: number; exitQty: number };
 type ImportLine = { rowNumber: number; sku: string; name: string; productId: string | null; stock: number | null; priceCents: number | null; oldPriceCents: number | null; cardInstallment?: { count: number; value: number } | null; issues: string[] };
@@ -44,7 +52,9 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
       const searchable = normalize(`${product.name} ${product.sku} ${product.category_name}`);
       const matchesQuery = !normalizedQuery || searchable.includes(normalizedQuery);
       const matchesCategory = category === "all" || product.category_name === category;
-      const matchesStock = stockFilter === "all" || (stockFilter === "out" ? draft.stock === 0 : draft.stock > 0 && draft.stock <= product.low_stock_threshold);
+      // Linha com alteracao ainda nao salva fica na tela: zerar um item com o
+      // filtro "Com estoque" nao pode fazer a linha sumir antes de conferir.
+      const matchesStock = draft.stock !== draft.originalStock || matchesStockFilter(stockFilter, draft.stock, product.low_stock_threshold);
       const matchesStatus = status === "all" || product.status === status;
       return matchesQuery && matchesCategory && matchesStock && matchesStatus;
     });
@@ -230,7 +240,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
 
     <div className="inventory-tools">
       <label className="inventory-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto, SKU ou categoria" aria-label="Buscar na planilha" /><kbd>⌘ K</kbd></label>
-      <div className="inventory-filters"><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filtrar por categoria"><option value="all">Todas as categorias</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select><select value={stockFilter} onChange={(event) => setStockFilter(event.target.value as StockFilter)} aria-label="Filtrar por estoque"><option value="all">Qualquer estoque</option><option value="attention">Estoque baixo</option><option value="out">Sem estoque</option></select><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filtrar por status"><option value="all">Todos os status</option><option value="active">Publicados</option><option value="draft">Rascunhos</option><option value="archived">Arquivados</option></select></div>
+      <div className="inventory-filters"><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filtrar por categoria"><option value="all">Todas as categorias</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select><select value={stockFilter} onChange={(event) => setStockFilter(event.target.value as StockFilter)} aria-label="Filtrar por estoque"><option value="all">Qualquer estoque</option><option value="in">Com estoque</option><option value="attention">Estoque baixo</option><option value="out">Sem estoque</option></select><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filtrar por status"><option value="all">Todos os status</option><option value="active">Publicados</option><option value="draft">Rascunhos</option><option value="archived">Arquivados</option></select></div>
       <div className="inventory-tool-actions"><button type="button" className="inventory-export-action" onClick={exportExcel}>↓ Baixar Excel</button><label className="inventory-import-action">↑ Importar lista<input ref={importInput} type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void prepareImport(file); event.currentTarget.value = ""; }} /></label></div>
     </div>
 
