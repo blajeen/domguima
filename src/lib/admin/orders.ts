@@ -8,14 +8,20 @@ import {
   type LedgerMovementDraft,
   type OrderDraft,
 } from "./catalog-store";
+import { attributionCampaign, orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
+import { mapBulkChannel, type BulkChannel } from "./bulk-orders";
+import { customerKey } from "./customers";
 import {
   UNASSIGNED_ORDER_SELLER_ID,
   UNASSIGNED_ORDER_SELLER_NAME,
+  type OrderAttribution,
+  type OrderChannel,
   type OrderCustomerSnapshot,
   type OrderDeliveryMethod,
   type OrderPaymentMethod,
   type SalesOrderRecord,
   type SellerRecord,
+  type TrafficSource,
 } from "./types";
 import { commissionForUnit } from "./commission";
 
@@ -24,6 +30,10 @@ export interface CreateOrderInput {
   sellerId: string;
   customer: OrderCustomerSnapshot;
   notes: string;
+  /** Onde a venda foi fechada (WhatsApp, loja fisica, outro), escolhido no painel. */
+  channel: OrderChannel;
+  /** Como o cliente chegou (Instagram, indicacao...), escolhido no painel. */
+  source: TrafficSource;
   items: Array<{
     productId: string;
     quantity: number;
@@ -40,6 +50,12 @@ export interface CreatePendingOrderInput {
   notes: string;
   paymentMethod: OrderPaymentMethod;
   deliveryMethod: OrderDeliveryMethod;
+  /** Origem registrada no navegador do cliente (ja saneada pela rota). */
+  attribution: OrderAttribution;
+  /** `classifyTrafficSource(attribution)`. */
+  source: TrafficSource;
+  /** Cookie `domguima_visitante`, quando o navegador ja tem um. */
+  visitorId: string | null;
   items: Array<{
     productId: string;
     quantity: number;
@@ -145,6 +161,14 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     created_at: now,
     cancelled_at: null,
     cancelled_by: null,
+    channel: input.channel,
+    source: input.source,
+    // Pedido lancado no painel nao passa pelo navegador do cliente: nao ha
+    // UTM nem site de origem para guardar, so o que o operador escolheu.
+    attribution: {},
+    lead_id: null,
+    customer_key: customerKey(input.customer),
+    visitor_id: null,
   };
 
   // `{{number}}` porque o numero do pedido so nasce dentro da transacao.
@@ -169,7 +193,7 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     entity_type: "order",
     entity_id: draft.id,
     before_data: null,
-    after_data: { seller: seller.name, customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents },
+    after_data: { seller: seller.name, customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents, canal: orderChannelLabel(input.channel), origem: trafficSourceLabel(input.source) },
   };
 
   const { order } = await gravarPedido(() => createOrderRecord(draft, movements, audit), prepared.map((item) => item.product));
@@ -250,15 +274,31 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     created_at: now,
     cancelled_at: null,
     cancelled_by: null,
+    channel: "site",
+    source: input.source,
+    attribution: input.attribution,
+    // O atendimento do pedido nasce depois da resposta ao cliente; o vinculo e
+    // gravado ali (registerSiteOrderLead → linkOrderToLead).
+    lead_id: null,
+    customer_key: customerKey(input.customer),
+    visitor_id: input.visitorId,
   };
 
+  const campanha = attributionCampaign(input.attribution);
   const audit: LedgerAuditDraft = {
     actor_id: "public-site",
     action: "order.received",
     entity_type: "order",
     entity_id: draft.id,
     before_data: null,
-    after_data: { customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, source: "site" },
+    after_data: {
+      customer: input.customer.name,
+      units: draft.total_units,
+      totalCents: draft.total_cents,
+      canal: orderChannelLabel("site"),
+      origem: trafficSourceLabel(input.source),
+      ...(campanha ? { campanha } : {}),
+    },
   };
 
   // Sem movimentos: a solicitacao ainda nao reserva estoque.
@@ -469,6 +509,8 @@ function traduzir(error: unknown, produtos: Array<{ id: string; name: string }>)
 export interface ChannelOrderInput {
   requestId: string;
   sellerId: string;
+  /** Canal reconhecido no cabecalho. Vira `channel`/`source` do pedido (ver mapBulkChannel). */
+  channel: BulkChannel;
   /** Cabecalho da mensagem: "SHOPEE 04-09", "RETIRADA". Vai para as notas. */
   channelLabel: string;
   customerName: string;
@@ -561,6 +603,12 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     created_at: input.createdAt,
     cancelled_at: null,
     cancelled_by: null,
+    ...mapBulkChannel(input.channel),
+    attribution: {},
+    lead_id: null,
+    // Sem telefone nem CPF na mensagem: a chave fica nula, nunca um palpite.
+    customer_key: null,
+    visitor_id: null,
   };
 
   const movements: LedgerMovementDraft[] = prepared.map((item) => {

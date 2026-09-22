@@ -6,7 +6,8 @@ import { requireOwner } from "@/lib/admin/auth";
 import { getAdminProducts, getSalesOrders, getSellers } from "@/lib/admin/data";
 import { countLeads, LEAD_LIST_LIMIT, leadCustomerKey, leadLocalDate, listLeadsPage, type LeadFilters, type LeadPage } from "@/lib/admin/leads";
 import { sortSellers } from "@/lib/admin/sellers";
-import { LEAD_KIND_LABELS, LEAD_STAGE_LABELS, type LeadRecord, type LeadStage, type SalesOrderRecord, type SellerRecord } from "@/lib/admin/types";
+import { LEAD_KIND_LABELS, LEAD_STAGE_LABELS, TRAFFIC_SOURCE_LABELS, type LeadRecord, type LeadStage, type SalesOrderRecord, type SellerRecord } from "@/lib/admin/types";
+import { latestCampaign, trafficSourceLabel } from "@/lib/services/origem";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
 import { formatPhone } from "@/lib/utils/validators";
 
@@ -106,9 +107,9 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
     if (valor) filtros.set(chave, valor);
   }
   const volta = comFiltros(aba, filtros);
-  // A origem escolhida continua na lista mesmo quando o filtro a deixa como a
-  // única presente — senão o select não mostraria o valor aplicado.
-  const origens = [...new Set([...leads.map((lead) => lead.source), ...(origem ? [origem] : [])])].sort();
+  // Todas as origens conhecidas, mais qualquer valor antigo fora da lista que
+  // esteja gravado (ou no filtro aplicado) — senão o select não o mostraria.
+  const origens = [...new Set([...Object.keys(TRAFFIC_SOURCE_LABELS), ...leads.map((lead) => lead.source), ...(origem ? [origem] : [])])];
   const atendenteDesativado = aba !== "todos";
 
   return (
@@ -167,9 +168,8 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
       )}
 
       <PanelCard className="mt-5">
-        {/* flex-wrap em vez do grid fixo dos pedidos: a lista de origens cresce
-            quando o controle de tráfego entrar, e uma coluna a mais não pode
-            quebrar a linha dos filtros. */}
+        {/* flex-wrap em vez de grade fixa: com a origem e as datas são seis
+            campos, e uma coluna a mais não pode quebrar a linha dos filtros. */}
         <form className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="aba" value={aba} />
           <label className="min-w-[200px] flex-1 text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Cliente, telefone ou mensagem" className={FILTRO} /></label>
@@ -202,7 +202,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
           <label className="w-40 text-xs font-bold text-ink-600">Origem
             <select name="origem" defaultValue={origem} className={FILTRO}>
               <option value="">Todas</option>
-              {origens.map((valor) => <option key={valor} value={valor}>{rotuloOrigem(valor)}</option>)}
+              {origens.map((valor) => <option key={valor} value={valor}>{trafficSourceLabel(valor)}</option>)}
             </select>
           </label>
           <label className="w-36 text-xs font-bold text-ink-600">De<input type="date" name="de" defaultValue={de} className={FILTRO} /></label>
@@ -260,6 +260,9 @@ function LeadRow({ lead, seller, productName, order, sellers, ownerSellerId, vol
   // Atendente fora do cadastro atual (removido da lista) ainda é alguém: mostrar
   // o id é melhor do que dizer "Fila livre" para um atendimento que tem dono.
   const responsavel = lead.seller_id ? seller?.name ?? lead.seller_id : null;
+  // A campanha mais recente é a que o cliente acabou de clicar — a mesma que
+  // foi no "(ref. ...)" da mensagem do WhatsApp.
+  const campanha = latestCampaign(lead.attribution);
   return (
     <article className="rounded-2xl border border-ink-100 bg-white shadow-card">
       <div className="grid gap-4 p-5 sm:grid-cols-[1.4fr_1fr] sm:items-start">
@@ -268,7 +271,8 @@ function LeadRow({ lead, seller, productName, order, sellers, ownerSellerId, vol
             <h2 className="font-black text-ink-900">{lead.customer_name || "Cliente não identificado"}</h2>
             <span className="rounded-full bg-ink-100 px-2.5 py-1 text-[10px] font-black uppercase text-ink-600">{LEAD_KIND_LABELS[lead.kind]}</span>
             <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-black uppercase text-blue-700">{LEAD_STAGE_LABELS[lead.stage]}</span>
-            <span className="rounded-full bg-ink-50 px-2.5 py-1 text-[10px] font-black uppercase text-ink-500">{rotuloOrigem(lead.source)}</span>
+            <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-black uppercase text-purple-700">{trafficSourceLabel(lead.source)}</span>
+            {campanha && <span className="rounded-full bg-gold-50 px-2.5 py-1 text-[10px] font-black text-gold-800" title="Campanha (utm_campaign) do link por onde o cliente chegou">Campanha: {campanha}</span>}
           </div>
           {telefone
             ? <a href={customerWhatsappLink(lead.customer_phone)} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm font-bold text-[#128C7E] hover:underline">{telefone} · abrir WhatsApp</a>
@@ -317,15 +321,6 @@ function texto(value: string | string[] | undefined): string {
 
 function dataValida(value: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
-}
-
-/**
- * Rótulo da origem. Hoje todo atendimento nasce "direto"; quando o controle de
- * tráfego classificar Instagram, Google e campanhas, os valores novos aparecem
- * aqui sozinhos (e ganham rótulo próprio na mesma tabela de labels).
- */
-function rotuloOrigem(source: string): string {
-  return source === "direct" ? "Direto" : source;
 }
 
 /** Telefone do cliente já sem o DDI, do jeito que a loja digita. */

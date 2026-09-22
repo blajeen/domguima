@@ -5,10 +5,19 @@ import { readAttendantsState } from "@/lib/admin/catalog-store";
 import { defaultStoreSettings } from "@/lib/admin/defaults";
 import { contactableAttendants, distributionCandidates, eligibleAttendants, resolveAttendantNumber } from "@/lib/admin/distribution";
 import { assignOrderLeadFromSite } from "@/lib/admin/lead-orders";
-import { attributionFromCookie, createLead, findLeadByOrder, ORIGIN_COOKIE } from "@/lib/admin/leads";
+import { createLead, findLeadByOrder } from "@/lib/admin/leads";
 import { canonicalSellerId, defaultSellers, normalizeLeadDistributionMode } from "@/lib/admin/sellers";
-import type { LeadDistributionMode, LeadRecord, SellerRecord, StoreSettings } from "@/lib/admin/types";
-import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
+import type { LeadDistributionMode, LeadRecord, OrderAttribution, SellerRecord, StoreSettings, TrafficSource } from "@/lib/admin/types";
+import {
+  classifyTrafficSource,
+  internalPagePath,
+  latestCampaign,
+  ORIGEM_COOKIE,
+  parseOrigemCookie,
+  VISITANTE_COOKIE,
+  VISITANTE_MAX_AGE,
+} from "@/lib/services/origem";
+import { genericMessage, whatsappLink, withCampaignRef } from "@/lib/services/whatsapp";
 
 /**
  * ABRIR O WHATSAPP REGISTRANDO O ATENDIMENTO
@@ -40,11 +49,12 @@ import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
  * GET e POST fazem a mesma coisa e mudam so de onde vem os campos: os links do
  * site usam o GET; o pedido rapido usa o POST, para o nome e o bairro do
  * cliente nao viajarem na URL.
+ *
+ * Origem (controle de trafego): o cookie `domguima_origem`, escrito pela
+ * captura do site (CapturaOrigem), viaja nesta navegacao. Dele saem a origem
+ * classificada do atendimento (Instagram, Google, campanha) e o "(ref. ...)"
+ * que o atendente ve no fim da mensagem quando o cliente veio de campanha.
  */
-
-/** Visitante anonimo. So serve para o dedupe de 90s e para juntar os contatos da mesma pessoa. */
-const VISITANTE_COOKIE = "domguima_visitante";
-const VISITANTE_MAX_AGE = 365 * 24 * 60 * 60;
 
 const atendimentoInput = z.object({
   /** Id do atendente escolhido no dialogo, ou "auto" quando o painel distribui. */
@@ -123,6 +133,10 @@ async function abrirWhatsapp(request: NextRequest, entrada: AtendimentoParams, s
   const visitante = request.cookies.get(VISITANTE_COOKIE)?.value ?? "";
   const novoVisitante = visitante || randomUUID();
 
+  const attribution = parseOrigemCookie(request.cookies.get(ORIGEM_COOKIE)?.value);
+  // A mensagem que abre na conversa e a mesma que fica gravada no atendimento.
+  const texto = withCampaignRef(entrada.texto || genericMessage, latestCampaign(attribution));
+
   // Conversa sobre um pedido do checkout (ver o cabecalho). A consulta nao
   // depende de `registrar`: ela decide para quem o cliente vai, nao grava nada.
   const doPedido = entrada.pedido ? await atendimentoDoPedido(entrada.pedido) : null;
@@ -149,15 +163,16 @@ async function abrirWhatsapp(request: NextRequest, entrada: AtendimentoParams, s
         modo,
         elegiveis,
         visitante: novoVisitante,
-        // O cookie de origem e lido pela mesma funcao na rota de pedidos.
-        attribution: attributionFromCookie(request.cookies.get(ORIGIN_COOKIE)?.value),
+        texto,
+        attribution,
+        source: classifyTrafficSource(attribution),
         sellers,
       })
     : null;
 
   const atendente = responsavel ?? preDefinido ?? atribuido ?? elegiveis[0] ?? null;
   const numero = resolveAttendantNumber({ whatsapp_number: atendente?.whatsapp_number ?? null }, settings);
-  const destino = whatsappLink(entrada.texto || genericMessage, numero);
+  const destino = whatsappLink(texto, numero);
 
   const response = NextResponse.redirect(destino, status);
   if (!visitante) {
@@ -180,13 +195,16 @@ interface RegistroInput {
   modo: LeadDistributionMode;
   elegiveis: SellerRecord[];
   visitante: string;
-  attribution: Record<string, string>;
+  /** Mensagem final da conversa, ja com a referencia da campanha. */
+  texto: string;
+  attribution: OrderAttribution;
+  source: TrafficSource;
   sellers: SellerRecord[];
 }
 
 /** Grava o atendimento e devolve quem a distribuicao automatica escolheu (ou null). */
 async function registrarAtendimento(input: RegistroInput): Promise<SellerRecord | null> {
-  const { entrada, escolhidoPeloCliente, preDefinido, automatico, modo, elegiveis, visitante, attribution, sellers } = input;
+  const { entrada, escolhidoPeloCliente, preDefinido, automatico, modo, elegiveis, visitante, texto, attribution, source, sellers } = input;
   try {
     const { lead } = await createLead(
       {
@@ -197,12 +215,9 @@ async function registrarAtendimento(input: RegistroInput): Promise<SellerRecord 
         assignedBy: preDefinido ? (escolhidoPeloCliente ? "customer" : "site") : null,
         customerName: entrada.cliente,
         productId: entrada.produto || null,
-        message: entrada.texto,
+        message: texto,
         pagePath: entrada.pagina,
-        // A classificacao da origem (Instagram, Google, campanha) entra com o
-        // controle de trafego; ate la todo atendimento nasce como "direto" e o
-        // que houver no cookie ja viaja em `attribution`.
-        source: "direct",
+        source,
         attribution,
         visitorId: visitante,
         createdBy: "public-site",
@@ -241,6 +256,10 @@ async function atendimentoDoPedido(orderId: string): Promise<LeadRecord | null> 
  *
  * `ler` e a fonte dos campos — a query string no GET, o corpo no POST — para a
  * validacao e os tetos de tamanho existirem uma vez so.
+ *
+ * `pagina` so fica quando e caminho interno da loja (o botao manda o
+ * `usePathname()`): o painel de trafego mostra esse valor como link, e um
+ * endereco externo gravado por quem chama a rota direto viraria isca ali.
  */
 function lerParametros(ler: (chave: string) => string | null | undefined): AtendimentoParams {
   const campo = (chave: string, tamanho: number) => (ler(chave) ?? "").slice(0, tamanho);
@@ -249,7 +268,7 @@ function lerParametros(ler: (chave: string) => string | null | undefined): Atend
     tipo: ler("tipo") || "whatsapp_generic",
     produto: campo("produto", 200),
     texto: campo("texto", 4_000),
-    pagina: campo("pagina", 300),
+    pagina: internalPagePath(campo("pagina", 300)),
     cliente: campo("cliente", 140),
     pedido: campo("pedido", 80),
   };

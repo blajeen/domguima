@@ -2,7 +2,9 @@ import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { requireOwner } from "@/lib/admin/auth";
 import { readCatalogState } from "@/lib/admin/catalog-store";
-import { defaultReportRange, reportOrders, reportTotals, sellerSummaries, validDateParam } from "@/lib/admin/reports";
+import { channelFilterParam, channelSummaries, defaultReportRange, ORIGIN_FILTER_NOT_INFORMED, reportOrders, reportTotals, sellerSummaries, sourceFilterParam, validDateParam } from "@/lib/admin/reports";
+import { ORDER_CHANNEL_LABELS, ORIGIN_NOT_INFORMED_LABEL, TRAFFIC_SOURCE_LABELS } from "@/lib/admin/types";
+import { orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
 import { formatPrice } from "@/lib/utils/format";
 
 type Params = Record<string, string | string[] | undefined>;
@@ -16,20 +18,27 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const to = validDateParam(params.ate, fallback.to);
   const sellerId = typeof params.vendedor === "string" ? params.vendedor : "";
   const status = params.status === "pending" ? "pending" : params.status === "cancelled" ? "cancelled" : params.status === "all" ? "all" : "completed";
-  const orders = reportOrders(state, { from, to, sellerId, status });
+  const channel = channelFilterParam(params.canal);
+  const source = sourceFilterParam(params.origem);
+  const orders = reportOrders(state, { from, to, sellerId, status, channel, source });
   const totals = reportTotals(orders);
   const sellers = sellerSummaries(orders);
+  const channels = channelSummaries(orders);
   const downloadParams = new URLSearchParams({ de: from, ate: to, status });
   if (sellerId) downloadParams.set("vendedor", sellerId);
+  if (channel) downloadParams.set("canal", channel);
+  if (source) downloadParams.set("origem", source);
 
   return <>
     <AdminPageHeader eyebrow="Fechamento comercial" title="Relatórios e comissões" description="Selecione um período para conferir pedidos, produtos vendidos, faturamento, descontos e comissão por vendedor." actions={<Link href={`/api/painel/relatorio?${downloadParams}`} className="rounded-lg bg-green-700 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-green-600">↓ Baixar Excel (CSV)</Link>} />
     <PanelCard>
-      <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[170px_170px_200px_180px_auto] xl:items-end">
+      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[150px_150px_180px_170px_160px_160px_auto] 2xl:items-end">
         <label className="text-xs font-bold text-ink-600">Data inicial<input type="date" name="de" defaultValue={from} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
         <label className="text-xs font-bold text-ink-600">Data final<input type="date" name="ate" defaultValue={to} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
         <label className="text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={sellerId} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos os vendedores</option>{state.operations.sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label>
         <label className="text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="completed">Somente finalizados</option><option value="pending">Aguardando confirmação</option><option value="cancelled">Somente cancelados</option><option value="all">Todos</option></select></label>
+        <label className="text-xs font-bold text-ink-600">Canal<select name="canal" defaultValue={channel} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos os canais</option>{Object.entries(ORDER_CHANNEL_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
+        <label className="text-xs font-bold text-ink-600">Origem<select name="origem" defaultValue={source} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todas as origens</option>{Object.entries(TRAFFIC_SOURCE_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
         <button className="rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-bold text-white">Atualizar relatório</button>
       </form>
       <div className="mt-4 flex flex-wrap gap-2 text-xs"><RangeLink label="Este mês" from={fallback.from} to={fallback.to} /><RangeLink label="Mês anterior" {...previousMonthRange()} /></div>
@@ -46,10 +55,24 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
     <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <PanelCard><div className="flex items-end justify-between gap-3"><div><h2 className="text-base font-black">Resultado por vendedor</h2><p className="mt-1 text-xs text-ink-500">Somente pedidos finalizados entram nos totais.</p></div></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[600px] text-left text-sm"><thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Vendedor</th><th>Pedidos</th><th>Produtos</th><th>Vendas</th><th>Comissão</th></tr></thead><tbody className="divide-y divide-ink-100">{sellers.map((seller) => <tr key={seller.sellerId}><td className="py-3 font-bold">{seller.sellerName}</td><td>{seller.orders}</td><td>{seller.units}</td><td>{formatPrice(seller.salesCents)}</td><td className="font-black text-gold-800">{formatPrice(seller.commissionCents)}</td></tr>)}</tbody></table>{!sellers.length && <p className="py-10 text-center text-sm text-ink-500">Nenhuma venda finalizada neste período.</p>}</div></PanelCard>
+      <div className="space-y-5">
+      <PanelCard>
+        <h2 className="text-base font-black">Por canal</h2>
+        <p className="mt-1 text-xs text-ink-500">Onde a venda foi fechada. Pedidos anteriores ao controle de tráfego aparecem como “{ORIGIN_NOT_INFORMED_LABEL}”.</p>
+        <table className="mt-4 w-full text-left text-sm">
+          <thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Canal</th><th>Pedidos</th><th className="text-right">Vendas</th></tr></thead>
+          <tbody className="divide-y divide-ink-100">
+            {channels.map((item) => <tr key={item.key}><td className="py-2.5 font-bold">{item.label}</td><td>{item.orders}</td><td className="text-right font-black">{formatPrice(item.salesCents)}</td></tr>)}
+          </tbody>
+        </table>
+        {!channels.length && <p className="py-6 text-center text-sm text-ink-500">Nenhuma venda finalizada neste período.</p>}
+        <Link href={`/painel/trafego?de=${from}&ate=${to}`} className="mt-4 inline-block text-xs font-bold text-blue-700 hover:underline">Ver origem dos clientes e campanhas →</Link>
+      </PanelCard>
       <PanelCard><h2 className="text-base font-black">Regra de comissão</h2><p className="mt-1 text-xs leading-relaxed text-ink-500">Calculada por unidade sobre o preço final vendido, depois do desconto.</p><div className="mt-4 space-y-3 text-sm"><Rule label="Até R$ 25,00" value="R$ 1,00" /><Rule label="R$ 25,01 a R$ 100,00" value="R$ 2,50" /><Rule label="R$ 100,01 a R$ 250,00" value="R$ 5,00" /><Rule label="R$ 250,01 a R$ 1.000,00" value="R$ 10,00" /><Rule label="Acima de R$ 1.000,00" value="1%" /></div></PanelCard>
+      </div>
     </div>
 
-    <PanelCard className="mt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-black">Pedidos do período</h2><p className="mt-1 text-xs text-ink-500">{from.split("-").reverse().join("/")} a {to.split("-").reverse().join("/")}</p></div><span className="text-xs text-ink-400">{totals.cancelled} cancelado(s) na seleção</span></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Data</th><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th>Itens</th><th>Desconto</th><th>Total</th><th>Comissão</th><th>Status</th></tr></thead><tbody className="divide-y divide-ink-100">{orders.map((order) => <tr key={order.id}><td className="py-3 text-xs text-ink-500">{new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</td><td className="font-black">{order.number}</td><td>{order.customer.name}</td><td>{order.seller_name}</td><td>{order.total_units}</td><td>{formatPrice(order.discount_total_cents)}</td><td className="font-black">{formatPrice(order.total_cents)}</td><td>{formatPrice(order.commission_total_cents)}</td><td><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${order.status === "completed" ? "bg-green-50 text-green-700" : order.status === "pending" ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"}`}>{order.status === "completed" ? "Finalizado" : order.status === "pending" ? "Aguardando confirmação" : "Cancelado"}</span></td></tr>)}</tbody></table>{!orders.length && <p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde ao período e filtros selecionados.</p>}</div></PanelCard>
+    <PanelCard className="mt-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-black">Pedidos do período</h2><p className="mt-1 text-xs text-ink-500">{from.split("-").reverse().join("/")} a {to.split("-").reverse().join("/")}</p></div><span className="text-xs text-ink-400">{totals.cancelled} cancelado(s) na seleção</span></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-sm"><thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Data</th><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th>Canal · origem</th><th>Itens</th><th>Desconto</th><th>Total</th><th>Comissão</th><th>Status</th></tr></thead><tbody className="divide-y divide-ink-100">{orders.map((order) => <tr key={order.id}><td className="py-3 text-xs text-ink-500">{new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</td><td className="font-black">{order.number}</td><td>{order.customer.name}</td><td>{order.seller_name}</td><td className="text-xs text-ink-600">{orderChannelLabel(order.channel)} · {trafficSourceLabel(order.source)}</td><td>{order.total_units}</td><td>{formatPrice(order.discount_total_cents)}</td><td className="font-black">{formatPrice(order.total_cents)}</td><td>{formatPrice(order.commission_total_cents)}</td><td><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${order.status === "completed" ? "bg-green-50 text-green-700" : order.status === "pending" ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"}`}>{order.status === "completed" ? "Finalizado" : order.status === "pending" ? "Aguardando confirmação" : "Cancelado"}</span></td></tr>)}</tbody></table>{!orders.length && <p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde ao período e filtros selecionados.</p>}</div></PanelCard>
   </>;
 }
 

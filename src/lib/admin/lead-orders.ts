@@ -1,7 +1,8 @@
 import "server-only";
 
+import { classifyTrafficSource } from "@/lib/services/origem";
 import { formatPrice } from "@/lib/utils/format";
-import { readCatalogState, type CatalogState } from "./catalog-store";
+import { linkOrderToLead, readCatalogState, type CatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
 import { distributionCandidates, eligibleAttendants } from "./distribution";
 import { createLead, deleteLeads, findLead, findLeadByOrder, findLeadsByOrders, updateLead, type LeadPatch } from "./leads";
@@ -48,11 +49,20 @@ const SITE_ACTOR = "public-site";
  * proprio pedido (`findLeadByOrder`), que cobre o reenvio do mesmo request_id.
  *
  * `state` e o catalogo lido para validar o pedido: dele saem atendentes e modo.
+ *
+ * A origem do atendimento e a do proprio pedido (gravada pela rota a partir do
+ * navegador do cliente), para os dois somarem na mesma linha do relatorio de
+ * trafego. Criado o atendimento, o pedido recebe o `lead_id` dele.
  */
-export async function registerSiteOrderLead(state: CatalogState, order: SalesOrderRecord, attribution: Record<string, string>): Promise<void> {
+export async function registerSiteOrderLead(state: CatalogState, order: SalesOrderRecord): Promise<void> {
   try {
-    // Reenvio do mesmo pedido: o atendimento dele ja existe.
-    if (await findLeadByOrder(order.id)) return;
+    // Reenvio do mesmo pedido: o atendimento dele ja existe. Se o vinculo no
+    // pedido tinha falhado da primeira vez, esta e a chance de grava-lo.
+    const existente = await findLeadByOrder(order.id);
+    if (existente) {
+      if (!order.lead_id) await linkOrderToLead(order.id, existente.id);
+      return;
+    }
 
     const settings = { ...defaultStoreSettings, ...state.settings };
     const modo = normalizeLeadDistributionMode(settings.leadDistributionMode);
@@ -75,10 +85,8 @@ export async function registerSiteOrderLead(state: CatalogState, order: SalesOrd
           order.notes ? `Observação do cliente: ${order.notes}` : "",
         ].filter(Boolean).join("\n"),
         pagePath: "/checkout",
-        // Mesma regra da rota do WhatsApp: a classificacao da origem entra com o
-        // controle de trafego; o que houver no cookie ja viaja em `attribution`.
-        source: "direct",
-        attribution,
+        source: order.source || classifyTrafficSource(order.attribution),
+        attribution: order.attribution,
         createdBy: SITE_ACTOR,
       },
       {
@@ -87,6 +95,7 @@ export async function registerSiteOrderLead(state: CatalogState, order: SalesOrd
       },
     );
 
+    if (lead) await linkOrderToLead(order.id, lead.id);
     if (!lead?.seller_id) return;
     // So um pedido ainda sem dono recebe o atendente sorteado: nunca passar por
     // cima de uma escolha feita no painel.

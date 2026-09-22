@@ -14,6 +14,7 @@ const nav = [
   { href: "/painel/catalogo-pdf", label: "Catalogo PDF", icon: "PDF" },
   { href: "/painel/historico", label: "Historico", icon: "H" },
   { href: "/painel/financeiro", label: "Relatórios", icon: "$" },
+  { href: "/painel/trafego", label: "Trafego", icon: "↗" },
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 

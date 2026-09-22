@@ -22,6 +22,99 @@ export const ORDER_PAYMENT_METHOD_LABELS: Record<OrderPaymentMethod, string> = {
 };
 
 /**
+ * ONDE a venda aconteceu. Diferente da origem (`TrafficSource`), que diz como o
+ * cliente chegou: um cliente que achou a loja no Instagram (origem) pode fechar
+ * pelo WhatsApp (canal).
+ *
+ * Pedido gravado antes do controle de trafego fica com `""` = nao informado.
+ */
+export type OrderChannel = "site" | "whatsapp" | "store" | "shopee" | "mercado_livre" | "magalu" | "other";
+
+export const ORDER_CHANNEL_LABELS: Record<OrderChannel, string> = {
+  site: "Site",
+  whatsapp: "WhatsApp",
+  store: "Loja física",
+  shopee: "Shopee",
+  mercado_livre: "Mercado Livre",
+  magalu: "Magalu",
+  other: "Outro canal",
+};
+
+/**
+ * COMO o cliente chegou ate a loja. E o que o controle de trafego soma por
+ * origem. `""` = nao informado (pedido antigo, lancamento do grupo sem origem).
+ */
+export type TrafficSource =
+  | "direct"
+  | "instagram"
+  | "facebook"
+  | "whatsapp"
+  | "google"
+  | "shopee"
+  | "mercado_livre"
+  | "magalu"
+  | "referral"
+  | "store"
+  | "other";
+
+export const TRAFFIC_SOURCE_LABELS: Record<TrafficSource, string> = {
+  direct: "Direto",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  whatsapp: "WhatsApp",
+  google: "Google",
+  shopee: "Shopee",
+  mercado_livre: "Mercado Livre",
+  magalu: "Magalu",
+  referral: "Indicação",
+  store: "Loja física",
+  other: "Outra origem",
+};
+
+/** Rotulo de canal/origem vazio: dado anterior ao controle de trafego ou que ninguem informou. */
+export const ORIGIN_NOT_INFORMED_LABEL = "Não informado";
+
+/**
+ * Canais que o operador escolhe ao lancar um pedido no painel. Site e
+ * marketplaces ficam de fora: o pedido do site nasce no checkout e o de
+ * marketplace entra pelo lancamento em lote, cada um com o canal certo.
+ */
+export const PANEL_ORDER_CHANNELS = ["whatsapp", "store", "other"] as const satisfies readonly OrderChannel[];
+
+/** Origens que o operador escolhe no painel (pedido novo e atendimento manual). */
+export const PANEL_TRAFFIC_SOURCES = ["direct", "instagram", "facebook", "google", "whatsapp", "referral", "store", "other"] as const satisfies readonly TrafficSource[];
+
+/**
+ * De onde o cliente veio, como o navegador dele registrou (cookie e
+ * armazenamento local proprios da loja, sem ferramenta de terceiros).
+ *
+ * Os campos sem prefixo sao o PRIMEIRO contato rastreavel; os `last_*` guardam
+ * a campanha mais recente quando o cliente voltou por outro link depois. Todos
+ * sao texto curto (ate 200 caracteres) porque chegam de um cookie que qualquer
+ * pessoa pode editar.
+ */
+export interface OrderAttribution {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+  /** So o dominio do site que trouxe o cliente ("l.instagram.com"), sem caminho nem busca. */
+  referrer?: string;
+  /** Primeira pagina vista nesta origem, sem a query string. */
+  landing_path?: string;
+  /** "1" quando o link veio de anuncio do Facebook/Instagram. O identificador em si nao e guardado. */
+  fbclid?: string;
+  /** "1" quando o link veio de anuncio do Google. O identificador em si nao e guardado. */
+  gclid?: string;
+  first_seen_at?: string;
+  last_utm_source?: string;
+  last_utm_medium?: string;
+  last_utm_campaign?: string;
+  last_seen_at?: string;
+}
+
+/**
  * Como um atendimento novo vindo do site escolhe o atendente.
  *
  * `customer_choice` e o comportamento historico: o cliente escolhe no dialogo
@@ -114,8 +207,9 @@ export interface LeadRecord {
   items: LeadItemSnapshot[];
   message: string;
   page_path: string;
+  /** Um `TrafficSource`; fica como texto porque a coluna e texto livre e o valor antigo tem de continuar legivel. */
   source: string;
-  attribution: Record<string, string>;
+  attribution: OrderAttribution;
   visitor_id: string | null;
   /** `sales_orders.id` quando o atendimento virou pedido. */
   order_id: string | null;
@@ -231,6 +325,17 @@ export interface SalesOrderRecord {
   created_at: string;
   cancelled_at: string | null;
   cancelled_by: string | null;
+  /** Onde a venda aconteceu. `""` = nao informado (pedido anterior ao controle de trafego). */
+  channel: OrderChannel | "";
+  /** Como o cliente chegou. `""` = nao informado. */
+  source: TrafficSource | "";
+  attribution: OrderAttribution;
+  /** Atendimento (`leads.id`) que originou o pedido, quando existe. */
+  lead_id: string | null;
+  /** Telefone (sem DDI) ou CPF/CNPJ em digitos: reconhece o cliente que volta. Ver customers.ts. */
+  customer_key: string | null;
+  /** Mesmo `domguima_visitante` dos cliques de WhatsApp: junta pedido e conversas do mesmo navegador. */
+  visitor_id: string | null;
 }
 
 /**

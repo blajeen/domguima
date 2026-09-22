@@ -8,7 +8,16 @@ import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
-import { ORDER_PAYMENT_METHOD_LABELS, UNASSIGNED_ORDER_SELLER_ID, type SalesOrderRecord } from "@/lib/admin/types";
+import { channelFilterParam, matchesOriginFilters, ORIGIN_FILTER_NOT_INFORMED, sourceFilterParam } from "@/lib/admin/reports";
+import {
+  ORDER_CHANNEL_LABELS,
+  ORDER_PAYMENT_METHOD_LABELS,
+  ORIGIN_NOT_INFORMED_LABEL,
+  TRAFFIC_SOURCE_LABELS,
+  UNASSIGNED_ORDER_SELLER_ID,
+  type SalesOrderRecord,
+} from "@/lib/admin/types";
+import { attributionCampaign, latestCampaign, orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
 import { formatPrice, normalize } from "@/lib/utils/format";
 
@@ -24,13 +33,19 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const query = typeof params.q === "string" ? params.q.trim() : "";
   const seller = typeof params.vendedor === "string" ? params.vendedor : "";
   const status = params.status === "cancelled" ? "cancelled" : params.status === "completed" ? "completed" : params.status === "pending" ? "pending" : "";
+  const canal = channelFilterParam(params.canal);
+  const origem = sourceFilterParam(params.origem);
   const orders = allOrders.filter((order) => {
-    const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.seller_name} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
-    return (!query || searchable.includes(normalize(query))) && (!seller || order.seller_id === seller) && (!status || order.status === status);
+    // A campanha entra na busca: "natal" acha os pedidos que vieram do link da campanha de Natal.
+    const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.seller_name} ${attributionCampaign(order.attribution)} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
+    return (!query || searchable.includes(normalize(query)))
+      && (!seller || order.seller_id === seller)
+      && (!status || order.status === status)
+      && matchesOriginFilters(order, { channel: canal, source: origem });
   });
   // Filtros atuais, para a atribuição voltar à mesma lista.
   const filtros = new URLSearchParams();
-  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status]] as const) {
+  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status], ["canal", canal], ["origem", origem]] as const) {
     if (valor) filtros.set(chave, valor);
   }
   const volta = filtros.toString() ? `/painel/pedidos?${filtros.toString()}` : "/painel/pedidos";
@@ -58,10 +73,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       {errorMessage && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>}
 
       <PanelCard>
-        <form className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_180px_180px_auto] sm:items-end">
-          <label className="text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Pedido, cliente, CPF, produto ou SKU" className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
-          <label className="text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={seller} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value={UNASSIGNED_ORDER_SELLER_ID}>Fila livre (sem atendente)</option>{sellers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label className="text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value="pending">Aguardando confirmação</option><option value="completed">Finalizados</option><option value="cancelled">Cancelados</option></select></label>
+        {/* flex-wrap: com canal e origem são seis campos, e uma grade fixa
+            quebraria a linha em telas médias. */}
+        <form className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[220px] flex-1 text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Pedido, cliente, CPF, produto, SKU ou campanha" className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
+          <label className="w-44 text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={seller} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value={UNASSIGNED_ORDER_SELLER_ID}>Fila livre (sem atendente)</option>{sellers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="w-44 text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value="pending">Aguardando confirmação</option><option value="completed">Finalizados</option><option value="cancelled">Cancelados</option></select></label>
+          <label className="w-40 text-xs font-bold text-ink-600">Canal<select name="canal" defaultValue={canal} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option>{Object.entries(ORDER_CHANNEL_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
+          <label className="w-40 text-xs font-bold text-ink-600">Origem<select name="origem" defaultValue={origem} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todas</option>{Object.entries(TRAFFIC_SOURCE_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
           <button className="rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-bold text-white">Filtrar</button>
         </form>
       </PanelCard>
@@ -88,6 +107,8 @@ function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers:
   // Pedido do site que ninguém assumiu ainda: "Fila livre", no mesmo tom da
   // tela de Atendimento, em vez do rótulo técnico gravado no banco.
   const semAtendente = order.seller_id === UNASSIGNED_ORDER_SELLER_ID;
+  const campanha = attributionCampaign(order.attribution);
+  const ultimaCampanha = latestCampaign(order.attribution);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
@@ -102,6 +123,11 @@ function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers:
             <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${order.status === "completed" ? "bg-green-50 text-green-700" : order.status === "pending" ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"}`}>
               {order.status === "completed" ? "Finalizado" : order.status === "pending" ? "Aguardando confirmação" : "Cancelado"}
             </span>
+            {/* Canal e origem só aparecem quando conhecidos: pedido antigo não
+                ganha uma etiqueta "Não informado" em cada card. */}
+            {order.channel && <span className="rounded-full bg-ink-100 px-2.5 py-1 text-[10px] font-black uppercase text-ink-600">{orderChannelLabel(order.channel)}</span>}
+            {order.source && <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-black uppercase text-purple-700">{trafficSourceLabel(order.source)}</span>}
+            {campanha && <span className="rounded-full bg-gold-50 px-2.5 py-1 text-[10px] font-black text-gold-800" title="Campanha (utm_campaign) do link por onde o cliente chegou">Campanha: {campanha}</span>}
           </div>
           <p className="mt-1 text-sm font-semibold">{order.customer.name}</p>
           <p className="text-xs text-ink-500">{order.customer.cpf} · {order.customer.city}/{order.customer.state}</p>
@@ -142,6 +168,16 @@ function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers:
               {order.customer.phone && <p className="mt-2">Telefone {order.customer.phone}</p>}
               {order.customer.email && <p>E-mail {order.customer.email}</p>}
               {order.notes && <p className="mt-3 border-t border-ink-100 pt-3"><strong>Observações:</strong> {order.notes}</p>}
+
+              <div className="mt-3 border-t border-ink-100 pt-3">
+                <p className="font-black text-ink-900">Origem do cliente</p>
+                <p className="mt-1"><strong>Canal:</strong> {orderChannelLabel(order.channel)} · <strong>Origem:</strong> {trafficSourceLabel(order.source)}</p>
+                {campanha && <p><strong>Campanha:</strong> {campanha}{order.attribution.utm_medium ? ` (${order.attribution.utm_medium})` : ""}</p>}
+                {ultimaCampanha && ultimaCampanha !== campanha && <p><strong>Voltou pela campanha:</strong> {ultimaCampanha}</p>}
+                {order.attribution.referrer && <p><strong>Veio de:</strong> {order.attribution.referrer}</p>}
+                {order.attribution.landing_path && <p><strong>Primeira página:</strong> {order.attribution.landing_path}</p>}
+                {(order.attribution.fbclid || order.attribution.gclid) && <p>Chegou por anúncio {order.attribution.gclid ? "do Google" : "do Facebook/Instagram"}.</p>}
+              </div>
 
               {order.status === "pending" && <div className="mt-4 space-y-4 border-t border-blue-100 pt-4">
                 <div><p className="font-black text-blue-950">Próximo passo</p><p className="mt-1 text-xs leading-relaxed text-blue-800">Defina quem cuida do pedido, fale com o cliente e confirme disponibilidade, frete e pagamento. Depois confirme para baixar o estoque. Quando enviar, avise o cliente pelo WhatsApp.</p></div>

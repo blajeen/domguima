@@ -12,7 +12,9 @@ import { createLead, updateLead } from "@/lib/admin/leads";
 import { assignPendingSalesOrder, cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
-import type { ActionState, AdminProductRow, AdminProductVariant, SellerRecord, StoreSettings } from "@/lib/admin/types";
+import { BULK_CHANNELS } from "@/lib/admin/bulk-orders";
+import { PANEL_ORDER_CHANNELS, PANEL_TRAFFIC_SOURCES, type ActionState, type AdminProductRow, type AdminProductVariant, type SellerRecord, type StoreSettings } from "@/lib/admin/types";
+import { trafficSourceLabel } from "@/lib/services/origem";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
@@ -50,6 +52,8 @@ const orderInput = z.object({
     state: z.string().trim().length(2).transform((value) => value.toUpperCase()),
   }),
   notes: z.string().trim().max(500),
+  channel: z.enum(PANEL_ORDER_CHANNELS, { error: "Escolha onde a venda foi fechada." }),
+  source: z.enum(PANEL_TRAFFIC_SOURCES, { error: "Escolha como o cliente chegou até a loja." }),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
     variantId: z.string().trim().max(120).nullable().optional(),
@@ -346,6 +350,7 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/trafego");
     return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.`, orderId: created.id, orderNumber: created.number };
   } catch (error) {
     if (error instanceof OrderOperationError) return { message: error.message };
@@ -371,6 +376,7 @@ export async function confirmOrderAction(formData: FormData) {
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
     destino = `/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível confirmar o pedido agora.";
@@ -392,6 +398,7 @@ export async function cancelOrderAction(formData: FormData) {
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
     destino = `/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível cancelar o pedido agora.";
@@ -597,6 +604,9 @@ const leadInput = z.object({
   customerPhone: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 10 && value.length <= 13), "Informe um telefone com DDD ou deixe o campo em branco."),
   sellerId: z.string().trim().max(80),
   notes: z.string().trim().max(500, "A observação pode ter no máximo 500 caracteres."),
+  // Sem o campo (formulario antigo em cache), o atendimento entra como direto,
+  // como antes do controle de trafego.
+  source: z.enum(PANEL_TRAFFIC_SOURCES, { error: "Escolha como o cliente chegou até a loja." }).default("direct"),
 });
 
 /**
@@ -604,7 +614,8 @@ const leadInput = z.object({
  * ou por uma conversa de WhatsApp que comecou fora do site.
  *
  * Diferente dos atendimentos do site, este PASSA auditoria: sao poucos por dia
- * e e util saber quem cadastrou.
+ * e e util saber quem cadastrou. A origem e escolhida pelo operador — sem ela,
+ * todo cliente da loja fisica somaria como "Direto" no relatorio de trafego.
  */
 export async function createLeadAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
@@ -613,6 +624,7 @@ export async function createLeadAction(_: ActionState, formData: FormData): Prom
     customerPhone: formData.get("customerPhone"),
     sellerId: formData.get("sellerId"),
     notes: formData.get("notes"),
+    source: formData.get("source") ?? undefined,
   });
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do atendimento." };
   const value = parsed.data;
@@ -631,6 +643,7 @@ export async function createLeadAction(_: ActionState, formData: FormData): Prom
         customerName: value.customerName,
         customerPhone: value.customerPhone,
         notes: value.notes,
+        source: value.source,
         createdBy: owner.id,
       },
       {
@@ -638,7 +651,7 @@ export async function createLeadAction(_: ActionState, formData: FormData): Prom
         audit: {
           actor_id: owner.id,
           action: "lead.created",
-          after_data: { cliente: value.customerName, atendente: atendente?.name ?? "Fila livre" },
+          after_data: { cliente: value.customerName, atendente: atendente?.name ?? "Fila livre", origem: trafficSourceLabel(value.source) },
         },
       },
     );
@@ -649,6 +662,7 @@ export async function createLeadAction(_: ActionState, formData: FormData): Prom
   }
 
   revalidatePath("/painel/atendimento");
+  revalidatePath("/painel/trafego");
   return { ok: true, message: atendente ? `Atendimento registrado para ${atendente.name}.` : "Atendimento registrado na fila livre." };
 }
 
@@ -855,6 +869,9 @@ function inventoryActionError(error: unknown): ActionState {
 
 const bulkBlockInput = z.object({
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/),
+  // Canal reconhecido no cabecalho (vira canal/origem do pedido). A tela ja
+  // manda sempre; sem ele (pagina antiga aberta), o bloco entra como "outro".
+  channel: z.enum(BULK_CHANNELS).default("outro"),
   channelLabel: z.string().trim().min(1).max(120),
   customerName: z.string().trim().min(1).max(140),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -905,6 +922,7 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
       const order = await createChannelSalesOrder(await readCatalogState(true), {
         requestId: block.requestId,
         sellerId: parsedSeller.data,
+        channel: block.channel,
         channelLabel: block.channelLabel,
         customerName: block.customerName,
         // Meio-dia para a data nao escorregar de dia por fuso.
@@ -926,6 +944,7 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
+    revalidatePath("/painel/trafego");
   }
 
   const resumo = created.length === 1 ? "1 pedido gerado" : `${created.length} pedidos gerados`;
@@ -1207,6 +1226,7 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
     revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
 
     const resumo = acao === "excluir"
       ? `${excluidos} pedido(s) excluído(s)${cancelados.length ? ` · estoque devolvido de ${cancelados.length}` : ""}.`

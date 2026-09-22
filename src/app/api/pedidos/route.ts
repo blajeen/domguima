@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { readCatalogState } from "@/lib/admin/catalog-store";
 import { registerSiteOrderLead } from "@/lib/admin/lead-orders";
-import { attributionFromCookie, ORIGIN_COOKIE } from "@/lib/admin/leads";
 import { createPendingSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import {
+  classifyTrafficSource,
+  ORIGEM_COOKIE,
+  parseOrigemCookie,
+  sanitizeAttribution,
+  VISITANTE_COOKIE,
+  VISITANTE_MAX_AGE,
+} from "@/lib/services/origem";
 import { isValidDocument, isValidPhone, onlyDigits } from "@/lib/utils/validators";
 
 const publicOrderInput = z.object({
@@ -31,6 +39,10 @@ const publicOrderInput = z.object({
     variant: z.string().trim().max(100).nullable().optional(),
     variantId: z.string().trim().max(120).nullable().optional(),
   })).min(1).max(50),
+  // Origem que o navegador registrou (UTM, site de origem, pagina de entrada).
+  // `unknown` de proposito, saneado depois por `sanitizeAttribution`: um campo
+  // fora do padrao corta a origem, nunca o pedido do cliente.
+  origem: z.unknown().optional(),
 });
 
 const requestLog = new Map<string, { count: number; resetAt: number }>();
@@ -67,21 +79,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "A entrega local está disponível somente para Uberlândia." }, { status: 400 });
   }
 
+  // Origem: a que o checkout mandou no corpo; sem ela (armazenamento local
+  // bloqueado, pagina antiga em cache), o cookie espelho. Nenhuma das duas
+  // derruba o pedido — no pior caso ele entra como "Direto".
+  const doCorpo = sanitizeAttribution(parsed.data.origem);
+  const attribution = Object.keys(doCorpo).length ? doCorpo : parseOrigemCookie(request.cookies.get(ORIGEM_COOKIE)?.value);
+  const visitante = request.cookies.get(VISITANTE_COOKIE)?.value?.slice(0, 80) ?? "";
+  // O mesmo identificador anonimo dos cliques de WhatsApp: com ele, uma
+  // conversa aberta depois pelo mesmo navegador fica ligada a este pedido.
+  const visitorId = visitante || randomUUID();
+
   try {
     // Leitura fresca so para validar (produto, preco, estoque); a gravacao e
     // uma transacao no banco, sem reescrever o catalogo inteiro.
     const state = await readCatalogState(true);
-    const created = await createPendingSalesOrder(state, parsed.data);
+    const source = classifyTrafficSource(attribution);
+    const created = await createPendingSalesOrder(state, { ...parsed.data, attribution, source, visitorId });
+    // Antes da migration 202609210003 o banco devolve o pedido sem as colunas
+    // de origem (a RPC antiga as descarta): o atendimento usa a origem que a
+    // rota ja tem em maos, para nao nascer "Direto" por engano.
+    const comOrigem = created.source ? created : { ...created, source, attribution };
 
     // O atendimento do pedido (e, no rodizio, o atendente do pedido) e gravado
     // DEPOIS da resposta: o cliente nao espera o CRM para ver "Solicitacao
     // recebida", e nenhuma falha ali pode transformar o 201 num erro —
-    // `registerSiteOrderLead` so avisa no console. O cookie e lido agora,
-    // enquanto a requisicao ainda esta em maos.
-    const attribution = attributionFromCookie(request.cookies.get(ORIGIN_COOKIE)?.value);
-    after(() => registerSiteOrderLead(state, created, attribution));
+    // `registerSiteOrderLead` so avisa no console.
+    after(() => registerSiteOrderLead(state, comOrigem));
 
-    return NextResponse.json({ ok: true, orderId: created.id, orderNumber: created.number }, { status: 201 });
+    const response = NextResponse.json({ ok: true, orderId: created.id, orderNumber: created.number }, { status: 201 });
+    if (!visitante) {
+      response.cookies.set(VISITANTE_COOKIE, visitorId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: VISITANTE_MAX_AGE,
+      });
+    }
+    return response;
   } catch (error) {
     if (error instanceof OrderOperationError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: "Nao foi possivel registrar o pedido agora. Tente novamente em instantes." }, { status: 500 });

@@ -3,10 +3,12 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { sanitizeAttribution } from "@/lib/services/origem";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalize } from "@/lib/utils/format";
 import { onlyDigits } from "@/lib/utils/validators";
 import { hasSupabaseConfig } from "./config";
+import { customerKey, phoneKey } from "./customers";
 import {
   LEAD_KIND_LABELS,
   LEAD_LOST_REASON_LABELS,
@@ -18,6 +20,7 @@ import {
   type LeadLostReason,
   type LeadRecord,
   type LeadStage,
+  type OrderAttribution,
 } from "./types";
 
 /**
@@ -61,8 +64,9 @@ export interface LeadInput {
   items?: LeadItemSnapshot[];
   message?: string;
   pagePath?: string;
+  /** Um `TrafficSource` (ver classifyTrafficSource em services/origem.ts). */
   source?: string;
-  attribution?: Record<string, string>;
+  attribution?: OrderAttribution;
   visitorId?: string | null;
   orderId?: string | null;
   notes?: string;
@@ -390,19 +394,86 @@ export async function findLeadsByOrders(orderIds: readonly string[]): Promise<Le
   return (await lerLeadsLocais()).filter((lead) => lead.order_id !== null && procurados.has(lead.order_id));
 }
 
+/** O que o relatorio de trafego precisa de cada atendimento — sem nome, telefone nem mensagem. */
+export type LeadTrafficRow = Pick<LeadRecord, "id" | "kind" | "source" | "attribution" | "page_path" | "created_at">;
+
+export interface LeadTrafficPage {
+  rows: LeadTrafficRow[];
+  /** A leitura parou no teto `LEAD_REPORT_LIMIT`: os numeros olham so os mais recentes. */
+  truncated: boolean;
+  /** A tabela ainda nao existe (migration 202609210002 nao aplicada) ou a consulta falhou. */
+  unavailable: boolean;
+  /**
+   * A consulta falhou no MEIO da paginacao: `rows` tem so as paginas lidas antes
+   * do erro (os atendimentos mais recentes), e os numeros do periodo ficam baixos.
+   */
+  partial: boolean;
+}
+
+/** Teto do relatorio. Folgado de proposito: e ~20 paginas de 1.000 linhas leves. */
+export const LEAD_REPORT_LIMIT = 20_000;
+const PAGINA_DO_RELATORIO = 1_000;
+
+/**
+ * Atendimentos do periodo para somar por origem, campanha e pagina.
+ *
+ * Diferente da lista da tela de Atendimento (teto de 500, linha completa), aqui
+ * a soma precisa ver o periodo INTEIRO: o relatorio de um mes movimentado nao
+ * pode contar so os 500 ultimos cliques. Por isso a consulta traz so as colunas
+ * da conta e pagina de 1.000 em 1.000 (o maximo que o PostgREST devolve por vez).
+ */
+export async function listLeadTraffic(filters: { from?: string; to?: string }): Promise<LeadTrafficPage> {
+  if (hasSupabaseConfig()) {
+    const rows: LeadTrafficRow[] = [];
+    for (let inicio = 0; inicio < LEAD_REPORT_LIMIT; inicio += PAGINA_DO_RELATORIO) {
+      let query = createSupabaseAdminClient()
+        .from("leads")
+        .select("id, kind, source, attribution, page_path, created_at")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(inicio, inicio + PAGINA_DO_RELATORIO - 1);
+      if (filters.from) query = query.gte("created_at", inicioDoDia(filters.from));
+      if (filters.to) query = query.lte("created_at", fimDoDia(filters.to));
+      const { data, error } = await query;
+      if (error) {
+        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        else console.warn("Nao foi possivel ler os atendimentos do relatorio:", error.message);
+        // Erro na 1a pagina: nada lido (aviso azul). Da 2a em diante: o que
+        // veio e so parte do periodo (aviso ambar) — nunca numero parcial
+        // apresentado como completo.
+        return { rows, truncated: false, unavailable: rows.length === 0, partial: rows.length > 0 };
+      }
+      for (const row of data ?? []) {
+        const lead = normalizeLead(row);
+        if (lead) rows.push({ id: lead.id, kind: lead.kind, source: lead.source, attribution: lead.attribution, page_path: lead.page_path, created_at: lead.created_at });
+      }
+      if (!data || data.length < PAGINA_DO_RELATORIO) return { rows, truncated: false, unavailable: false, partial: false };
+    }
+    return { rows, truncated: true, unavailable: false, partial: false };
+  }
+
+  const todos = (await lerLeadsLocais()).filter((lead) => combina(lead, { from: filters.from, to: filters.to }));
+  return {
+    rows: todos.slice(0, LEAD_REPORT_LIMIT).map((lead) => ({ id: lead.id, kind: lead.kind, source: lead.source, attribution: lead.attribution, page_path: lead.page_path, created_at: lead.created_at })),
+    truncated: todos.length > LEAD_REPORT_LIMIT,
+    unavailable: false,
+    partial: false,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Regras puras reaproveitadas pelo painel
 // ---------------------------------------------------------------------------
 
 /**
- * Chave do cliente para reconhecer quem ja comprou.
- *
  * Telefone em digitos sem o DDI, porque o mesmo cliente aparece ora como
  * "(34) 99999-9999" (pedido do site) ora como "5534999999999" (WhatsApp).
+ *
+ * A regra mora em customers.ts (`phoneKey`), a mesma que o pedido usa para a
+ * chave do cliente: duas copias sairiam do ar uma da outra.
  */
 export function leadCustomerKey(phone: string): string {
-  const digits = onlyDigits(phone);
-  return digits.startsWith("55") && (digits.length === 12 || digits.length === 13) ? digits.slice(2) : digits;
+  return phoneKey(phone);
 }
 
 /** Dia YYYY-MM-DD em America/Sao_Paulo — o fuso em que a loja trabalha. */
@@ -458,7 +529,7 @@ interface LeadPayload {
   message: string;
   page_path: string;
   source: string;
-  attribution: Record<string, string>;
+  attribution: OrderAttribution;
   visitor_id: string | null;
   order_id: string | null;
   notes: string;
@@ -476,13 +547,13 @@ function montarPayload(input: LeadInput): LeadPayload {
     assigned_by: input.assignedBy?.trim() || null,
     customer_name: (input.customerName ?? "").trim().slice(0, 140),
     customer_phone: phone,
-    customer_key: phone ? leadCustomerKey(phone) : null,
+    customer_key: customerKey({ phone }),
     product_id: input.productId?.trim() || null,
     items: (input.items ?? []).slice(0, 50),
     message: (input.message ?? "").slice(0, 4_000),
     page_path: (input.pagePath ?? "").slice(0, 300),
     source: input.source?.trim() || "direct",
-    attribution: input.attribution ?? {},
+    attribution: sanitizeAttribution(input.attribution),
     visitor_id: input.visitorId?.trim() || null,
     order_id: input.orderId?.trim() || null,
     notes: (input.notes ?? "").slice(0, 1_000),
@@ -519,7 +590,7 @@ function normalizeLead(raw: unknown): LeadRecord | null {
     message: texto(row.message),
     page_path: texto(row.page_path),
     source: texto(row.source) || "direct",
-    attribution: normalizeAttribution(row.attribution),
+    attribution: sanitizeAttribution(row.attribution),
     visitor_id: texto(row.visitor_id) || null,
     order_id: texto(row.order_id) || null,
     lost_reason: lostReason in LEAD_LOST_REASON_LABELS ? (lostReason as LeadLostReason) : null,
@@ -547,52 +618,6 @@ function normalizeItems(value: unknown): LeadItemSnapshot[] {
       quantity: Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 1,
     }];
   }).slice(0, 50);
-}
-
-/**
- * Atribuicao e um mapa raso de strings curtas. O limite existe porque o valor
- * chega de um cookie que qualquer pessoa pode editar no navegador.
- */
-export function normalizeAttribution(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const saida: Record<string, string> = {};
-  for (const [chave, bruto] of Object.entries(value as Record<string, unknown>)) {
-    if (Object.keys(saida).length >= 12) break;
-    if (typeof bruto !== "string" || !bruto.trim()) continue;
-    saida[chave.slice(0, 40)] = bruto.trim().slice(0, 200);
-  }
-  return saida;
-}
-
-/**
- * Origem gravada no navegador (UTM, referrer, campanha).
- *
- * Quem escreve este cookie e a captura de origem do site, que entra junto com o
- * controle de trafego. Enquanto ela nao existir o cookie simplesmente nao esta
- * la e `attribution` fica vazio — ler desde ja (na rota do WhatsApp e na de
- * pedidos) evita ter de mexer nas rotas e nas RPCs depois.
- */
-export const ORIGIN_COOKIE = "domguima_origem";
-
-/** Valor cru do cookie de origem → mapa de atribuicao. Cookie adulterado vira `{}`. */
-export function attributionFromCookie(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
-  for (const texto of [decodificar(raw), raw]) {
-    try {
-      return normalizeAttribution(JSON.parse(texto));
-    } catch {
-      // Cookie adulterado ou em outro formato: seguimos sem origem.
-    }
-  }
-  return {};
-}
-
-function decodificar(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function filtrarPorBusca(leads: LeadRecord[], q?: string): LeadRecord[] {

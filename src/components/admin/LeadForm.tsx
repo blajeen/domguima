@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { createLeadAction } from "@/app/painel/actions";
-import type { SellerRecord } from "@/lib/admin/types";
+import { PANEL_TRAFFIC_SOURCES, TRAFFIC_SOURCE_LABELS, type SellerRecord } from "@/lib/admin/types";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
 
 interface LeadFormProps {
@@ -28,7 +28,7 @@ export function LeadForm({ sellers, ownerSellerId }: LeadFormProps) {
   }, [state]);
 
   return (
-    <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 xl:items-end">
+    <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
       <label className={labelClass}>
         Cliente
         <input name="customerName" required maxLength={140} placeholder="Nome de quem está sendo atendido" className={fieldClass} />
@@ -45,11 +45,19 @@ export function LeadForm({ sellers, ownerSellerId }: LeadFormProps) {
           {ativos.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
         </select>
       </label>
+      {/* A origem entra no relatório de tráfego: sem ela, todo cliente da loja
+          física ou de indicação somaria como "Direto". */}
+      <label className={labelClass}>
+        Como chegou
+        <select name="source" defaultValue="direct" className={fieldClass}>
+          {PANEL_TRAFFIC_SOURCES.map((valor) => <option key={valor} value={valor}>{TRAFFIC_SOURCE_LABELS[valor]}</option>)}
+        </select>
+      </label>
       <label className={labelClass}>
         Observação <span className="font-normal text-ink-400">(opcional)</span>
         <input name="notes" maxLength={500} placeholder="O que o cliente procura" className={fieldClass} />
       </label>
-      <div className="sm:col-span-2 xl:col-span-3"><FormMessage state={state} /></div>
+      <div className="sm:col-span-2 xl:col-span-4"><FormMessage state={state} /></div>
       <SubmitButton pendingLabel="Registrando...">Registrar atendimento</SubmitButton>
     </form>
   );

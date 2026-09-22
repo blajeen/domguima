@@ -162,3 +162,28 @@ export function quickCartMessage(lines: CartLine[], total: number, details: Quic
 }
 
 export const genericMessage = "Olá! Vim pelo site da Dom Guima e preciso de ajuda.";
+
+/**
+ * Tamanho maximo do nome da campanha na mensagem: o suficiente para reconhecer,
+ * sem poluir a conversa. O gerador de links do painel (CampaignLinkBuilder)
+ * corta o nome da campanha neste mesmo limite, para o "(ref. ...)" que chega
+ * ao atendente ser igual ao nome do relatorio.
+ */
+export const CAMPAIGN_REF_MAX = 40;
+
+/**
+ * Acrescenta "(ref. <campanha>)" ao fim da mensagem quando o cliente chegou por
+ * um link de campanha.
+ *
+ * E o jeito de o atendente saber, na propria conversa do WhatsApp, qual
+ * divulgacao trouxe o cliente — sem API oficial nem acesso ao painel. Quem
+ * chama e a rota do WhatsApp, que le a campanha do cookie de origem; por isso
+ * as mensagens de produto, carrinho e pedido rapido nao precisam saber disso.
+ * Repetir nao duplica a referencia.
+ */
+export function withCampaignRef(message: string, campaign?: string): string {
+  const ref = (campaign ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/[()]/g, "").trim().slice(0, CAMPAIGN_REF_MAX).trim();
+  if (!ref) return message;
+  const marca = `(ref. ${ref})`;
+  return message.includes(marca) ? message : `${message}\n\n${marca}`;
+}

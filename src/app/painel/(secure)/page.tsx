@@ -73,6 +73,7 @@ export default async function DashboardPage() {
             <QuickLink href="/painel/pedidos" label="Consultar pedidos" />
             {data.pendingOrders > 0 && <QuickLink href="/painel/pedidos?status=pending" label={`Ver ${data.pendingOrders} pedido(s) aguardando`} />}
             {data.freeLeads > 0 && <QuickLink href="/painel/atendimento?aba=fila" label={`Assumir ${data.freeLeads} atendimento(s) da fila`} />}
+            <QuickLink href="/painel/trafego" label="Ver de onde vêm os clientes" />
             <QuickLink href="/painel/estoque" label="Ajustar estoque" />
             <QuickLink href="/painel/categorias" label="Organizar categorias" />
             <QuickLink href="/painel/catalogo-pdf" label="Exportar catalogo PDF" />

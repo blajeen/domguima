@@ -1,6 +1,6 @@
 import { getOwner } from "@/lib/admin/auth";
 import { readCatalogState } from "@/lib/admin/catalog-store";
-import { defaultReportRange, ordersReportCsv, reportOrders, validDateParam } from "@/lib/admin/reports";
+import { channelFilterParam, defaultReportRange, ordersReportCsv, reportOrders, sourceFilterParam, validDateParam } from "@/lib/admin/reports";
 
 export async function GET(request: Request) {
   if (!(await getOwner())) return new Response("Não autorizado.", { status: 401 });
@@ -11,7 +11,10 @@ export async function GET(request: Request) {
   const sellerId = url.searchParams.get("vendedor") ?? "";
   const rawStatus = url.searchParams.get("status");
   const status = rawStatus === "pending" ? "pending" : rawStatus === "cancelled" ? "cancelled" : rawStatus === "all" ? "all" : "completed";
-  const orders = reportOrders(await readCatalogState(), { from, to, sellerId, status });
+  // Mesmos filtros da tela de Relatórios: o arquivo baixado bate com o que está na tela.
+  const channel = channelFilterParam(url.searchParams.get("canal"));
+  const source = sourceFilterParam(url.searchParams.get("origem"));
+  const orders = reportOrders(await readCatalogState(), { from, to, sellerId, status, channel, source });
   const filename = `dom-guima-vendas-${from}-a-${to}.csv`;
   return new Response(ordersReportCsv(orders), {
     headers: {

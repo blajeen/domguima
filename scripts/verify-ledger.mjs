@@ -8,7 +8,8 @@
  * Executa de verdade, contra o banco configurado em .env.local, os casos que a
  * auditoria mediu quebrados: pedido simultaneo sumindo, numero repetido, venda
  * abaixo de zero, confirmacao dupla e reenvio do mesmo pedido — e a atribuicao
- * de atendente a um pedido pendente sem confirma-lo (atendimento do site).
+ * de atendente a um pedido pendente sem confirma-lo (atendimento do site) e a
+ * gravacao de canal/origem/atribuicao (migration 202609210003).
  *
  * O QUE ELE CRIA E APAGA (tudo com prefixo "zz-teste-livro-razao"):
  *   - 1 produto de teste em rascunho (status draft: nao aparece na loja);
@@ -256,6 +257,46 @@ try {
   console.log("\n▸ 7. A coluna batch_id existe (idempotencia das baixas em lote)");
   const { error: erroBatch } = await db.from("inventory_movements").select("batch_id").limit(1);
   checar("inventory_movements.batch_id disponivel", !erroBatch, erroBatch?.message ?? "");
+
+  // -------------------------------------------------------------------------
+  // Migration 202609210003: sem ela a RPC antiga descarta canal, origem e
+  // atribuicao EM SILENCIO — o pedido grava, so que sem a origem. Por isso a
+  // prova e ler as colunas de volta, e nao so ver a chamada dar certo.
+  console.log("\n▸ 8. Canal, origem e atribuicao chegam ao banco (202609210003)");
+  const origemEsperada = { utm_source: "instagram", utm_medium: "bio", utm_campaign: "zz-teste", referrer: "l.instagram.com", landing_path: "/" };
+  const { data: comOrigem, error: erroOrigem } = await db.rpc("create_sales_order_v2", {
+    p_order: pedido("origem", {
+      status: "pending",
+      channel: "site",
+      source: "instagram",
+      attribution: origemEsperada,
+      lead_id: `${MARCA}-atendimento`,
+      customer_key: "34999999999",
+      visitor_id: `${MARCA}-visitante`,
+    }),
+    p_movements: [],
+    p_audit: null,
+  });
+  const { data: lida, error: erroLeitura } = await db
+    .from("sales_orders")
+    .select("channel, source, attribution, lead_id, customer_key, visitor_id")
+    .eq("id", comOrigem?.order?.id ?? `${MARCA}-origem`)
+    .maybeSingle();
+  if (erroLeitura && /column .* does not exist|could not find/i.test(erroLeitura.message)) {
+    checar("colunas de origem existem em sales_orders", false, "aplique supabase/migrations/202609210003_origem_do_pedido.sql");
+  } else {
+    checar("pedido com origem gravado", !erroOrigem && Boolean(lida), erroOrigem?.message ?? erroLeitura?.message ?? "");
+    checar("canal e origem gravados", lida?.channel === "site" && lida?.source === "instagram", `channel = ${lida?.channel}, source = ${lida?.source}`);
+    // Comparacao campo a campo: o jsonb devolve as chaves na ordem dele, nao na nossa.
+    const atribuicaoLida = lida?.attribution ?? {};
+    const mesmaAtribuicao = Object.keys(atribuicaoLida).length === Object.keys(origemEsperada).length
+      && Object.entries(origemEsperada).every(([chave, valor]) => atribuicaoLida[chave] === valor);
+    checar("atribuicao gravada inteira", mesmaAtribuicao, JSON.stringify(lida?.attribution ?? null));
+    checar("lead_id, customer_key e visitor_id gravados", lida?.lead_id === `${MARCA}-atendimento` && lida?.customer_key === "34999999999" && lida?.visitor_id === `${MARCA}-visitante`, `${lida?.lead_id} · ${lida?.customer_key} · ${lida?.visitor_id}`);
+    // O pedido do passo 1 foi criado sem os campos novos: valem os padroes.
+    const { data: semOrigem } = await db.from("sales_orders").select("channel, source, attribution, lead_id").eq("id", `${MARCA}-concorrente-0`).maybeSingle();
+    checar("pedido sem origem fica com os padroes", semOrigem?.channel === "" && semOrigem?.source === "" && JSON.stringify(semOrigem?.attribution) === "{}" && semOrigem?.lead_id === null, JSON.stringify(semOrigem ?? null));
+  }
 } finally {
   console.log("\n▸ Limpeza");
   const contadorFinal = await limpar();

@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { createOrderAction } from "@/app/painel/actions";
 import { commissionForUnit } from "@/lib/admin/commission";
 import { InstallmentSimulator } from "./InstallmentSimulator";
-import type { ActionState, SellerRecord } from "@/lib/admin/types";
+import {
+  ORDER_CHANNEL_LABELS,
+  PANEL_ORDER_CHANNELS,
+  PANEL_TRAFFIC_SOURCES,
+  TRAFFIC_SOURCE_LABELS,
+  type ActionState,
+  type SellerRecord,
+} from "@/lib/admin/types";
 import { formatPrice, normalize } from "@/lib/utils/format";
 import { formatDocument, formatPhone, onlyDigits } from "@/lib/utils/validators";
 
@@ -70,6 +77,10 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
   const [sellerId, setSellerId] = useState(sellers.find((seller) => seller.active)?.id ?? "");
   const [customer, setCustomer] = useState(emptyCustomer);
   const [notes, setNotes] = useState("");
+  // WhatsApp + Direto: o caminho mais comum de uma venda lançada à mão. O
+  // operador troca quando foi na loja física ou veio pelo Instagram.
+  const [channel, setChannel] = useState<(typeof PANEL_ORDER_CHANNELS)[number]>("whatsapp");
+  const [source, setSource] = useState<(typeof PANEL_TRAFFIC_SOURCES)[number]>("direct");
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [feedback, setFeedback] = useState<ActionState>({});
@@ -136,6 +147,8 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
         sellerId,
         customer: { ...customer, cpf: onlyDigits(customer.cpf), phone: onlyDigits(customer.phone), cep: onlyDigits(customer.cep) },
         notes,
+        channel,
+        source,
         items: lines.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, expectedStock: line.stock, unitPriceCents: line.unitPriceCents })),
       });
       setFeedback(result);
@@ -169,7 +182,7 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
     </div>
 
     <aside className="h-fit space-y-5 xl:sticky xl:top-8">
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-lg font-black">Fechamento</h2><label className={`${labelClass} mt-4`}>Vendedor<select required value={sellerId} onChange={(event) => setSellerId(event.target.value)} className={fieldClass}><option value="">Selecione</option>{sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label><div className="mt-5"><p className="text-xs font-bold text-ink-500">Desconto rápido</p><div className="mt-2 grid grid-cols-4 gap-2">{[0, 5, 10, 15].map((percent) => <button key={percent} type="button" onClick={() => applyDiscount(percent)} className="rounded-lg border border-ink-200 py-2 text-xs font-black hover:border-gold-400 hover:bg-gold-50">{percent}%</button>)}</div></div><label className={`${labelClass} mt-5`}>Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClass} placeholder="Pagamento, entrega ou condição combinada" /></label><dl className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm"><Summary label="Produtos" value={`${units} unidade(s)`} /><Summary label="Valor de tabela" value={formatPrice(gross)} /><Summary label="Desconto" value={`− ${formatPrice(discount)}`} muted={!discount} /><div className="flex items-end justify-between border-t border-ink-100 pt-3"><dt className="font-bold">Total do pedido</dt><dd className="text-2xl font-black">{formatPrice(total)}</dd></div></dl><div className="mt-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><strong>Comissão calculada: {formatPrice(commission)}</strong><p className="mt-1 leading-relaxed">A comissão usa o preço final de cada unidade e fica congelada no pedido.</p></div>{feedback.message && <p role="alert" className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{feedback.message}</p>}<button type="submit" disabled={isPending || !lines.length} className="mt-5 w-full rounded-xl bg-ink-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? "Finalizando pedido..." : "Finalizar pedido e baixar estoque"}</button><p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">A baixa acontece somente após a confirmação deste botão.</p></section>
+      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-lg font-black">Fechamento</h2><label className={`${labelClass} mt-4`}>Vendedor<select required value={sellerId} onChange={(event) => setSellerId(event.target.value)} className={fieldClass}><option value="">Selecione</option>{sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label><div className="mt-4 grid grid-cols-2 gap-3"><label className={labelClass}>Canal<select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)} className={fieldClass}>{PANEL_ORDER_CHANNELS.map((valor) => <option key={valor} value={valor}>{ORDER_CHANNEL_LABELS[valor]}</option>)}</select></label><label className={labelClass}>Origem<select value={source} onChange={(event) => setSource(event.target.value as typeof source)} className={fieldClass}>{PANEL_TRAFFIC_SOURCES.map((valor) => <option key={valor} value={valor}>{TRAFFIC_SOURCE_LABELS[valor]}</option>)}</select></label><p className="col-span-2 text-[11px] leading-relaxed text-ink-400">Canal: onde a venda foi fechada. Origem: como o cliente conheceu a loja. Os dois alimentam o relatório de tráfego.</p></div><div className="mt-5"><p className="text-xs font-bold text-ink-500">Desconto rápido</p><div className="mt-2 grid grid-cols-4 gap-2">{[0, 5, 10, 15].map((percent) => <button key={percent} type="button" onClick={() => applyDiscount(percent)} className="rounded-lg border border-ink-200 py-2 text-xs font-black hover:border-gold-400 hover:bg-gold-50">{percent}%</button>)}</div></div><label className={`${labelClass} mt-5`}>Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClass} placeholder="Pagamento, entrega ou condição combinada" /></label><dl className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm"><Summary label="Produtos" value={`${units} unidade(s)`} /><Summary label="Valor de tabela" value={formatPrice(gross)} /><Summary label="Desconto" value={`− ${formatPrice(discount)}`} muted={!discount} /><div className="flex items-end justify-between border-t border-ink-100 pt-3"><dt className="font-bold">Total do pedido</dt><dd className="text-2xl font-black">{formatPrice(total)}</dd></div></dl><div className="mt-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><strong>Comissão calculada: {formatPrice(commission)}</strong><p className="mt-1 leading-relaxed">A comissão usa o preço final de cada unidade e fica congelada no pedido.</p></div>{feedback.message && <p role="alert" className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{feedback.message}</p>}<button type="submit" disabled={isPending || !lines.length} className="mt-5 w-full rounded-xl bg-ink-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? "Finalizando pedido..." : "Finalizar pedido e baixar estoque"}</button><p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">A baixa acontece somente após a confirmação deste botão.</p></section>
       {total > 0 && <InstallmentSimulator cents={total} titulo="Parcelamento deste pedido" />}
       <CommissionTable />
     </aside>

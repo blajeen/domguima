@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { Suspense } from "react";
 import { CartDrawer } from "@/components/cart/CartDrawer";
+import { CapturaOrigem } from "@/components/layout/CapturaOrigem";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { WhatsAppFloat } from "@/components/layout/WhatsAppFloat";
@@ -80,6 +82,14 @@ export default async function RootLayout({
       <body className="antialiased">
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />
+
+        {/* Origem da visita (controle de tráfego próprio, sem terceiros). O
+            Suspense é obrigatório: o componente lê a query string com
+            useSearchParams, e sem a fronteira as páginas estáticas deixariam
+            de ser pré-renderizadas. */}
+        <Suspense fallback={null}>
+          <CapturaOrigem />
+        </Suspense>
 
         <a
           href="#conteudo"

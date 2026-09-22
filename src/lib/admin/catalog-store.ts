@@ -3,6 +3,7 @@ import "server-only";
 import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
+import { normalizeOrderOrigin } from "@/lib/services/origem";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
@@ -283,6 +284,39 @@ export async function deleteOrderRecords(ids: string[]): Promise<number> {
 }
 
 /**
+ * Anota no pedido o atendimento que nasceu com ele (`lead_id`).
+ *
+ * O atendimento do checkout e criado DEPOIS do pedido (em `after()`, fora do
+ * tempo de resposta do cliente), entao o vinculo so pode ser gravado depois. E
+ * um UPDATE direcionado de uma coluna, como a exclusao acima faz com o DELETE —
+ * nada de reescrever o pedido — e so vale enquanto o pedido ainda nao tem
+ * vinculo: repetir nunca troca o atendimento de um pedido.
+ *
+ * Devolve `false` sem lancar quando a coluna ainda nao existe (migration
+ * 202609210003 nao aplicada) ou o banco falha: quem chama e best-effort.
+ */
+export async function linkOrderToLead(orderId: string, leadId: string): Promise<boolean> {
+  if (!orderId || !leadId) return false;
+  if (hasSupabaseConfig()) {
+    const { error } = await createSupabaseAdminClient().from("sales_orders").update({ lead_id: leadId }).eq("id", orderId).is("lead_id", null);
+    if (error) {
+      console.warn("Nao foi possivel vincular o pedido ao atendimento (aplique supabase/migrations/202609210003_origem_do_pedido.sql se a coluna lead_id ainda nao existe):", error.message);
+      return false;
+    }
+    invalidarCacheRemoto();
+    return true;
+  }
+  let vinculado = false;
+  await mutateCatalogState((state) => {
+    const order = state.operations.orders.find((item) => item.id === orderId);
+    if (!order || order.lead_id) return;
+    order.lead_id = leadId;
+    vinculado = true;
+  });
+  return vinculado;
+}
+
+/**
  * Quantos movimentos de estoque o produto ja tem.
  *
  * Usado antes de excluir: inventory_movements.product_id tem ON DELETE
@@ -376,7 +410,9 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
   // Vendedores e product_meta continuam no JSONB (config pequena e mutavel).
   // Os pedidos vem da tabela propria — nunca mais do JSONB.
   const operations = normalizeOperations(__operations);
-  operations.orders = canonicalizeOrderSellers((ordersResult.data ?? []) as SalesOrderRecord[], operations.sellers);
+  // normalizeOrderOrigin: antes da migration 202609210003 as colunas de origem
+  // nao vem na linha, e o pedido tem de sair com os valores padrao.
+  operations.orders = canonicalizeOrderSellers(((ordersResult.data ?? []) as SalesOrderRecord[]).map(normalizeOrderOrigin), operations.sellers);
 
   return {
     version: 2,
@@ -409,7 +445,9 @@ function normalizeOperations(value?: Partial<AdminOperationsState> | null): Admi
     // Os pedidos recebem o mesmo mapeamento: no modo local (sem Supabase) a
     // migration nunca roda, e a lista de atendentes nao pode discordar dos
     // pedidos no filtro e no relatorio.
-    orders: canonicalizeOrderSellers(Array.isArray(value?.orders) ? value.orders : [], sellers),
+    // E os pedidos gravados antes do controle de trafego ganham os campos de
+    // origem com o valor padrao ("nao informado").
+    orders: canonicalizeOrderSellers((Array.isArray(value?.orders) ? value.orders : []).map(normalizeOrderOrigin), sellers),
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
   };
 }
@@ -528,7 +566,8 @@ export async function createOrderRecord(
     if (error) throw traduzirErroDeEstoque(error.message, "Nao foi possivel registrar o pedido");
     invalidarCacheRemoto();
     const payload = data as { already_existed: boolean; order: SalesOrderRecord };
-    return { order: payload.order, alreadyExisted: Boolean(payload.already_existed) };
+    // Antes da migration 202609210003 a RPC antiga devolve a linha sem as colunas de origem.
+    return { order: normalizeOrderOrigin(payload.order), alreadyExisted: Boolean(payload.already_existed) };
   }
 
   return mutarLivroRazaoLocal((state) => {
@@ -569,7 +608,7 @@ export async function updateOrderRecord(
     if (error) throw traduzirErroDeEstoque(error.message, "Nao foi possivel atualizar o pedido");
     invalidarCacheRemoto();
     const payload = data as { found: boolean; applied: boolean; order?: SalesOrderRecord };
-    return { order: payload.order ?? null, found: Boolean(payload.found), applied: Boolean(payload.applied) };
+    return { order: payload.order ? normalizeOrderOrigin(payload.order) : null, found: Boolean(payload.found), applied: Boolean(payload.applied) };
   }
 
   return mutarLivroRazaoLocal((state) => {
