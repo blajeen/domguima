@@ -29,7 +29,7 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
       <select name="leadDistributionMode" defaultValue={normalizeLeadDistributionMode(settings.leadDistributionMode)} className={fieldClass}>
         {distributionModes.map((mode) => <option key={mode} value={mode}>{LEAD_DISTRIBUTION_MODE_LABELS[mode]}</option>)}
       </select>
-      <span className="mt-1 block font-normal text-ink-500">Vale para os atendimentos registrados a partir do site. Quem entra na distribuição é definido em “Atendentes”, abaixo.</span>
+      <span className="mt-1 block font-normal text-ink-500">Vale para os atendimentos registrados a partir do site. Quem entra na distribuição é definido em “Atendentes”, abaixo. “Menos atendimentos abertos” conta as conversas que ainda não foram fechadas: enquanto nenhuma for marcada como ganha ou perdida, isso equivale ao total de cada atendente — para dividir por ordem de chegada, use o rodízio.</span>
     </label>
   </div><FormMessage state={state} /><SubmitButton>Salvar configuracoes</SubmitButton></form>;
 }

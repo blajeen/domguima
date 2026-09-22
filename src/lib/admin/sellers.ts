@@ -1,6 +1,6 @@
 import { onlyDigits } from "@/lib/utils/validators";
 import { normalize } from "@/lib/utils/format";
-import type { LeadDistributionMode, SellerRecord } from "./types";
+import type { LeadDistributionMode, SalesOrderRecord, SellerRecord } from "./types";
 
 /**
  * Regras puras sobre atendentes (sem Supabase, sem "server-only"): o que e um
@@ -11,6 +11,8 @@ import type { LeadDistributionMode, SellerRecord } from "./types";
 
 /** Id que o painel usava para o dono antes de o site e o painel falarem a mesma lingua. */
 export const LEGACY_OWNER_SELLER_ID = "dom-guima";
+/** Nome que acompanhava o id antigo. So ele e substituido no remapeamento. */
+export const LEGACY_OWNER_SELLER_NAME = "Dom Guima";
 /** Id canonico do dono — o mesmo que o site sempre usou em whatsappContacts. */
 export const OWNER_SELLER_ID = "juliano";
 
@@ -50,7 +52,7 @@ export function normalizeSeller(value: Partial<SellerRecord> | null | undefined,
 
   const nomeGravado = typeof value?.name === "string" ? value.name.trim() : "";
   // O dono antigo se chamava "Dom Guima" no painel; no site sempre foi Juliano.
-  const name = legado && (!nomeGravado || nomeGravado === "Dom Guima") ? "Juliano" : nomeGravado || padrao?.name || id;
+  const name = legado && (!nomeGravado || nomeGravado === LEGACY_OWNER_SELLER_NAME) ? "Juliano" : nomeGravado || padrao?.name || id;
 
   const numeroInformado = value?.whatsapp_number;
   const whatsapp_number = numeroInformado === undefined
@@ -86,6 +88,29 @@ export function normalizeSellers(value: unknown): SellerRecord[] {
     lista.push(seller);
   });
   return lista.length ? lista : defaultSellers();
+}
+
+/**
+ * Aplica o id canonico do dono aos pedidos ja gravados, na LEITURA.
+ *
+ * A migration 202609210001 corrige as linhas de `sales_orders`, mas ela e
+ * colada a mao no SQL Editor (nao ha tabela de controle) e o fallback local em
+ * arquivo nunca a recebe. Sem este ajuste, entre o deploy e o SQL — e para
+ * sempre no modo local — o filtro por "Juliano" em /painel/pedidos devolveria
+ * zero pedidos e o relatorio por vendedor mostraria duas linhas para a mesma
+ * pessoa, porque a lista de atendentes ja e normalizada e os pedidos nao.
+ *
+ * O nome segue a mesma regra conservadora de `normalizeSeller`: nome
+ * customizado no painel e respeitado, so o rotulo antigo e trocado.
+ */
+export function canonicalizeOrderSellers(orders: readonly SalesOrderRecord[], sellers: readonly SellerRecord[]): SalesOrderRecord[] {
+  return orders.map((order) => {
+    const seller_id = canonicalSellerId(order.seller_id);
+    if (seller_id === order.seller_id) return order;
+    const atendente = sellers.find((seller) => seller.id === seller_id);
+    const trocarNome = !order.seller_name || order.seller_name === LEGACY_OWNER_SELLER_NAME;
+    return { ...order, seller_id, seller_name: trocarNome ? atendente?.name ?? order.seller_name : order.seller_name };
+  });
 }
 
 export function sortSellers(sellers: readonly SellerRecord[]): SellerRecord[] {

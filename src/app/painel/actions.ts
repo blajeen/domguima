@@ -7,6 +7,7 @@ import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
+import { createLead, updateLead } from "@/lib/admin/leads";
 import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
@@ -423,9 +424,12 @@ export async function saveSettingsAction(_: ActionState, formData: FormData): Pr
   return { ok: true, message: "Configuracoes salvas." };
 }
 
+// `name` vem primeiro de proposito: o zod reporta a primeira falha na ordem das
+// chaves e o formulario nao tem campo de identificador — mandar o dono revisar o
+// "identificador" de um nome curto nao lhe daria nada para corrigir.
 const sellerInput = z.object({
-  id: z.string().regex(SELLER_ID_PATTERN, "O identificador do atendente deve ter de 2 a 40 caracteres: letras minúsculas, números ou hífen."),
   name: z.string().trim().min(2, "Informe o nome do atendente.").max(80, "O nome do atendente pode ter no máximo 80 caracteres."),
+  id: z.string().regex(SELLER_ID_PATTERN, "O identificador do atendente deve ter de 2 a 40 caracteres: letras minúsculas, números ou hífen."),
   roleLabel: z.string().trim().max(40, "A função pode ter no máximo 40 caracteres."),
   whatsappNumber: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 12 && value.length <= 13), "O WhatsApp do atendente precisa ter DDI, DDD e número (12 ou 13 dígitos) ou ficar em branco."),
   whatsappDisplay: z.string().trim().max(30, "O número exibido pode ter no máximo 30 caracteres."),
@@ -449,56 +453,66 @@ export async function saveSellersAction(_: ActionState, formData: FormData): Pro
   const chaves = formData.getAll("sellerRow").map((value) => String(value)).filter(Boolean);
   if (!chaves.length) return { message: "Cadastre pelo menos um atendente." };
 
-  const state = await readCatalogState(true);
-  const atuais = new Map(state.operations.sellers.map((seller) => [seller.id, seller]));
-  const pedidosPorAtendente = new Map<string, number>();
-  for (const order of state.operations.orders) {
-    const id = canonicalSellerId(order.seller_id);
-    pedidosPorAtendente.set(id, (pedidosPorAtendente.get(id) ?? 0) + 1);
-  }
+  // A leitura tambem fica no try: o formulario mostra o resultado com
+  // `setFeedback(result)`, entao uma falha de storage aqui virava promessa
+  // rejeitada e o dono ficava sem mensagem nenhuma, so com o botao travado.
+  try {
+    const state = await readCatalogState(true);
+    const atuais = new Map(state.operations.sellers.map((seller) => [seller.id, seller]));
+    const pedidosPorAtendente = new Map<string, number>();
+    for (const order of state.operations.orders) {
+      const id = canonicalSellerId(order.seller_id);
+      pedidosPorAtendente.set(id, (pedidosPorAtendente.get(id) ?? 0) + 1);
+    }
 
-  const lista: SellerRecord[] = [];
-  for (const chave of chaves) {
-    const campo = (nome: string) => String(formData.get(`seller-${chave}-${nome}`) ?? "");
-    const name = campo("name").trim();
-    const idInformado = campo("id").trim().toLowerCase();
-    const parsed = sellerInput.safeParse({
+    const lista: SellerRecord[] = [];
+    for (const chave of chaves) {
+      const campo = (nome: string) => String(formData.get(`seller-${chave}-${nome}`) ?? "");
+      const name = campo("name").trim();
+      const idInformado = campo("id").trim().toLowerCase();
       // Canonico antes da checagem de duplicata: um "Dom Guima" novo viraria
       // o id legado e se fundiria com o dono em silencio.
-      id: canonicalSellerId(idInformado || sellerIdFromName(name)),
-      name,
-      roleLabel: campo("roleLabel"),
-      whatsappNumber: campo("whatsappNumber"),
-      whatsappDisplay: campo("whatsappDisplay"),
-      receivesLeads: campo("receivesLeads") === "on",
-      active: campo("active") === "on",
-      sortOrder: Math.trunc(numberFrom(formData.get(`seller-${chave}-sortOrder`))),
-    });
-    if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados dos atendentes." };
-    const value = parsed.data;
-    if (lista.some((seller) => seller.id === value.id)) return { message: `O atendente “${value.name}” está repetido na lista.` };
-    lista.push({
-      id: value.id,
-      name: value.name,
-      role_label: value.roleLabel || "Vendedor",
-      whatsapp_number: value.whatsappNumber || null,
-      whatsapp_display: value.whatsappDisplay,
-      receives_leads: value.receivesLeads,
-      active: value.active,
-      sort_order: value.sortOrder,
-    });
-  }
+      const id = canonicalSellerId(idInformado || sellerIdFromName(name));
+      // Linha nova nao manda identificador: ele sai do nome. Nome que nao gera
+      // identificador (sem letra nem numero latino) tem de reclamar do NOME,
+      // o unico campo que o dono pode corrigir na tela.
+      if (!idInformado && name.length >= 2 && !SELLER_ID_PATTERN.test(id)) {
+        return { message: `Use um nome com pelo menos 2 letras ou números para o atendente “${name}”.` };
+      }
+      const parsed = sellerInput.safeParse({
+        name,
+        id,
+        roleLabel: campo("roleLabel"),
+        whatsappNumber: campo("whatsappNumber"),
+        whatsappDisplay: campo("whatsappDisplay"),
+        receivesLeads: campo("receivesLeads") === "on",
+        active: campo("active") === "on",
+        sortOrder: Math.trunc(numberFrom(formData.get(`seller-${chave}-sortOrder`))),
+      });
+      if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados dos atendentes." };
+      const value = parsed.data;
+      if (lista.some((seller) => seller.id === value.id)) return { message: `O atendente “${value.name}” está repetido na lista.` };
+      lista.push({
+        id: value.id,
+        name: value.name,
+        role_label: value.roleLabel || "Vendedor",
+        whatsapp_number: value.whatsappNumber || null,
+        whatsapp_display: value.whatsappDisplay,
+        receives_leads: value.receivesLeads,
+        active: value.active,
+        sort_order: value.sortOrder,
+      });
+    }
 
-  const ativos = lista.filter((seller) => seller.active);
-  if (!ativos.length) return { message: "Mantenha pelo menos um atendente ativo: é ele quem assina os pedidos." };
+    const ativos = lista.filter((seller) => seller.active);
+    if (!ativos.length) return { message: "Mantenha pelo menos um atendente ativo: é ele quem assina os pedidos." };
 
-  const idsEnviados = new Set(lista.map((seller) => seller.id));
-  const removidoComPedidos = [...atuais.values()].find((seller) => !idsEnviados.has(seller.id) && (pedidosPorAtendente.get(seller.id) ?? 0) > 0);
-  if (removidoComPedidos) {
-    return { message: `“${removidoComPedidos.name}” já tem pedidos registrados e não pode ser removido. Desmarque “Ativo” para tirá-lo de circulação.` };
-  }
+    const idsEnviados = new Set(lista.map((seller) => seller.id));
+    const removidoComPedidos = [...atuais.values()].find((seller) => !idsEnviados.has(seller.id) && (pedidosPorAtendente.get(seller.id) ?? 0) > 0);
+    if (removidoComPedidos) {
+      return { message: `“${removidoComPedidos.name}” já tem pedidos registrados e não pode ser removido. Desmarque “Ativo” para tirá-lo de circulação.` };
+    }
 
-  try {
     await mutateCatalogState((current) => {
       const before = current.operations.sellers;
       current.operations.sellers = lista.map((seller, index) => normalizeSeller(seller, index));
@@ -510,6 +524,150 @@ export async function saveSellersAction(_: ActionState, formData: FormData): Pro
   }
   refreshCatalog();
   return { ok: true, message: "Atendentes salvos. O site já mostra a lista nova." };
+}
+
+// ---------------------------------------------------------------------------
+// Atendimentos
+// ---------------------------------------------------------------------------
+
+const CRM_INDISPONIVEL = "Os atendimentos ainda não existem no banco. Aplique supabase/migrations/202609210002_atendimentos.sql no SQL Editor.";
+
+const leadInput = z.object({
+  customerName: z.string().trim().min(2, "Informe o nome do cliente.").max(140, "O nome do cliente pode ter no máximo 140 caracteres."),
+  // Telefone em branco e aceito: cliente que chegou na loja fisica muitas vezes
+  // so deixa o nome, e exigir o numero faria o atendente inventar um.
+  customerPhone: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 10 && value.length <= 13), "Informe um telefone com DDD ou deixe o campo em branco."),
+  sellerId: z.string().trim().max(80),
+  notes: z.string().trim().max(500, "A observação pode ter no máximo 500 caracteres."),
+});
+
+/**
+ * Atendimento lancado a mao: cliente que chegou pela loja fisica, por indicacao
+ * ou por uma conversa de WhatsApp que comecou fora do site.
+ *
+ * Diferente dos atendimentos do site, este PASSA auditoria: sao poucos por dia
+ * e e util saber quem cadastrou.
+ */
+export async function createLeadAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsed = leadInput.safeParse({
+    customerName: formData.get("customerName"),
+    customerPhone: formData.get("customerPhone"),
+    sellerId: formData.get("sellerId"),
+    notes: formData.get("notes"),
+  });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do atendimento." };
+  const value = parsed.data;
+
+  let atendente: SellerRecord | null = null;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, value.sellerId);
+    if (escolha.message) return { message: escolha.message };
+    atendente = escolha.seller;
+
+    const { lead } = await createLead(
+      {
+        kind: "manual",
+        sellerId: atendente?.id ?? null,
+        assignedBy: atendente ? owner.id : null,
+        customerName: value.customerName,
+        customerPhone: value.customerPhone,
+        notes: value.notes,
+        createdBy: owner.id,
+      },
+      {
+        mode: "manual",
+        audit: {
+          actor_id: owner.id,
+          action: "lead.created",
+          after_data: { cliente: value.customerName, atendente: atendente?.name ?? "Fila livre" },
+        },
+      },
+    );
+    if (!lead) return { message: CRM_INDISPONIVEL };
+  } catch (error) {
+    console.error("Falha ao registrar atendimento:", error);
+    return { message: "Não foi possível registrar o atendimento agora. Tente novamente em instantes." };
+  }
+
+  revalidatePath("/painel/atendimento");
+  return { ok: true, message: atendente ? `Atendimento registrado para ${atendente.name}.` : "Atendimento registrado na fila livre." };
+}
+
+/**
+ * Puxar para mim, transferir para outro atendente ou devolver a fila livre.
+ *
+ * `sellerId` aceita "me" (o atendente vinculado ao login), vazio (fila livre)
+ * ou o id de um atendente ativo.
+ */
+export async function assignLeadAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const leadId = String(formData.get("leadId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  const volta = String(formData.get("volta") ?? "").trim();
+  if (!leadId) return;
+
+  const base = volta.startsWith("/painel/atendimento") ? volta : "/painel/atendimento";
+  const separador = base.includes("?") ? "&" : "?";
+  let destino: string;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, sellerId);
+    if (escolha.message) {
+      destino = `${base}${separador}erro=${encodeURIComponent(escolha.message)}`;
+    } else {
+      const { found, unavailable } = await updateLead(
+        leadId,
+        { seller_id: escolha.seller?.id ?? null, assigned_by: owner.id },
+        {
+          actor_id: owner.id,
+          action: "lead.assigned",
+          after_data: { atendente: escolha.seller?.name ?? "Fila livre" },
+        },
+      );
+      // "Nao encontrei o atendimento" e "a tabela nao existe" sao problemas
+      // diferentes: mandar aplicar uma migration quando o operador so clicou
+      // numa linha que outra pessoa ja tinha mexido confunde mais do que ajuda.
+      const mensagem = unavailable
+        ? CRM_INDISPONIVEL
+        : !found
+          ? "Este atendimento não existe mais. Atualize a página."
+          : escolha.seller
+            ? `Atendimento com ${escolha.seller.name}.`
+            : "Atendimento devolvido à fila livre.";
+      destino = `${base}${separador}${found ? "feito" : "erro"}=${encodeURIComponent(mensagem)}`;
+    }
+    revalidatePath("/painel/atendimento");
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) throw error;
+    console.error("Falha ao redistribuir atendimento:", error);
+    destino = `${base}${separador}erro=${encodeURIComponent("Não foi possível redistribuir o atendimento agora.")}`;
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+/**
+ * Traduz o valor do formulario ("me" | "" | id) no atendente de verdade.
+ *
+ * Devolve `message` preenchido quando o operador escolheu algo impossivel — o
+ * login sem vinculo e o caso mais comum, e a mensagem precisa dizer como
+ * resolver, porque o vinculo so existe pela CLI.
+ */
+async function resolverAtendente(ownerSellerId: string | null, escolhido: string): Promise<{ seller: SellerRecord | null; message?: string }> {
+  if (escolhido === "me") {
+    if (!ownerSellerId) return { seller: null, message: "Este login ainda não está vinculado a um atendente. Rode: npm run criar:usuario -- <usuario> --vendedor <atendente>." };
+    const seller = await acharAtendenteAtivo(ownerSellerId);
+    return seller ? { seller } : { seller: null, message: "O atendente vinculado a este login não está ativo." };
+  }
+  if (!escolhido) return { seller: null };
+  const seller = await acharAtendenteAtivo(escolhido);
+  return seller ? { seller } : { seller: null, message: "Escolha um atendente ativo." };
+}
+
+async function acharAtendenteAtivo(id: string): Promise<SellerRecord | null> {
+  const procurado = canonicalSellerId(id.trim().toLowerCase());
+  const sellers = (await readCatalogState()).operations.sellers;
+  return sellers.find((seller) => seller.id === procurado && seller.active) ?? null;
 }
 
 export async function importCurrentCatalogAction(_: ActionState, formData: FormData): Promise<ActionState> {
@@ -532,25 +690,28 @@ export async function importCurrentCatalogAction(_: ActionState, formData: FormD
 /**
  * Invalida o que o cliente ve depois de qualquer mudanca no catalogo.
  *
- * As paginas publicas de produto e categoria sao geradas estaticamente
- * (generateStaticParams). Sem revalidar o PADRAO da rota, elas ficavam
- * congeladas no momento do build: preco, estoque e variacao so chegavam na
- * loja no proximo deploy. Foi assim que um produto com 30 unidades em estoque
- * continuou anunciado como indisponivel.
+ * As paginas publicas sao geradas estaticamente (generateStaticParams). Sem
+ * revalidar, elas ficavam congeladas no momento do build: preco, estoque e
+ * variacao so chegavam na loja no proximo deploy. Foi assim que um produto
+ * com 30 unidades em estoque continuou anunciado como indisponivel.
  *
- * Rota com segmento dinamico exige o segundo parametro "page" — sem ele o
- * Next nao sabe se e a pagina ou o layout, e a chamada nao pega nada.
+ * Era uma lista fixa de caminhos ("/", "/produto/[slug]", ...) e ela envelhecia
+ * a cada rota nova: a lista de atendentes passou a ser lida no layout raiz
+ * (src/app/layout.tsx) e entra no payload de TODA rota, inclusive /conta,
+ * /carrinho, /checkout/rapido e /institucional/[slug], que nao estavam na
+ * lista e nao tem revalidate proprio — trocar o WhatsApp de um atendente nao
+ * chegava nelas ate o proximo deploy. Revalidar o layout raiz cobre a arvore
+ * inteira de uma vez (Next 16: o 2o parametro "layout" invalida o layout e
+ * tudo aninhado nele).
  */
 function refreshCatalog() {
   updateTag("catalog");
 
-  // Publico: tudo que lista ou detalha produto.
-  revalidatePath("/produto/[slug]", "page");
-  revalidatePath("/categoria/[slug]", "page");
-  for (const path of ["/", "/busca", "/ofertas", "/mais-vendidos", "/sitemap.xml"]) revalidatePath(path);
+  // Site inteiro: o layout raiz e pai de todas as paginas publicas e do painel.
+  revalidatePath("/", "layout");
 
-  // Painel.
-  for (const path of ["/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes", "/painel/pedidos", "/painel/financeiro"]) revalidatePath(path);
+  // Rota de metadata: gerada por src/app/sitemap.ts, fora da arvore do layout.
+  revalidatePath("/sitemap.xml");
 }
 
 function audit(state: CatalogState, actorId: string, action: string, entityType: string, entityId: string, beforeData: unknown, afterData: unknown) {

@@ -38,6 +38,96 @@ export const LEAD_DISTRIBUTION_MODE_LABELS: Record<LeadDistributionMode, string>
 };
 
 /**
+ * Por onde o atendimento comecou. O valor e o mesmo que vai para
+ * `leads.kind`; o rotulo e o que o painel mostra na etiqueta da linha.
+ */
+export type LeadKind =
+  | "whatsapp_generic"
+  | "whatsapp_product"
+  | "whatsapp_cart"
+  | "quick_checkout"
+  | "site_checkout"
+  | "manual";
+
+export const LEAD_KIND_LABELS: Record<LeadKind, string> = {
+  whatsapp_generic: "WhatsApp do site",
+  whatsapp_product: "Dúvida de produto",
+  whatsapp_cart: "Carrinho pelo WhatsApp",
+  quick_checkout: "Pedido rápido",
+  site_checkout: "Pedido do site",
+  manual: "Lançado no painel",
+};
+
+/**
+ * Etapa do ATENDIMENTO, antes da venda. Nao tem relacao com `OrderStatus`, que
+ * dirige a baixa de estoque e continua com tres valores: um atendimento pode
+ * ser "ganho" sem nunca ter virado pedido no painel.
+ */
+export type LeadStage = "new" | "in_progress" | "quote_sent" | "awaiting_payment" | "won" | "lost";
+
+export const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
+  new: "Novo",
+  in_progress: "Em atendimento",
+  quote_sent: "Orçamento enviado",
+  awaiting_payment: "Aguardando pagamento",
+  won: "Ganho",
+  lost: "Perdido",
+};
+
+/** Etapas em que o atendimento ainda esta vivo (conta como carga do atendente). */
+export const OPEN_LEAD_STAGES: readonly LeadStage[] = ["new", "in_progress", "quote_sent", "awaiting_payment"];
+
+export type LeadLostReason = "price" | "out_of_stock" | "delivery" | "no_reply" | "bought_elsewhere" | "other";
+
+export const LEAD_LOST_REASON_LABELS: Record<LeadLostReason, string> = {
+  price: "Preço",
+  out_of_stock: "Sem estoque",
+  delivery: "Entrega ou frete",
+  no_reply: "Cliente não respondeu",
+  bought_elsewhere: "Comprou em outro lugar",
+  other: "Outro motivo",
+};
+
+/** Item do carrinho congelado no atendimento, quando o contato trouxe produtos. */
+export interface LeadItemSnapshot {
+  product_id: string;
+  product_name: string;
+  quantity: number;
+}
+
+/** Espelho 1:1 de uma linha de `public.leads`. */
+export interface LeadRecord {
+  id: string;
+  kind: LeadKind;
+  stage: LeadStage;
+  /** `null` = fila livre: ninguem assumiu o atendimento ainda. */
+  seller_id: string | null;
+  assigned_at: string | null;
+  /** username do painel, "customer" ou "auto:<modo>". */
+  assigned_by: string | null;
+  customer_name: string;
+  /** So digitos quando conhecido. */
+  customer_phone: string;
+  /** Telefone ou CPF em digitos: e por aqui que o cliente recorrente e reconhecido. */
+  customer_key: string | null;
+  product_id: string | null;
+  items: LeadItemSnapshot[];
+  message: string;
+  page_path: string;
+  source: string;
+  attribution: Record<string, string>;
+  visitor_id: string | null;
+  /** `sales_orders.id` quando o atendimento virou pedido. */
+  order_id: string | null;
+  lost_reason: LeadLostReason | null;
+  notes: string;
+  closed_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Quem atende — a MESMA pessoa no site, no pedido e no login do painel.
  *
  * Antes eram tres listas soltas (whatsappContacts no site, sellers no painel,

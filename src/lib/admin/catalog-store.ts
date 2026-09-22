@@ -6,8 +6,8 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
-import { defaultSellers, normalizeSellers } from "./sellers";
-import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, StoreSettings } from "./types";
+import { canonicalizeOrderSellers, defaultSellers, normalizeSellers } from "./sellers";
+import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, SellerRecord, StoreSettings } from "./types";
 
 export interface InventoryMovementRecord {
   id: string;
@@ -107,6 +107,58 @@ export async function readCatalogState(fresh = false): Promise<CatalogState> {
   } catch {
     return createInitialState();
   }
+}
+
+/**
+ * Retrato minimo para a rota publica do WhatsApp: quem atende e as
+ * configuracoes da loja, nada mais.
+ *
+ * `readCatalogState()` dispara oito consultas (entre elas ate 5.000 pedidos e
+ * 1.000 linhas de historico) porque o painel precisa do catalogo inteiro. O
+ * clique do cliente no botao de WhatsApp precisa de DOIS dados, e esperar o
+ * catalogo inteiro antes do redirect e latencia no caminho mais critico do
+ * site — alem de virar uma superficie publica de carga sobre o banco.
+ */
+export interface AttendantsSnapshot {
+  sellers: SellerRecord[];
+  settings: StoreSettings;
+}
+
+let attendantsPromise: Promise<AttendantsSnapshot> | null = null;
+let attendantsExpiresAt = 0;
+
+export async function readAttendantsState(): Promise<AttendantsSnapshot> {
+  // Sem Supabase o estado inteiro e um arquivo local so: ler um recorte
+  // separado nao economizaria nada e duplicaria a normalizacao.
+  if (!hasSupabaseConfig()) {
+    const state = await readCatalogState();
+    return { sellers: state.operations.sellers, settings: state.settings };
+  }
+
+  if (!attendantsPromise || Date.now() >= attendantsExpiresAt) {
+    attendantsExpiresAt = Date.now() + 5_000;
+    const leitura = readSupabaseAttendants();
+    attendantsPromise = leitura;
+    // Falha NAO fica guardada no cache: uma consulta que caiu nao pode
+    // contaminar todos os cliques dos 5 segundos seguintes.
+    leitura.catch(() => {
+      if (attendantsPromise === leitura) {
+        attendantsPromise = null;
+        attendantsExpiresAt = 0;
+      }
+    });
+  }
+  return attendantsPromise;
+}
+
+async function readSupabaseAttendants(): Promise<AttendantsSnapshot> {
+  const { data, error } = await createSupabaseAdminClient().from("store_settings").select("settings").eq("id", "store").maybeSingle();
+  if (error) throw new Error(`Nao foi possivel ler os atendentes no Supabase: ${error.message}`);
+  const persisted = (data as { settings?: Partial<StoreSettings> & { __operations?: AdminOperationsState } } | null)?.settings ?? {};
+  const { __operations, ...publicSettings } = persisted;
+  // Mesma normalizacao de `normalizeOperations`: registro antigo do JSONB ganha
+  // os campos novos e a lista vazia volta com os atendentes padrao.
+  return { sellers: normalizeSellers(__operations?.sellers), settings: { ...defaultStoreSettings, ...publicSettings } };
 }
 
 export async function writeCatalogState(state: CatalogState): Promise<void> {
@@ -324,7 +376,7 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
   // Vendedores e product_meta continuam no JSONB (config pequena e mutavel).
   // Os pedidos vem da tabela propria — nunca mais do JSONB.
   const operations = normalizeOperations(__operations);
-  operations.orders = (ordersResult.data ?? []) as SalesOrderRecord[];
+  operations.orders = canonicalizeOrderSellers((ordersResult.data ?? []) as SalesOrderRecord[], operations.sellers);
 
   return {
     version: 2,
@@ -348,12 +400,16 @@ export function defaultOperationsState(): AdminOperationsState {
 }
 
 function normalizeOperations(value?: Partial<AdminOperationsState> | null): AdminOperationsState {
+  // Cada atendente passa por normalizeSeller: registro antigo ({id, name,
+  // active}) ganha os campos novos e o id legado "dom-guima" vira "juliano".
+  // O JSONB so e corrigido de fato no proximo save do catalogo.
+  const sellers = normalizeSellers(value?.sellers);
   return {
-    // Cada atendente passa por normalizeSeller: registro antigo ({id, name,
-    // active}) ganha os campos novos e o id legado "dom-guima" vira "juliano".
-    // O JSONB so e corrigido de fato no proximo save do catalogo.
-    sellers: normalizeSellers(value?.sellers),
-    orders: Array.isArray(value?.orders) ? value.orders : [],
+    sellers,
+    // Os pedidos recebem o mesmo mapeamento: no modo local (sem Supabase) a
+    // migration nunca roda, e a lista de atendentes nao pode discordar dos
+    // pedidos no filtro e no relatorio.
+    orders: canonicalizeOrderSellers(Array.isArray(value?.orders) ? value.orders : [], sellers),
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
   };
 }

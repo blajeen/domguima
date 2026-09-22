@@ -255,6 +255,8 @@ export function ProductPurchase({
 
         <WhatsAppChooser
           message={productMessage(product, productUrl)}
+          kind="whatsapp_product"
+          productId={product.id}
           className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#25D366] px-6 py-3 text-base font-bold text-[#128C7E] transition-colors hover:bg-[#25D366]/10"
         >
           Comprar pelo WhatsApp

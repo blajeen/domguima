@@ -123,7 +123,7 @@ integração desligada apenas esconde a sua seção, em vez de mostrar promessa 
 | Variável | Para quê | Sem ela |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | canonical, sitemap, Open Graph, JSON-LD | usa `domguima.com.br` |
-| `NEXT_PUBLIC_WHATSAPP_NUMBER` | botão flutuante, "comprar pelo WhatsApp", checkout | usa o número da bio do Instagram |
+| `NEXT_PUBLIC_WHATSAPP_NUMBER` | número inicial da loja, usado até o painel gravar o seu | usa o número da bio do Instagram |
 | `NEXT_PUBLIC_GOOGLE_PROFILE_URL` | sobrescreve o perfil público do Google já configurado | usa o link verificado no código |
 | `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_USER_ID` | grade de posts reais | mostra o convite para seguir |
 | `OPENAI_API_KEY` | pesquisa inteligente de modelo, descrição, especificações e sugestão de NCM no painel | o cadastro continua manual; o assistente pede configuração |
@@ -132,6 +132,12 @@ integração desligada apenas esconde a sua seção, em vez de mostrar promessa 
 A chave do Instagram é **server-side** — nunca use o prefixo `NEXT_PUBLIC_` nela.
 As métricas do Google são um retrato público datado em `src/config/site.ts` e
 levam ao perfil oficial; não dependem de API.
+
+O WhatsApp da loja e o de cada atendente vivem no painel (**Configurações →
+Loja e atendimento** e **Configurações → Atendentes**) — é de lá que saem todos
+os botões do site. `NEXT_PUBLIC_WHATSAPP_NUMBER` só vale enquanto o painel não
+tiver um número gravado; trocar de número depois disso é no painel, não na
+Vercel.
 
 ### Assistente inteligente de cadastro
 

@@ -3,7 +3,8 @@ import "server-only";
 import { whatsappContacts, type WhatsappContact } from "@/config/site";
 import { readCatalogState } from "@/lib/admin/catalog-store";
 import { defaultStoreSettings } from "@/lib/admin/defaults";
-import { attendantsFrom, normalizeLeadDistributionMode, sortSellers } from "@/lib/admin/sellers";
+import { contactableAttendants } from "@/lib/admin/distribution";
+import { normalizeLeadDistributionMode } from "@/lib/admin/sellers";
 import { contactsFor } from "@/lib/services/whatsapp";
 import { categories as fallbackCategories } from "./categories";
 import { products as fallbackProducts } from "./products";
@@ -52,8 +53,7 @@ export async function loadPublicAttendants(): Promise<PublicAttendants> {
     const state = await readCatalogState();
     const settings = { ...defaultStoreSettings, ...state.settings };
     const sellers = state.operations.sellers;
-    const elegiveis = attendantsFrom(sellers);
-    const visiveis = elegiveis.length ? elegiveis : sortSellers(sellers.filter((seller) => seller.active));
+    const visiveis = contactableAttendants(sellers, settings);
     if (!visiveis.length) return { ...fallback, mode: normalizeLeadDistributionMode(settings.leadDistributionMode) };
     return { contacts: contactsFor(settings, visiveis), mode: normalizeLeadDistributionMode(settings.leadDistributionMode) };
   } catch (error) {

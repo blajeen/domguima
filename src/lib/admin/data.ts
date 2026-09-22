@@ -2,8 +2,8 @@ import "server-only";
 
 import { readCatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
-import { canonicalSellerId, sortSellers } from "./sellers";
-import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, SellerRecord, StoreSettings } from "./types";
+import { canonicalSellerId } from "./sellers";
+import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
 
 export { defaultStoreSettings } from "./defaults";
 
@@ -58,11 +58,6 @@ export async function getSellers() {
   return [...(await readCatalogState()).operations.sellers].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
-/** Atendentes ativos, na ordem configurada — a lista que o site e os selects de atendimento usam. */
-export async function getAttendants(): Promise<SellerRecord[]> {
-  return sortSellers((await readCatalogState()).operations.sellers.filter((seller) => seller.active));
-}
-
 /**
  * Quantos pedidos cada atendente ja tem (por id canonico: pedidos antigos
  * gravados como "dom-guima" contam para "juliano"). Quem tem pedido nao pode
@@ -112,7 +107,10 @@ export async function getAuditLogs(limit = 100) {
   const products = new Map(state.products.map((product) => [product.id, product.name]));
   const categories = new Map(state.categories.map((category) => [category.id, category.name]));
   const orders = new Map(state.operations.orders.map((order) => [order.id, order.number]));
-  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_id }));
+  // Atendimentos moram em tabela propria e nao estao no estado do catalogo:
+  // em vez de despejar um uuid cru na coluna "Item", mostramos um rotulo curto
+  // — o nome do cliente ja viaja em after_data e aparece nos detalhes.
+  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_type === "lead" ? `Atendimento ${log.entity_id.slice(0, 8)}` : log.entity_id }));
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {

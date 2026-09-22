@@ -220,6 +220,7 @@ export const institutionalPages: InstitutionalPage[] = [
           "Dados de contato: telefone, WhatsApp e e-mail",
           "Endereço de entrega: CEP, rua, número, complemento, bairro, cidade e estado",
           "Dados do pedido: produtos, quantidades e valores",
+          "Registro de contato: a página de onde você nos chamou e a mensagem que o site preencheu na conversa do WhatsApp",
         ],
       },
       {
@@ -238,7 +239,14 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Armazenamento do carrinho",
         paragraphs: [
-          "Os itens do seu carrinho ficam salvos no armazenamento local do seu próprio navegador, para que você não perca a seleção ao fechar a página. Esses dados não saem do seu dispositivo até você finalizar um pedido, e podem ser apagados a qualquer momento limpando os dados do site no navegador.",
+          "Os itens do seu carrinho ficam salvos no armazenamento local do seu próprio navegador, para que você não perca a seleção ao fechar a página. Eles só são enviados para a loja quando você finaliza um pedido ou pede para falar com um vendedor no WhatsApp, e podem ser apagados a qualquer momento limpando os dados do site no navegador.",
+        ],
+      },
+      {
+        heading: "Cookies e registro de contato",
+        paragraphs: [
+          "Quando você clica em um botão de WhatsApp, registramos o contato para que a loja saiba que a conversa existiu e com qual vendedor: guardamos a página de onde você saiu, a mensagem que o site preencheu e o nome, quando você mesmo o informa no pedido rápido. Nada disso gera cobrança nem envio automático de mensagens.",
+          "Para isso gravamos no seu navegador o cookie domguima_visitante: um identificador aleatório, sem nome e sem telefone, que dura 1 ano e serve para não registrar o mesmo contato duas vezes e para dividir o atendimento entre os vendedores. Ele é nosso, não é compartilhado com terceiros e é apagado ao limpar os dados do site no navegador.",
         ],
       },
       {
