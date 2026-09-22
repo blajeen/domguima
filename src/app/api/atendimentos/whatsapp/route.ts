@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { readAttendantsState } from "@/lib/admin/catalog-store";
 import { defaultStoreSettings } from "@/lib/admin/defaults";
 import { contactableAttendants, distributionCandidates, eligibleAttendants, resolveAttendantNumber } from "@/lib/admin/distribution";
-import { createLead, normalizeAttribution } from "@/lib/admin/leads";
+import { assignOrderLeadFromSite } from "@/lib/admin/lead-orders";
+import { attributionFromCookie, createLead, findLeadByOrder, ORIGIN_COOKIE } from "@/lib/admin/leads";
 import { canonicalSellerId, defaultSellers, normalizeLeadDistributionMode } from "@/lib/admin/sellers";
-import type { LeadDistributionMode, SellerRecord, StoreSettings } from "@/lib/admin/types";
+import type { LeadDistributionMode, LeadRecord, SellerRecord, StoreSettings } from "@/lib/admin/types";
 import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
 
 /**
@@ -26,8 +27,15 @@ import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
  * digitos vindos do cadastro de atendentes: nenhum parametro da URL vira
  * destino, senao a rota seria um redirecionador aberto.
  *
- * Nao usa `after()`: a escolha do atendente decide o numero do redirect, entao
- * ela tem de acontecer ANTES da resposta.
+ * A escolha do atendente decide o numero do redirect, entao ela acontece ANTES
+ * da resposta. So vai para o `after()` a gravacao que nao muda o destino
+ * (entregar o atendimento de um pedido a quem o cliente escolheu).
+ *
+ * Conversa sobre um pedido do checkout (parametro `pedido`, vindo da tela
+ * "Solicitação recebida"): o pedido ja nasceu com um atendimento, e e ELE o
+ * registro da conversa. Sem isso, no rodizio o cliente caia sempre na OUTRA
+ * pessoa — quem acabou de receber o pedido e a ultima da fila do sorteio — e
+ * nascia um segundo atendimento para o mesmo cliente.
  *
  * GET e POST fazem a mesma coisa e mudam so de onde vem os campos: os links do
  * site usam o GET; o pedido rapido usa o POST, para o nome e o bairro do
@@ -38,16 +46,6 @@ import { genericMessage, whatsappLink } from "@/lib/services/whatsapp";
 const VISITANTE_COOKIE = "domguima_visitante";
 const VISITANTE_MAX_AGE = 365 * 24 * 60 * 60;
 
-/**
- * Origem gravada no navegador (UTM, referrer, campanha).
- *
- * Quem escreve este cookie e a captura de origem do site, que entra junto com o
- * controle de trafego. Enquanto ela nao existir o cookie simplesmente nao esta
- * la e `attribution` fica vazio — ler aqui desde ja evita ter de mexer na rota
- * (e nas RPCs) depois.
- */
-const ORIGEM_COOKIE = "domguima_origem";
-
 const atendimentoInput = z.object({
   /** Id do atendente escolhido no dialogo, ou "auto" quando o painel distribui. */
   atendente: z.string().trim().max(60),
@@ -56,6 +54,8 @@ const atendimentoInput = z.object({
   texto: z.string().max(4_000),
   pagina: z.string().trim().max(300),
   cliente: z.string().trim().max(140),
+  /** Id do pedido do checkout de onde a conversa parte. So serve para achar o atendimento dele. */
+  pedido: z.string().trim().max(80),
 });
 
 type AtendimentoParams = z.infer<typeof atendimentoInput>;
@@ -123,7 +123,24 @@ async function abrirWhatsapp(request: NextRequest, entrada: AtendimentoParams, s
   const visitante = request.cookies.get(VISITANTE_COOKIE)?.value ?? "";
   const novoVisitante = visitante || randomUUID();
 
-  const atribuido = registrar
+  // Conversa sobre um pedido do checkout (ver o cabecalho). A consulta nao
+  // depende de `registrar`: ela decide para quem o cliente vai, nao grava nada.
+  const doPedido = entrada.pedido ? await atendimentoDoPedido(entrada.pedido) : null;
+  // Pedido que ja tem dono (rodizio, menos ocupado ou alguem que puxou no
+  // painel): o cliente fala com essa pessoa, e nada novo e registrado.
+  const responsavel = doPedido?.seller_id
+    ? sellers.find((seller) => seller.id === doPedido.seller_id && seller.active) ?? null
+    : null;
+  // Pedido ainda na fila livre: quem o cliente escolheu (ou o unico destino
+  // possivel) assume o atendimento do pedido — e o pedido — em vez de nascer
+  // um segundo atendimento. Sem destino definido (rodizio com o pedido
+  // devolvido a fila), segue o fluxo normal.
+  const assumirPedido = doPedido && !doPedido.seller_id && preDefinido ? doPedido : null;
+  if (registrar && assumirPedido && preDefinido) {
+    after(() => assignOrderLeadFromSite(assumirPedido, preDefinido, escolhidoPeloCliente ? "customer" : "site"));
+  }
+
+  const atribuido = registrar && !responsavel && !assumirPedido
     ? await registrarAtendimento({
         entrada,
         escolhidoPeloCliente,
@@ -132,12 +149,13 @@ async function abrirWhatsapp(request: NextRequest, entrada: AtendimentoParams, s
         modo,
         elegiveis,
         visitante: novoVisitante,
-        attribution: lerOrigem(request.cookies.get(ORIGEM_COOKIE)?.value),
+        // O cookie de origem e lido pela mesma funcao na rota de pedidos.
+        attribution: attributionFromCookie(request.cookies.get(ORIGIN_COOKIE)?.value),
         sellers,
       })
     : null;
 
-  const atendente = preDefinido ?? atribuido ?? elegiveis[0] ?? null;
+  const atendente = responsavel ?? preDefinido ?? atribuido ?? elegiveis[0] ?? null;
   const numero = resolveAttendantNumber({ whatsapp_number: atendente?.whatsapp_number ?? null }, settings);
   const destino = whatsappLink(entrada.texto || genericMessage, numero);
 
@@ -203,6 +221,21 @@ async function registrarAtendimento(input: RegistroInput): Promise<SellerRecord 
 }
 
 /**
+ * Atendimento criado junto com o pedido do checkout (`registerSiteOrderLead`),
+ * ou `null`: pedido sem atendimento, CRM fora do ar ou o atendimento ainda
+ * sendo gravado (ele e criado logo depois da resposta do pedido). Nos tres
+ * casos a conversa segue o fluxo normal — nunca um erro para o cliente.
+ */
+async function atendimentoDoPedido(orderId: string): Promise<LeadRecord | null> {
+  try {
+    return await findLeadByOrder(orderId);
+  } catch (error) {
+    console.warn("Nao foi possivel consultar o atendimento do pedido; seguindo com a distribuicao normal.", error);
+    return null;
+  }
+}
+
+/**
  * Le os campos sem nunca falhar: parametro grande e cortado, tipo desconhecido
  * vira contato generico. Uma URL estranha nao pode custar a conversa.
  *
@@ -218,6 +251,7 @@ function lerParametros(ler: (chave: string) => string | null | undefined): Atend
     texto: campo("texto", 4_000),
     pagina: campo("pagina", 300),
     cliente: campo("cliente", 140),
+    pedido: campo("pedido", 80),
   };
   const parsed = atendimentoInput.safeParse(bruto);
   return parsed.success ? parsed.data : { ...bruto, tipo: "whatsapp_generic" };
@@ -253,26 +287,6 @@ function acharAtendente(elegiveis: readonly SellerRecord[], id: string): SellerR
   const procurado = canonicalSellerId(id.trim().toLowerCase());
   if (!procurado || procurado === "auto") return null;
   return elegiveis.find((seller) => seller.id === procurado) ?? null;
-}
-
-function lerOrigem(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
-  for (const texto of [decodificar(raw), raw]) {
-    try {
-      return normalizeAttribution(JSON.parse(texto));
-    } catch {
-      // Cookie adulterado ou em outro formato: seguimos sem origem.
-    }
-  }
-  return {};
-}
-
-function decodificar(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 /**

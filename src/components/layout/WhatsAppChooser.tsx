@@ -17,6 +17,11 @@ interface WhatsAppChooserProps {
   kind?: LeadKind;
   /** Produto que gerou a conversa, quando houver. */
   productId?: string;
+  /**
+   * Pedido do checkout que acabou de ser enviado. A conversa vai para quem já
+   * cuida dele e não abre um segundo atendimento.
+   */
+  orderId?: string;
   /** Classes do botão que dispara a escolha — o mesmo visual do link antigo. */
   className?: string;
   "aria-label"?: string;
@@ -34,7 +39,7 @@ interface WhatsAppChooserProps {
  * Quando o painel está em rodízio ou "menos ocupado", não há o que escolher: o
  * diálogo mostra um único botão e o servidor decide quem recebe.
  */
-export function WhatsAppChooser({ message, kind = "whatsapp_generic", productId, className, children, ...rest }: WhatsAppChooserProps) {
+export function WhatsAppChooser({ message, kind = "whatsapp_generic", productId, orderId, className, children, ...rest }: WhatsAppChooserProps) {
   const [open, setOpen] = useState(false);
   const { contacts, mode } = useAttendants();
   const pathname = usePathname();
@@ -48,7 +53,7 @@ export function WhatsAppChooser({ message, kind = "whatsapp_generic", productId,
         onClose={() => setOpen(false)}
         contacts={contacts}
         automatico={mode !== "customer_choice"}
-        href={(attendantId) => atendimentoLink({ attendantId, kind, message, pagePath: pathname, productId })}
+        href={(attendantId) => atendimentoLink({ attendantId, kind, message, pagePath: pathname, productId, orderId })}
       />
     </>
   );

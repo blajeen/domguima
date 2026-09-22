@@ -247,6 +247,7 @@ export const institutionalPages: InstitutionalPage[] = [
         paragraphs: [
           "Quando você clica em um botão de WhatsApp, registramos o contato para que a loja saiba que a conversa existiu e com qual vendedor: guardamos a página de onde você saiu, a mensagem que o site preencheu e o nome, quando você mesmo o informa no pedido rápido. Nada disso gera cobrança nem envio automático de mensagens.",
           "Para isso gravamos no seu navegador o cookie domguima_visitante: um identificador aleatório, sem nome e sem telefone, que dura 1 ano e serve para não registrar o mesmo contato duas vezes e para dividir o atendimento entre os vendedores. Ele é nosso, não é compartilhado com terceiros e é apagado ao limpar os dados do site no navegador.",
+          "O pedido feito pelo site também abre um registro de atendimento, com o nome, o telefone, os itens e a observação do pedido, para a loja saber quem está cuidando dele. Se você pedir a eliminação dos seus dados, esse registro é apagado junto com o pedido.",
         ],
       },
       {

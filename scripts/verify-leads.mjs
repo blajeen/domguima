@@ -8,20 +8,26 @@
  * Executa de verdade, contra o banco configurado em .env.local, o ciclo que o
  * painel faz com um atendimento: criar, dedupe do mesmo visitante (inclusive a
  * troca de atendente dentro da janela), distribuicao automatica (rodizio e
- * menos ocupado), puxar para mim, transferir e devolver a fila livre. Serve
- * para conferir a migration
- * supabase/migrations/202609210002_atendimentos.sql depois de cola-la no SQL
- * Editor — nao ha tabela de controle de migrations neste projeto.
+ * menos ocupado — com DOIS CLIQUES SIMULTANEOS no rodizio caindo em atendentes
+ * diferentes), puxar para mim, transferir, devolver a fila livre, o atendimento
+ * de um pedido do site (vinculo, busca pelo pedido, fechamento como ganho ou
+ * perdido) e as contagens exatas que alimentam os cards do painel. Serve para
+ * conferir a migration supabase/migrations/202609210002_atendimentos.sql depois
+ * de cola-la no SQL Editor — nao ha tabela de controle de migrations neste
+ * projeto.
  *
  * O QUE ELE CRIA E APAGA (tudo com prefixo "zz-teste-atendimento"):
  *   - atendimentos de teste em public.leads;
  *   - os audit_logs desses atendimentos.
  * Nenhum atendimento, pedido, produto ou log de verdade e tocado: os
- * atendentes usados sao ids ficticios (zz-teste-atendimento-a/-b), que nao
- * existem no cadastro do painel.
+ * atendentes usados sao ids ficticios (zz-teste-atendimento-a/-b/-c/-d), que
+ * nao existem no cadastro do painel, e o "pedido" do teste e so um id — nenhuma
+ * linha e criada em sales_orders (a atribuicao do pedido pendente e conferida
+ * por `npm run verify:ledger`).
  *
  * SO RODA COM SUPABASE CONFIGURADO. No modo local em arquivo
- * (data/admin-leads.json) nao ha RPC para verificar.
+ * (data/admin-leads.json) nao ha RPC nem trava de banco para verificar: ali a
+ * fila de gravacao do proprio processo serializa os cliques.
  *
  * As credenciais sao lidas do .env.local e nunca impressas.
  */
@@ -147,19 +153,33 @@ try {
   checar("existe 1 linha no banco para o visitante", gravadosDoVisitante === 1, `${gravadosDoVisitante} linha(s)`);
 
   // -------------------------------------------------------------------------
-  console.log("\n▸ 4. Rodizio: dois atendimentos simultaneos caem em atendentes diferentes");
+  console.log("\n▸ 4. Rodizio: dois cliques simultaneos caem em atendentes diferentes");
+  // Atendentes que NUNCA receberam nada. E o cenario mais duro para a trava:
+  // sem o pg_advisory_xact_lock as duas transacoes leriam o mesmo retrato
+  // ("ninguem recebeu ainda"), o desempate por id mandaria as duas para C e o
+  // teste falharia sempre — nao so de vez em quando.
+  const RODIZIO = [{ id: `${MARCA}-c`, name: "Teste C" }, { id: `${MARCA}-d`, name: "Teste D" }];
   const rodizio = await Promise.all([
-    criar("rodizio-1", { mode: "round_robin", candidates: CANDIDATOS }),
-    criar("rodizio-2", { mode: "round_robin", candidates: CANDIDATOS }),
+    criar("rodizio-1", { mode: "round_robin", candidates: RODIZIO }),
+    criar("rodizio-2", { mode: "round_robin", candidates: RODIZIO }),
   ]);
   const sorteados = rodizio.map((r) => r?.lead?.seller_id);
   checar("os dois receberam atendente", sorteados.every(Boolean), sorteados.join(" / "));
   checar("cairam em atendentes diferentes", new Set(sorteados).size === 2, sorteados.join(" / "));
   checar("marcou a origem automatica", rodizio.every((r) => r?.lead?.assigned_by === "auto:round_robin"), rodizio.map((r) => r?.lead?.assigned_by).join(" / "));
 
+  // Em sequencia (um clique depois do outro) o rodizio alterna: quem esta ha
+  // mais tempo sem receber e o proximo.
+  const emSequencia = [];
+  for (let i = 0; i < 4; i += 1) {
+    emSequencia.push((await criar(`rodizio-seq-${i}`, { mode: "round_robin", candidates: RODIZIO }))?.lead?.seller_id);
+  }
+  const alternou = emSequencia.every((id, i) => i === 0 || id !== emSequencia[i - 1]);
+  checar("cliques em sequencia alternam os atendentes", alternou && new Set(emSequencia).size === 2, emSequencia.join(" → "));
+
   // -------------------------------------------------------------------------
   console.log("\n▸ 5. Menos ocupado: vai para quem tem menos conversa aberta");
-  // Depois do rodizio um dos dois ficou com uma conversa a mais; a contagem e
+  // Depois do item 1, A tem uma conversa aberta e B nenhuma; a contagem e
   // feita aqui em vez de no filtro do PostgREST para o teste nao depender da
   // sintaxe de "not in" do cliente.
   const atuais = await atendimentosDeTeste();
@@ -216,6 +236,46 @@ try {
   const deNovoComA = await criar("troca-a2", { extra: { visitor_id: visitanteTroca, seller_id: ATENDENTE_A, assigned_by: "customer" } });
   checar("mudar de atendente gera atendimento novo", comB?.already_existed === false && comB?.lead?.seller_id === ATENDENTE_B, `already_existed = ${comB?.already_existed}, seller_id = ${comB?.lead?.seller_id}`);
   checar("clicar de novo no mesmo atendente ainda deduplica", deNovoComA?.already_existed === true && deNovoComA?.lead?.id === comA?.lead?.id, `already_existed = ${deNovoComA?.already_existed}, id = ${deNovoComA?.lead?.id}`);
+
+  // -------------------------------------------------------------------------
+  console.log("\n▸ 11. Pedido do site: atendimento vinculado ao pedido");
+  // O mesmo formato que /api/pedidos manda (registerSiteOrderLead): kind
+  // site_checkout, order_id e SEM visitor_id — o dedupe por visitante juntaria
+  // dois pedidos diferentes do mesmo navegador num atendimento so.
+  const PEDIDO = `${MARCA}-pedido`;
+  const doPedido = await criar("pedido-site", {
+    extra: { kind: "site_checkout", order_id: PEDIDO, customer_phone: "34999990000", customer_key: "34999990000", items: [{ product_id: "p", product_name: "Produto de teste", quantity: 2 }] },
+    mode: "round_robin",
+    candidates: RODIZIO,
+  });
+  checar("nasceu vinculado ao pedido", doPedido?.lead?.order_id === PEDIDO, `order_id = ${doPedido?.lead?.order_id}`);
+  checar("o rodizio escolheu o atendente do pedido", RODIZIO.some((c) => c.id === doPedido?.lead?.seller_id), `seller_id = ${doPedido?.lead?.seller_id}`);
+  checar("guardou os itens do pedido", doPedido?.lead?.items?.[0]?.quantity === 2, JSON.stringify(doPedido?.lead?.items));
+  const { data: achados, error: erroBusca } = await db.from("leads").select("id").in("order_id", [PEDIDO, `${MARCA}-outro-pedido`]);
+  checar("busca por lote de pedidos (in order_id) encontra o atendimento", !erroBusca && achados?.length === 1 && achados[0].id === doPedido?.lead?.id, erroBusca?.message ?? `${achados?.length} achado(s)`);
+
+  const ganho = await atualizar(doPedido.lead.id, { stage: "won", seller_id: ATENDENTE_A, assigned_by: MARCA });
+  checar("confirmar o pedido fecha como ganho com quem confirmou", ganho?.lead?.stage === "won" && ganho?.lead?.seller_id === ATENDENTE_A && Boolean(ganho?.lead?.closed_at), `stage = ${ganho?.lead?.stage}, seller_id = ${ganho?.lead?.seller_id}`);
+  const cancelado = await atualizar(doPedido.lead.id, { stage: "lost", lost_reason: "other", notes: "Pedido cancelado" });
+  checar("cancelar o pedido fecha como perdido, motivo outro", cancelado?.lead?.stage === "lost" && cancelado?.lead?.lost_reason === "other", `stage = ${cancelado?.lead?.stage}, lost_reason = ${cancelado?.lead?.lost_reason}`);
+  checar("a nota explica o cancelamento", cancelado?.lead?.notes === "Pedido cancelado", `notes = ${cancelado?.lead?.notes}`);
+  const soNota = await atualizar(doPedido.lead.id, { notes: "Pedido cancelado · Pedido excluído" });
+  checar("acrescentar nota nao reabre nem apaga o motivo", soNota?.lead?.stage === "lost" && soNota?.lead?.lost_reason === "other" && soNota?.lead?.closed_at === cancelado?.lead?.closed_at, `stage = ${soNota?.lead?.stage}, lost_reason = ${soNota?.lead?.lost_reason}`);
+
+  // -------------------------------------------------------------------------
+  console.log("\n▸ 12. Contagens exatas dos cards (fila livre e em aberto)");
+  // Mesmos filtros de countLeads (src/lib/admin/leads.ts), restritos aos
+  // atendimentos de teste: `head` + `count: exact` e `in("stage", abertas)`.
+  const ABERTAS = ["new", "in_progress", "quote_sent", "awaiting_payment"];
+  const deTeste = await atendimentosDeTeste();
+  const esperadoFila = deTeste.filter((lead) => lead.seller_id === null && ABERTAS.includes(lead.stage)).length;
+  const { count: contadoFila, error: erroFila } = await db.from("leads").select("*", { count: "exact", head: true })
+    .like("id", `${MARCA}%`).is("seller_id", null).in("stage", ABERTAS);
+  checar("fila livre contada no banco bate com as linhas", !erroFila && contadoFila === esperadoFila, erroFila?.message ?? `banco ${contadoFila} · linhas ${esperadoFila}`);
+  const esperadoA = deTeste.filter((lead) => lead.seller_id === ATENDENTE_A && ABERTAS.includes(lead.stage)).length;
+  const { count: contadoA, error: erroA } = await db.from("leads").select("*", { count: "exact", head: true })
+    .like("id", `${MARCA}%`).eq("seller_id", ATENDENTE_A).in("stage", ABERTAS);
+  checar("em aberto por atendente bate com as linhas", !erroA && contadoA === esperadoA, erroA?.message ?? `banco ${contadoA} · linhas ${esperadoA}`);
 } finally {
   console.log("\n▸ Limpeza");
   await limpar();

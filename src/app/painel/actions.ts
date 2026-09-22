@@ -7,9 +7,10 @@ import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
+import { assignLeadOfOrder, assignOrderOfLead, closeLeadsOfOrders, discardLeadsOfDeletedOrders, orderLockForLead } from "@/lib/admin/lead-orders";
 import { createLead, updateLead } from "@/lib/admin/leads";
-import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
-import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
+import { assignPendingSalesOrder, cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import type { ActionState, AdminProductRow, AdminProductVariant, SellerRecord, StoreSettings } from "@/lib/admin/types";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
@@ -362,10 +363,14 @@ export async function confirmOrderAction(formData: FormData) {
   // confirmado e mesmo assim aparecia "nao foi possivel confirmar".
   let destino: string;
   try {
-    await confirmPendingSalesOrder(await readCatalogState(true), orderId, sellerId, owner.id);
+    const order = await confirmPendingSalesOrder(await readCatalogState(true), orderId, sellerId, owner.id);
+    // O atendimento do pedido vira "Ganho" com quem confirmou. Best-effort: a
+    // venda ja esta gravada e nao volta atras por causa do CRM.
+    await closeLeadsOfOrders([order], { stage: "won", seller: { id: order.seller_id, name: order.seller_name } }, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/atendimento");
     destino = `/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível confirmar o pedido agora.";
@@ -380,15 +385,65 @@ export async function cancelOrderAction(formData: FormData) {
   if (!orderId) return;
   let destino: string;
   try {
-    await cancelSalesOrder(await readCatalogState(true), orderId, owner.id);
+    const order = await cancelSalesOrder(await readCatalogState(true), orderId, owner.id);
+    // Venda que nao aconteceu: o atendimento vinculado fecha como perdido.
+    await closeLeadsOfOrders([order], { stage: "lost", note: "Pedido cancelado" }, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/atendimento");
     destino = `/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível cancelar o pedido agora.";
     destino = `/painel/pedidos?erro=${encodeURIComponent(mensagem)}`;
   }
+  redirect(destino);
+}
+
+/**
+ * Define quem cuida de um pedido do site que ainda aguarda confirmação — sem
+ * confirmar e sem mexer no estoque. `sellerId` vazio devolve o pedido à fila
+ * livre.
+ *
+ * O atendimento vinculado ao pedido acompanha a troca (best-effort), para a
+ * tela de Atendimento mostrar a mesma pessoa que a de Pedidos.
+ */
+export async function assignOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  const volta = String(formData.get("volta") ?? "").trim();
+  if (!orderId) return;
+
+  // Volta para a mesma lista (busca e filtros) em vez de jogar o operador na
+  // lista cheia a cada atribuição.
+  const base = volta.startsWith("/painel/pedidos") ? volta : "/painel/pedidos";
+  const separador = base.includes("?") ? "&" : "?";
+  let destino: string;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, sellerId);
+    if (escolha.message) {
+      destino = `${base}${separador}erro=${encodeURIComponent(escolha.message)}`;
+    } else {
+      const pedido = (await readCatalogState(true)).operations.orders.find((item) => item.id === orderId);
+      if (!pedido) throw new OrderOperationError("Pedido não encontrado.");
+      const { order, changed } = await assignPendingSalesOrder(pedido, escolha.seller, owner.id);
+      // Mesmo sem mudança no pedido: se uma sincronização anterior falhou, reenviar
+      // o formulário acerta o atendimento (a função não grava nada quando já bate).
+      await assignLeadOfOrder(order.id, escolha.seller, owner.id);
+      revalidatePath("/painel/pedidos");
+      revalidatePath("/painel/atendimento");
+      const mensagem = escolha.seller
+        ? changed ? `Pedido ${order.number} com ${escolha.seller.name}.` : `O pedido ${order.number} já estava com ${escolha.seller.name}.`
+        : changed ? `Pedido ${order.number} devolvido à fila livre.` : `O pedido ${order.number} já estava na fila livre.`;
+      destino = `${base}${separador}feito=${encodeURIComponent(mensagem)}`;
+    }
+  } catch (error) {
+    if (!(error instanceof OrderOperationError)) console.error("Falha ao atribuir pedido:", error);
+    const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível atribuir o pedido agora.";
+    destino = `${base}${separador}erro=${encodeURIComponent(mensagem)}`;
+  }
+  // Fora do try: redirect() funciona lançando NEXT_REDIRECT e o catch o engoliria.
   redirect(destino);
 }
 
@@ -478,6 +533,9 @@ export async function saveSellersAction(_: ActionState, formData: FormData): Pro
       // o unico campo que o dono pode corrigir na tela.
       if (!idInformado && name.length >= 2 && !SELLER_ID_PATTERN.test(id)) {
         return { message: `Use um nome com pelo menos 2 letras ou números para o atendente “${name}”.` };
+      }
+      if (!idInformado && RESERVED_SELLER_IDS.includes(id)) {
+        return { message: `O nome “${name}” é usado internamente pelo painel. Cadastre o atendente com outro nome (por exemplo, com o sobrenome).` };
       }
       const parsed = sellerInput.safeParse({
         name,
@@ -612,10 +670,14 @@ export async function assignLeadAction(formData: FormData) {
   let destino: string;
   try {
     const escolha = await resolverAtendente(owner.sellerId, sellerId);
-    if (escolha.message) {
-      destino = `${base}${separador}erro=${encodeURIComponent(escolha.message)}`;
+    // Atendimento de pedido ja confirmado ou cancelado fica com quem cuidou do
+    // pedido (e responde pela comissao): trocar so o atendimento desalinharia
+    // Atendimento e Pedidos.
+    const impedimento = escolha.message ?? (await orderLockForLead(leadId));
+    if (impedimento) {
+      destino = `${base}${separador}erro=${encodeURIComponent(impedimento)}`;
     } else {
-      const { found, unavailable } = await updateLead(
+      const { found, unavailable, lead } = await updateLead(
         leadId,
         { seller_id: escolha.seller?.id ?? null, assigned_by: owner.id },
         {
@@ -624,6 +686,13 @@ export async function assignLeadAction(formData: FormData) {
           after_data: { atendente: escolha.seller?.name ?? "Fila livre" },
         },
       );
+      // Atendimento de pedido do site ainda pendente (os de pedido fechado foram
+      // barrados acima): o pedido acompanha, para Pedidos e Atendimento
+      // apontarem a mesma pessoa.
+      if (lead?.order_id) {
+        await assignOrderOfLead(lead, escolha.seller, owner.id);
+        revalidatePath("/painel/pedidos");
+      }
       // "Nao encontrei o atendimento" e "a tabela nao existe" sao problemas
       // diferentes: mandar aplicar uma migration quando o operador so clicou
       // numa linha que outra pessoa ja tinha mexido confunde mais do que ajuda.
@@ -1075,7 +1144,8 @@ export async function deleteProductAction(formData: FormData) {
  *     cancelado. E o certo para venda que nao aconteceu.
  *   * EXCLUIR remove o pedido dos relatorios. Se ele estava finalizado, o
  *     estoque e devolvido ANTES de apagar — senao as unidades sumiriam do
- *     saldo sem nenhum pedido para justificar.
+ *     saldo sem nenhum pedido para justificar. O atendimento que o checkout
+ *     criou para o pedido (copia dos dados do cliente) e apagado junto.
  *
  * Os movimentos de estoque ficam nos dois casos: inventory_movements nao tem
  * vinculo com o pedido, entao a baixa e a devolucao continuam no historico.
@@ -1095,7 +1165,8 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     }
 
     const falhas: string[] = [];
-    const cancelados: string[] = [];
+    const cancelados: Array<{ id: string; number: string }> = [];
+    const encontrados: Array<{ id: string; number: string }> = [];
 
     for (const id of ids) {
       try {
@@ -1103,11 +1174,12 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
         const estado = await readCatalogState(true);
         const pedido = estado.operations.orders.find((item) => item.id === id);
         if (!pedido) continue;
+        encontrados.push({ id: pedido.id, number: pedido.number });
         // Excluir um pedido finalizado sem devolver o estoque antes deixaria o
         // saldo menor sem nenhum registro explicando por quê.
         if (pedido.status !== "cancelled") {
           await cancelSalesOrder(estado, id, owner.id);
-          cancelados.push(pedido.number);
+          cancelados.push({ id: pedido.id, number: pedido.number });
         }
       } catch (error) {
         falhas.push(error instanceof OrderOperationError ? error.message : `Pedido ${id} falhou.`);
@@ -1117,15 +1189,24 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     let excluidos = 0;
     if (acao === "excluir") {
       excluidos = await deleteOrderRecords(ids);
+      // O atendimento criado pelo checkout é cópia do pedido (nome, telefone,
+      // observação) e sai junto; um atendimento só vinculado ao pedido fica,
+      // fechado como perdido. Best-effort, uma consulta para o lote inteiro.
+      // Entram também os que já estavam cancelados.
+      const atendimentos = await discardLeadsOfDeletedOrders(encontrados, owner.id);
       await mutateCatalogState((state) => {
-        audit(state, owner.id, "order.bulk_deleted", "order", ids[0], { ids, total: ids.length }, null);
+        audit(state, owner.id, "order.bulk_deleted", "order", ids[0], { ids, total: ids.length, ...(atendimentos ? { atendimentos } : {}) }, null);
       });
+    } else {
+      // Atendimentos dos pedidos cancelados fecham como perdidos (best-effort).
+      await closeLeadsOfOrders(cancelados, { stage: "lost", note: "Pedido cancelado" }, owner.id);
     }
 
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
+    revalidatePath("/painel/atendimento");
 
     const resumo = acao === "excluir"
       ? `${excluidos} pedido(s) excluído(s)${cancelados.length ? ` · estoque devolvido de ${cancelados.length}` : ""}.`

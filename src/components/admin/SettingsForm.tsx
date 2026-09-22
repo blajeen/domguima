@@ -29,7 +29,7 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
       <select name="leadDistributionMode" defaultValue={normalizeLeadDistributionMode(settings.leadDistributionMode)} className={fieldClass}>
         {distributionModes.map((mode) => <option key={mode} value={mode}>{LEAD_DISTRIBUTION_MODE_LABELS[mode]}</option>)}
       </select>
-      <span className="mt-1 block font-normal text-ink-500">Vale para os atendimentos registrados a partir do site. Quem entra na distribuição é definido em “Atendentes”, abaixo. “Menos atendimentos abertos” conta as conversas que ainda não foram fechadas: enquanto nenhuma for marcada como ganha ou perdida, isso equivale ao total de cada atendente — para dividir por ordem de chegada, use o rodízio.</span>
+      <span className="mt-1 block font-normal text-ink-500">Vale para os cliques de WhatsApp do site, o pedido rápido e os pedidos do checkout. No rodízio ou em “menos atendimentos abertos”, o cliente vê um botão único e a loja escolhe quem recebe; no checkout completo o pedido já chega com o atendente definido (em “cliente escolhe”, ele entra na fila livre). Quem entra na distribuição é definido em “Atendentes”, abaixo. “Menos atendimentos abertos” conta as conversas que ainda não foram fechadas: por enquanto só o pedido do site confirmado ou cancelado fecha o atendimento, então para dividir por ordem de chegada prefira o rodízio.</span>
     </label>
   </div><FormMessage state={state} /><SubmitButton>Salvar configuracoes</SubmitButton></form>;
 }

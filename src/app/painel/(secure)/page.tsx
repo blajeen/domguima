@@ -5,14 +5,21 @@ import { formatPrice } from "@/lib/utils/format";
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
-  const stats = [
-    ["Produtos ativos", data.active, "text-success"],
-    ["Rascunhos", data.drafts, "text-gold-700"],
-    ["Sem estoque", data.outOfStock, "text-red-700"],
-    ["Estoque baixo", data.lowStock, "text-orange-700"],
-    ["Cadastro incompleto", data.incomplete, "text-ink-700"],
-    ["Pedidos aguardando", data.pendingOrders, "text-blue-700"],
-  ] as const;
+  // Quem recebeu os atendimentos de hoje, numa linha: "Juliano 3 · Gabriel 2 · Fila livre 1".
+  const hojePorAtendente = [
+    ...data.leadsBySeller.filter((item) => item.count > 0).map((item) => `${item.name} ${item.count}`),
+    ...(data.leadsTodayUnassigned > 0 ? [`Fila livre ${data.leadsTodayUnassigned}`] : []),
+  ].join(" · ");
+  const stats: ReadonlyArray<{ label: string; value: number; color: string; href?: string; detail?: string }> = [
+    { label: "Produtos ativos", value: data.active, color: "text-success" },
+    { label: "Rascunhos", value: data.drafts, color: "text-gold-700" },
+    { label: "Sem estoque", value: data.outOfStock, color: "text-red-700" },
+    { label: "Estoque baixo", value: data.lowStock, color: "text-orange-700" },
+    { label: "Cadastro incompleto", value: data.incomplete, color: "text-ink-700" },
+    { label: "Pedidos aguardando", value: data.pendingOrders, color: "text-blue-700", href: "/painel/pedidos?status=pending" },
+    { label: "Fila livre", value: data.freeLeads, color: "text-orange-700", href: "/painel/atendimento?aba=fila", detail: "Atendimentos esperando alguém assumir" },
+    { label: "Atendimentos hoje", value: data.leadsToday, color: "text-blue-700", href: `/painel/atendimento?aba=todos&de=${data.today}&ate=${data.today}`, detail: hojePorAtendente || undefined },
+  ];
 
   return (
     <>
@@ -22,13 +29,23 @@ export default async function DashboardPage() {
         description="Acompanhe o catalogo sem inventar metricas de faturamento."
         actions={<Link href="/painel/produtos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 hover:bg-gold-300">+ Novo produto</Link>}
       />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {stats.map(([label, value, color]) => (
-          <PanelCard key={label} className="p-4">
-            <p className="text-xs font-semibold text-ink-500">{label}</p>
-            <p className={`mt-2 text-3xl font-black ${color}`}>{value}</p>
-          </PanelCard>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map((stat) => {
+          const conteudo = (
+            <>
+              <p className="text-xs font-semibold text-ink-500">{stat.label}</p>
+              <p className={`mt-2 text-3xl font-black ${stat.color}`}>{stat.value}</p>
+              {stat.detail && <p className="mt-1 text-xs text-ink-500">{stat.detail}</p>}
+            </>
+          );
+          return (
+            <PanelCard key={stat.label} className="p-4">
+              {stat.href
+                ? <Link href={stat.href} className="block rounded-lg hover:opacity-80">{conteudo}</Link>
+                : conteudo}
+            </PanelCard>
+          );
+        })}
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -55,6 +72,7 @@ export default async function DashboardPage() {
             <QuickLink href="/painel/pedidos/novo" label="Criar novo pedido" />
             <QuickLink href="/painel/pedidos" label="Consultar pedidos" />
             {data.pendingOrders > 0 && <QuickLink href="/painel/pedidos?status=pending" label={`Ver ${data.pendingOrders} pedido(s) aguardando`} />}
+            {data.freeLeads > 0 && <QuickLink href="/painel/atendimento?aba=fila" label={`Assumir ${data.freeLeads} atendimento(s) da fila`} />}
             <QuickLink href="/painel/estoque" label="Ajustar estoque" />
             <QuickLink href="/painel/categorias" label="Organizar categorias" />
             <QuickLink href="/painel/catalogo-pdf" label="Exportar catalogo PDF" />

@@ -120,6 +120,8 @@ export interface LeadFilters {
   sellerId?: string;
   /** `true` = somente a fila livre (sem atendente). */
   unassigned?: boolean;
+  /** `true` = somente etapas abertas (nem ganho nem perdido). */
+  open?: boolean;
   stage?: LeadStage;
   source?: string;
   /** YYYY-MM-DD em America/Sao_Paulo. */
@@ -202,15 +204,7 @@ export async function listLeads(filters: LeadFilters = {}, limit = LEAD_LIST_LIM
  */
 export async function listLeadsPage(filters: LeadFilters = {}, limit = LEAD_LIST_LIMIT): Promise<LeadPage> {
   if (hasSupabaseConfig()) {
-    let query = createSupabaseAdminClient().from("leads").select("*");
-    if (filters.unassigned) query = query.is("seller_id", null);
-    else if (filters.sellerId) query = query.eq("seller_id", filters.sellerId);
-    if (filters.stage) query = query.eq("stage", filters.stage);
-    if (filters.source) query = query.eq("source", filters.source);
-    if (filters.from) query = query.gte("created_at", inicioDoDia(filters.from));
-    if (filters.to) query = query.lte("created_at", fimDoDia(filters.to));
-
-    const { data, error } = await query.order("created_at", { ascending: false }).limit(limit);
+    const { data, error } = await consultaFiltrada(filters, false).order("created_at", { ascending: false }).limit(limit);
     if (error) {
       if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
       else console.warn("Nao foi possivel listar os atendimentos:", error.message);
@@ -226,6 +220,30 @@ export async function listLeadsPage(filters: LeadFilters = {}, limit = LEAD_LIST
 
   const todos = (await lerLeadsLocais()).filter((lead) => combina(lead, filters));
   return { leads: filtrarPorBusca(todos.slice(0, limit), filters.q), truncated: todos.length > limit };
+}
+
+/**
+ * Quantos atendimentos batem com os filtros — contagem EXATA, sem o teto da
+ * lista.
+ *
+ * Existe para os numeros do topo do painel (fila livre, chegaram hoje, em
+ * aberto por atendente). Calcula-los sobre a lista dos 500 mais recentes fazia
+ * o card "Fila livre" mostrar 0 enquanto havia atendimento sem dono mais antigo
+ * no banco. No Supabase e um `count` sem trazer linhas; a busca livre (`q`) nao
+ * entra porque so existe em memoria.
+ */
+export async function countLeads(filters: Omit<LeadFilters, "q"> = {}): Promise<number> {
+  if (hasSupabaseConfig()) {
+    const { count, error } = await consultaFiltrada(filters, true);
+    if (error) {
+      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      else console.warn("Nao foi possivel contar os atendimentos:", error.message);
+      return 0;
+    }
+    return count ?? 0;
+  }
+
+  return (await lerLeadsLocais()).filter((lead) => combina(lead, filters)).length;
 }
 
 export async function updateLead(id: string, patch: LeadPatch, audit?: LeadAuditDraft): Promise<UpdateLeadResult> {
@@ -257,6 +275,63 @@ export async function updateLead(id: string, patch: LeadPatch, audit?: LeadAudit
   });
 }
 
+/** Um atendimento pelo id. Falha ou tabela ausente avisam e devolvem `null`. */
+export async function findLead(id: string): Promise<LeadRecord | null> {
+  if (!id) return null;
+
+  if (hasSupabaseConfig()) {
+    const { data, error } = await createSupabaseAdminClient().from("leads").select("*").eq("id", id).maybeSingle();
+    if (error) {
+      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      else console.warn("Nao foi possivel buscar o atendimento:", error.message);
+      return null;
+    }
+    return normalizeLead(data);
+  }
+
+  return (await lerLeadsLocais()).find((lead) => lead.id === id) ?? null;
+}
+
+/**
+ * Apaga atendimentos em definitivo e devolve quantos sairam.
+ *
+ * Quem usa hoje e a exclusao de pedidos: o atendimento criado pelo checkout e
+ * uma copia do pedido (nome, telefone, itens, observacao) e nao pode continuar
+ * no painel depois que o dono apagou o pedido — inclusive quando o proprio
+ * cliente pediu a eliminacao dos dados, como a politica de privacidade promete.
+ *
+ * Escrita direta com o client de servico, como `deleteOrderRecords` faz com os
+ * pedidos: a RLS sem policy continua barrando anon/authenticated. Best-effort:
+ * falha (inclusive tabela ausente) avisa e devolve o que ja tinha saido.
+ */
+export async function deleteLeads(ids: readonly string[]): Promise<number> {
+  const alvo = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (!alvo.length) return 0;
+
+  if (hasSupabaseConfig()) {
+    let removidos = 0;
+    for (let inicio = 0; inicio < alvo.length; inicio += 100) {
+      const lote = alvo.slice(inicio, inicio + 100);
+      const { error, count } = await createSupabaseAdminClient().from("leads").delete({ count: "exact" }).in("id", lote);
+      if (error) {
+        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        else console.warn("Nao foi possivel apagar os atendimentos:", error.message);
+        return removidos;
+      }
+      removidos += count ?? lote.length;
+    }
+    return removidos;
+  }
+
+  const procurados = new Set(alvo);
+  return mutarLeadsLocais((leads) => {
+    const antes = leads.length;
+    const restantes = leads.filter((lead) => !procurados.has(lead.id));
+    leads.splice(0, leads.length, ...restantes);
+    return antes - restantes.length;
+  });
+}
+
 export async function findLeadByOrder(orderId: string): Promise<LeadRecord | null> {
   if (!orderId) return null;
 
@@ -277,6 +352,42 @@ export async function findLeadByOrder(orderId: string): Promise<LeadRecord | nul
   }
 
   return (await lerLeadsLocais()).find((lead) => lead.order_id === orderId) ?? null;
+}
+
+/**
+ * Atendimentos vinculados a varios pedidos de uma vez (cancelamento em massa).
+ *
+ * Uma consulta por lote em vez de uma por pedido: cancelar 50 pedidos de um
+ * lancamento em lote — que nunca tem atendimento — nao pode custar 50 idas ao
+ * banco so para descobrir que nao ha nada a fechar. Lotes de 100 ids mantem a
+ * URL do PostgREST num tamanho seguro.
+ */
+export async function findLeadsByOrders(orderIds: readonly string[]): Promise<LeadRecord[]> {
+  const ids = [...new Set(orderIds.map((id) => id.trim()).filter(Boolean))];
+  if (!ids.length) return [];
+
+  if (hasSupabaseConfig()) {
+    const encontrados: LeadRecord[] = [];
+    for (let inicio = 0; inicio < ids.length; inicio += 100) {
+      const { data, error } = await createSupabaseAdminClient()
+        .from("leads")
+        .select("*")
+        .in("order_id", ids.slice(inicio, inicio + 100));
+      if (error) {
+        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        else console.warn("Nao foi possivel buscar os atendimentos dos pedidos:", error.message);
+        return encontrados;
+      }
+      for (const row of data ?? []) {
+        const lead = normalizeLead(row);
+        if (lead) encontrados.push(lead);
+      }
+    }
+    return encontrados;
+  }
+
+  const procurados = new Set(ids);
+  return (await lerLeadsLocais()).filter((lead) => lead.order_id !== null && procurados.has(lead.order_id));
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +417,25 @@ export function isOpenLeadStage(stage: LeadStage): boolean {
 // ---------------------------------------------------------------------------
 // Internos
 // ---------------------------------------------------------------------------
+
+/**
+ * Consulta em `leads` com os filtros que o banco sabe aplicar (tudo menos a
+ * busca livre). A mesma montagem serve a lista e a contagem: `somenteContar`
+ * pede so o total (`head`), sem trafegar linha nenhuma.
+ */
+function consultaFiltrada(filters: Omit<LeadFilters, "q">, somenteContar: boolean) {
+  let query = createSupabaseAdminClient()
+    .from("leads")
+    .select("*", somenteContar ? { count: "exact", head: true } : undefined);
+  if (filters.unassigned) query = query.is("seller_id", null);
+  else if (filters.sellerId) query = query.eq("seller_id", filters.sellerId);
+  if (filters.open) query = query.in("stage", [...OPEN_LEAD_STAGES]);
+  if (filters.stage) query = query.eq("stage", filters.stage);
+  if (filters.source) query = query.eq("source", filters.source);
+  if (filters.from) query = query.gte("created_at", inicioDoDia(filters.from));
+  if (filters.to) query = query.lte("created_at", fimDoDia(filters.to));
+  return query;
+}
 
 /** Tabela ou funcao que ainda nao existe no banco, e nao uma falha de rede. */
 function crmAusente(error: { code?: string; message?: string } | null): boolean {
@@ -434,6 +564,37 @@ export function normalizeAttribution(value: unknown): Record<string, string> {
   return saida;
 }
 
+/**
+ * Origem gravada no navegador (UTM, referrer, campanha).
+ *
+ * Quem escreve este cookie e a captura de origem do site, que entra junto com o
+ * controle de trafego. Enquanto ela nao existir o cookie simplesmente nao esta
+ * la e `attribution` fica vazio — ler desde ja (na rota do WhatsApp e na de
+ * pedidos) evita ter de mexer nas rotas e nas RPCs depois.
+ */
+export const ORIGIN_COOKIE = "domguima_origem";
+
+/** Valor cru do cookie de origem → mapa de atribuicao. Cookie adulterado vira `{}`. */
+export function attributionFromCookie(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  for (const texto of [decodificar(raw), raw]) {
+    try {
+      return normalizeAttribution(JSON.parse(texto));
+    } catch {
+      // Cookie adulterado ou em outro formato: seguimos sem origem.
+    }
+  }
+  return {};
+}
+
+function decodificar(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function filtrarPorBusca(leads: LeadRecord[], q?: string): LeadRecord[] {
   const termo = normalize(q ?? "");
   if (!termo) return leads;
@@ -548,9 +709,10 @@ function aplicarPatchLocal(lead: LeadRecord, patch: LeadPatch): LeadRecord {
   };
 }
 
-function combina(lead: LeadRecord, filters: LeadFilters): boolean {
+function combina(lead: LeadRecord, filters: Omit<LeadFilters, "q">): boolean {
   if (filters.unassigned && lead.seller_id) return false;
   if (!filters.unassigned && filters.sellerId && lead.seller_id !== filters.sellerId) return false;
+  if (filters.open && !isOpenLeadStage(lead.stage)) return false;
   if (filters.stage && lead.stage !== filters.stage) return false;
   if (filters.source && lead.source !== filters.source) return false;
   const dia = leadLocalDate(lead.created_at);

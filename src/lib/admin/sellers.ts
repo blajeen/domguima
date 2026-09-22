@@ -19,6 +19,14 @@ export const OWNER_SELLER_ID = "juliano";
 export const SELLER_ID_PATTERN = /^[a-z0-9-]{2,40}$/;
 
 /**
+ * Ids que ja significam outra coisa e nao podem nascer do nome de um atendente:
+ * "pending" e o `seller_id` do pedido na fila livre, "auto" e o atendente
+ * sorteado pela rota do WhatsApp e "me" e o "puxar para mim" do painel. Um
+ * atendente chamado "Auto" herdaria todos os cliques do modo automatico.
+ */
+export const RESERVED_SELLER_IDS: readonly string[] = ["pending", "auto", "me"];
+
+/**
  * Os dois atendentes atuais. Os numeros batem com `whatsappContacts` de
  * src/config/site.ts: o dono usa o numero principal da loja (por isso `null`),
  * o vendedor tem numero proprio informado pelo lojista em 11/09/2026.

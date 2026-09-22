@@ -2,7 +2,8 @@ import "server-only";
 
 import { readCatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
-import { canonicalSellerId } from "./sellers";
+import { countLeads, leadLocalDate } from "./leads";
+import { canonicalSellerId, sortSellers } from "./sellers";
 import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
 
 export { defaultStoreSettings } from "./defaults";
@@ -82,8 +83,30 @@ export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
 
 export async function getDashboardData() {
   const products = await getAdminProducts();
-  const pendingOrders = (await readCatalogState()).operations.orders.filter((order) => order.status === "pending").length;
+  const state = await readCatalogState();
+  const pendingOrders = state.operations.orders.filter((order) => order.status === "pending").length;
+
+  // Atendimentos moram fora do catalogo: contagens exatas no banco (ou no
+  // arquivo local), com "hoje" no fuso da loja. Sem a tabela ainda criada,
+  // cada contagem avisa no console e vale 0 — o painel abre do mesmo jeito.
+  const hoje = leadLocalDate(new Date().toISOString());
+  const atendentes = sortSellers(state.operations.sellers.filter((seller) => seller.active));
+  const [freeLeads, leadsToday, leadsTodayUnassigned, ...hojePorAtendente] = await Promise.all([
+    countLeads({ unassigned: true, open: true }),
+    countLeads({ from: hoje, to: hoje }),
+    countLeads({ from: hoje, to: hoje, unassigned: true }),
+    ...atendentes.map((seller) => countLeads({ from: hoje, to: hoje, sellerId: seller.id })),
+  ]);
+
   return {
+    /** Hoje (YYYY-MM-DD, fuso da loja): o link do card leva à lista filtrada no mesmo dia que ele contou. */
+    today: hoje,
+    freeLeads,
+    leadsToday,
+    /** Chegaram hoje e ainda estão sem atendente. */
+    leadsTodayUnassigned,
+    /** Atendimentos de hoje por atendente ativo, na ordem do painel. */
+    leadsBySeller: atendentes.map((seller, indice) => ({ sellerId: seller.id, name: seller.name, count: hojePorAtendente[indice] ?? 0 })),
     total: products.length,
     active: products.filter((item) => item.status === "active").length,
     drafts: products.filter((item) => item.status === "draft").length,

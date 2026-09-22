@@ -233,6 +233,15 @@ export interface SalesOrderRecord {
   cancelled_by: string | null;
 }
 
+/**
+ * `seller_id` do pedido do site que ainda nao tem atendente — a "fila livre"
+ * dos pedidos. E um valor de texto (e nao null) porque a coluna e `not null`
+ * desde o livro-razao; o painel mostra "Fila livre" quando encontra este valor.
+ */
+export const UNASSIGNED_ORDER_SELLER_ID = "pending";
+/** Rotulo gravado junto com `UNASSIGNED_ORDER_SELLER_ID` (o mesmo de sempre, sem acento). */
+export const UNASSIGNED_ORDER_SELLER_NAME = "Aguardando definicao";
+
 export interface AdminOperationsState {
   sellers: SellerRecord[];
   orders: SalesOrderRecord[];

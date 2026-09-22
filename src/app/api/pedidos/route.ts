@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { readCatalogState } from "@/lib/admin/catalog-store";
+import { registerSiteOrderLead } from "@/lib/admin/lead-orders";
+import { attributionFromCookie, ORIGIN_COOKIE } from "@/lib/admin/leads";
 import { createPendingSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { isValidDocument, isValidPhone, onlyDigits } from "@/lib/utils/validators";
 
@@ -35,7 +37,7 @@ const requestLog = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_REQUESTS = 12;
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ message: "Origem da solicitacao invalida." }, { status: 403 });
   if (isRateLimited(request)) return NextResponse.json({ message: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }, { status: 429 });
 
@@ -68,7 +70,17 @@ export async function POST(request: Request) {
   try {
     // Leitura fresca so para validar (produto, preco, estoque); a gravacao e
     // uma transacao no banco, sem reescrever o catalogo inteiro.
-    const created = await createPendingSalesOrder(await readCatalogState(true), parsed.data);
+    const state = await readCatalogState(true);
+    const created = await createPendingSalesOrder(state, parsed.data);
+
+    // O atendimento do pedido (e, no rodizio, o atendente do pedido) e gravado
+    // DEPOIS da resposta: o cliente nao espera o CRM para ver "Solicitacao
+    // recebida", e nenhuma falha ali pode transformar o 201 num erro —
+    // `registerSiteOrderLead` so avisa no console. O cookie e lido agora,
+    // enquanto a requisicao ainda esta em maos.
+    const attribution = attributionFromCookie(request.cookies.get(ORIGIN_COOKIE)?.value);
+    after(() => registerSiteOrderLead(state, created, attribution));
+
     return NextResponse.json({ ok: true, orderId: created.id, orderNumber: created.number }, { status: 201 });
   } catch (error) {
     if (error instanceof OrderOperationError) return NextResponse.json({ message: error.message }, { status: 409 });
@@ -80,7 +92,7 @@ function isUberlandia(city: string): boolean {
   return city.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === "uberlandia";
 }
 
-function sameOrigin(request: Request): boolean {
+function sameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
@@ -92,7 +104,7 @@ function sameOrigin(request: Request): boolean {
   }
 }
 
-function isRateLimited(request: Request): boolean {
+function isRateLimited(request: NextRequest): boolean {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const now = Date.now();
   const current = requestLog.get(ip);

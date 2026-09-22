@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { AssignOrderForm } from "@/components/admin/AssignOrderForm";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
 import { ConfirmOrderForm } from "@/components/admin/ConfirmOrderForm";
 import { bulkOrdersAction } from "@/app/painel/actions";
@@ -7,11 +8,14 @@ import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
-import { ORDER_PAYMENT_METHOD_LABELS, type SalesOrderRecord } from "@/lib/admin/types";
+import { ORDER_PAYMENT_METHOD_LABELS, UNASSIGNED_ORDER_SELLER_ID, type SalesOrderRecord } from "@/lib/admin/types";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
 import { formatPrice, normalize } from "@/lib/utils/format";
 
 type Params = Record<string, string | string[] | undefined>;
+
+/** `id` do formulário de ações em massa; os checkboxes dos cards se ligam a ele por `form=`. */
+const BULK_FORM_ID = "pedidos-em-massa";
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<Params> }) {
   await requireOwner();
@@ -24,6 +28,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.seller_name} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
     return (!query || searchable.includes(normalize(query))) && (!seller || order.seller_id === seller) && (!status || order.status === status);
   });
+  // Filtros atuais, para a atribuição voltar à mesma lista.
+  const filtros = new URLSearchParams();
+  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status]] as const) {
+    if (valor) filtros.set(chave, valor);
+  }
+  const volta = filtros.toString() ? `/painel/pedidos?${filtros.toString()}` : "/painel/pedidos";
   const created = typeof params.criado === "string" ? allOrders.find((order) => order.id === params.criado) : null;
   const confirmed = typeof params.confirmado === "string" ? allOrders.find((order) => order.id === params.confirmado) : null;
   const cancelled = typeof params.cancelado === "string";
@@ -50,32 +60,40 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <PanelCard>
         <form className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_180px_180px_auto] sm:items-end">
           <label className="text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Pedido, cliente, CPF, produto ou SKU" className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
-          <label className="text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={seller} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option>{sellers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={seller} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value={UNASSIGNED_ORDER_SELLER_ID}>Fila livre (sem atendente)</option>{sellers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value="pending">Aguardando confirmação</option><option value="completed">Finalizados</option><option value="cancelled">Cancelados</option></select></label>
           <button className="rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-bold text-white">Filtrar</button>
         </form>
       </PanelCard>
 
-      <form action={bulkOrdersAction} className="mt-5">
-        {orders.length > 0 && <OrderBulkActions total={orders.length} />}
-        <div className="space-y-3">
-          {orders.map((order) => <OrderRow key={order.id} order={order} sellers={sellers} />)}
-          {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
-        </div>
-      </form>
+      {/* O formulário de massa NÃO envolve a lista: cada card tem os próprios
+          formulários (atribuir, confirmar, cancelar) e form dentro de form é
+          HTML inválido. Os checkboxes se ligam a ele pelo atributo `form=`. */}
+      {orders.length > 0 && (
+        <form id={BULK_FORM_ID} action={bulkOrdersAction} className="mt-5">
+          <OrderBulkActions total={orders.length} formId={BULK_FORM_ID} />
+        </form>
+      )}
+      <div className={`space-y-3 ${orders.length ? "" : "mt-5"}`}>
+        {orders.map((order) => <OrderRow key={order.id} order={order} sellers={sellers} volta={volta} />)}
+        {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
+      </div>
     </>
   );
 }
 
-function OrderRow({ order, sellers }: { order: SalesOrderRecord; sellers: Awaited<ReturnType<typeof getSellers>> }) {
+function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers: Awaited<ReturnType<typeof getSellers>>; volta: string }) {
   const payment = order.payment_method ? ORDER_PAYMENT_METHOD_LABELS[order.payment_method] : "Pagamento a combinar";
   const delivery = order.delivery_method === "uberlandia_delivery" ? "Entrega em Uberlândia" : "Frete a combinar";
+  // Pedido do site que ninguém assumiu ainda: "Fila livre", no mesmo tom da
+  // tela de Atendimento, em vez do rótulo técnico gravado no banco.
+  const semAtendente = order.seller_id === UNASSIGNED_ORDER_SELLER_ID;
 
   return (
     <article className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
       <div className="grid gap-4 p-5 sm:grid-cols-[auto_1.2fr_1fr_auto] sm:items-center">
         <label className="flex items-center gap-2 self-start sm:self-center">
-          <input type="checkbox" name="orderIds" value={order.id} className="h-4 w-4" aria-label={`Selecionar pedido ${order.number}`} />
+          <input type="checkbox" name="orderIds" value={order.id} form={BULK_FORM_ID} className="h-4 w-4" aria-label={`Selecionar pedido ${order.number}`} />
           <span className="text-xs font-bold text-ink-400 sm:hidden">Selecionar</span>
         </label>
         <div>
@@ -90,7 +108,9 @@ function OrderRow({ order, sellers }: { order: SalesOrderRecord; sellers: Awaite
         </div>
         <div>
           <p className="text-xs text-ink-400">{new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</p>
-          <p className="mt-1 text-sm"><strong>{order.seller_name}</strong> · {order.total_units} unidade(s)</p>
+          <p className="mt-1 text-sm">
+            {semAtendente ? <strong className="text-orange-700">Fila livre</strong> : <strong>{order.seller_name}</strong>} · {order.total_units} unidade(s)
+          </p>
           <p className="text-xs text-ink-500">Comissão {formatPrice(order.commission_total_cents)}</p>
         </div>
         <div className="sm:text-right">
@@ -124,9 +144,17 @@ function OrderRow({ order, sellers }: { order: SalesOrderRecord; sellers: Awaite
               {order.notes && <p className="mt-3 border-t border-ink-100 pt-3"><strong>Observações:</strong> {order.notes}</p>}
 
               {order.status === "pending" && <div className="mt-4 space-y-4 border-t border-blue-100 pt-4">
-                <div><p className="font-black text-blue-950">Próximo passo</p><p className="mt-1 text-xs leading-relaxed text-blue-800">Fale com o cliente, confirme disponibilidade, frete e pagamento. Depois escolha o vendedor e confirme para baixar o estoque. Quando enviar, avise o cliente pelo WhatsApp.</p></div>
+                <div><p className="font-black text-blue-950">Próximo passo</p><p className="mt-1 text-xs leading-relaxed text-blue-800">Defina quem cuida do pedido, fale com o cliente e confirme disponibilidade, frete e pagamento. Depois confirme para baixar o estoque. Quando enviar, avise o cliente pelo WhatsApp.</p></div>
                 {order.customer.phone && <a href={customerWhatsappLink(order.customer.phone, customerOrderMessage(order))} target="_blank" rel="noopener noreferrer" className="block w-full rounded-lg bg-[#25D366] px-3 py-2.5 text-center text-xs font-extrabold text-white hover:bg-[#20bd5a]">Abrir WhatsApp do cliente</a>}
-                <ConfirmOrderForm orderId={order.id} orderNumber={order.number} sellers={sellers} />
+                {/* `key` pelo atendente: depois de "Atribuir" a página volta só com a
+                    query nova, e o Next não remonta a árvore por mudança de query. Sem
+                    remontar, os <select defaultValue> continuariam no atendente antigo
+                    (o React não reaplica defaultValue) e o Confirmar não viria com
+                    quem acabou de assumir o pedido. */}
+                <AssignOrderForm key={`atribuir-${order.seller_id}`} orderId={order.id} currentSellerId={order.seller_id} sellers={sellers} volta={volta} />
+                <div key={`confirmar-${order.seller_id}`} className="border-t border-blue-100 pt-4">
+                  <ConfirmOrderForm orderId={order.id} orderNumber={order.number} sellers={sellers} defaultSellerId={semAtendente ? "" : order.seller_id} />
+                </div>
               </div>}
               {order.status === "completed" && <div className="mt-4"><CancelOrderForm orderId={order.id} orderNumber={order.number} /></div>}
               {order.status === "cancelled" && <p className="mt-4 border-t border-ink-100 pt-4 text-xs text-ink-400">Pedido cancelado. Confira o histórico se precisar auditar a operação.</p>}

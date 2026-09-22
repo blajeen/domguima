@@ -62,6 +62,12 @@ export interface AtendimentoLinkInput {
   productId?: string;
   /** Nome informado pelo cliente. Só viaja por POST — ver `atendimentoFields`. */
   customerName?: string;
+  /**
+   * Pedido do checkout de onde a conversa parte (tela "Solicitação recebida").
+   * Com ele a rota leva o cliente a quem já cuida do pedido, em vez de sortear
+   * outra pessoa e abrir um segundo atendimento.
+   */
+  orderId?: string;
 }
 
 /**
@@ -81,6 +87,7 @@ export function atendimentoFields(input: AtendimentoLinkInput): Array<[string, s
     ["pagina", input.pagePath ?? ""],
     ["produto", input.productId ?? ""],
     ["cliente", input.customerName ?? ""],
+    ["pedido", input.orderId ?? ""],
   ];
   return campos.filter(([, valor]) => valor !== "");
 }

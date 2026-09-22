@@ -174,11 +174,13 @@ export default function CheckoutPage() {
           items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, variant: item.variant, variantId: item.variantId })),
         }),
       });
-      const data = (await response.json()) as { message?: string; orderNumber?: string };
+      const data = (await response.json()) as { message?: string; orderNumber?: string; orderId?: string };
       if (!response.ok || !data.orderNumber) throw new Error(data.message || "Nao foi possivel registrar o pedido.");
       setSubmitted(true);
       clear();
-      router.push(`/pedido-enviado?tipo=site&numero=${encodeURIComponent(data.orderNumber)}`);
+      // O id deixa o botao de WhatsApp da proxima tela falar com quem ja cuida do pedido.
+      const pedido = data.orderId ? `&pedido=${encodeURIComponent(data.orderId)}` : "";
+      router.push(`/pedido-enviado?tipo=site&numero=${encodeURIComponent(data.orderNumber)}${pedido}`);
     } catch (error) {
       setSiteError(error instanceof Error ? error.message : "Nao foi possivel registrar o pedido agora.");
       setSitePending(false);

@@ -8,7 +8,15 @@ import {
   type LedgerMovementDraft,
   type OrderDraft,
 } from "./catalog-store";
-import type { OrderCustomerSnapshot, OrderDeliveryMethod, OrderPaymentMethod, SalesOrderRecord } from "./types";
+import {
+  UNASSIGNED_ORDER_SELLER_ID,
+  UNASSIGNED_ORDER_SELLER_NAME,
+  type OrderCustomerSnapshot,
+  type OrderDeliveryMethod,
+  type OrderPaymentMethod,
+  type SalesOrderRecord,
+  type SellerRecord,
+} from "./types";
 import { commissionForUnit } from "./commission";
 
 export interface CreateOrderInput {
@@ -210,8 +218,11 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     id: randomUUID(),
     request_id: input.requestId,
     status: "pending",
-    seller_id: "pending",
-    seller_name: "Aguardando definicao",
+    // Nasce na fila livre. Quando a loja distribui sozinha (rodizio ou menos
+    // ocupado), o atendimento criado junto com o pedido define o atendente logo
+    // em seguida — ver registerSiteOrderLead em lead-orders.ts.
+    seller_id: UNASSIGNED_ORDER_SELLER_ID,
+    seller_name: UNASSIGNED_ORDER_SELLER_NAME,
     payment_method: input.paymentMethod,
     delivery_method: input.deliveryMethod,
     customer: input.customer,
@@ -310,6 +321,44 @@ export async function confirmPendingSalesOrder(state: CatalogState, orderId: str
     throw new OrderOperationError("Este pedido ja foi cancelado.");
   }
   return resultado.order!;
+}
+
+/**
+ * Define (ou troca) quem cuida de um pedido do site que ainda aguarda
+ * confirmacao, sem confirmar nada: o estoque so baixa na confirmacao.
+ *
+ * `seller = null` devolve o pedido a fila livre. Quem chama ja validou o
+ * atendente (ativo, id canonico) e leu o pedido — a rota de pedidos, por
+ * exemplo, tem o pedido recem-criado em maos e nao o encontraria no estado lido
+ * antes de cria-lo.
+ *
+ * `expectedStatus: "pending"` e a mesma trava da confirmacao: se outra sessao
+ * confirmou ou cancelou no intervalo, nada e gravado e o erro diz por que.
+ */
+export async function assignPendingSalesOrder(order: SalesOrderRecord, seller: SellerRecord | null, actorId: string): Promise<{ order: SalesOrderRecord; changed: boolean }> {
+  if (order.status === "completed") throw new OrderOperationError("Este pedido já foi confirmado: o vendedor ficou definido na confirmação.");
+  if (order.status === "cancelled") throw new OrderOperationError("Este pedido já foi cancelado.");
+
+  const destino = seller
+    ? { seller_id: seller.id, seller_name: seller.name }
+    : { seller_id: UNASSIGNED_ORDER_SELLER_ID, seller_name: UNASSIGNED_ORDER_SELLER_NAME };
+  if (order.seller_id === destino.seller_id) return { order, changed: false };
+
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.assigned",
+    entity_type: "order",
+    entity_id: order.id,
+    before_data: { seller: order.seller_id === UNASSIGNED_ORDER_SELLER_ID ? "Fila livre" : order.seller_name },
+    after_data: { seller: seller?.name ?? "Fila livre" },
+  };
+
+  const resultado = await updateOrderRecord(order.id, "pending", destino, [], audit);
+  if (!resultado.found) throw new OrderOperationError("Pedido não encontrado.");
+  if (!resultado.applied || !resultado.order) {
+    throw new OrderOperationError("O pedido mudou de situação em outra sessão. Atualize a página e tente novamente.");
+  }
+  return { order: resultado.order, changed: true };
 }
 
 export async function cancelSalesOrder(state: CatalogState, orderId: string, actorId: string): Promise<SalesOrderRecord> {

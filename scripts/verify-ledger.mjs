@@ -7,7 +7,8 @@
  *
  * Executa de verdade, contra o banco configurado em .env.local, os casos que a
  * auditoria mediu quebrados: pedido simultaneo sumindo, numero repetido, venda
- * abaixo de zero, confirmacao dupla e reenvio do mesmo pedido.
+ * abaixo de zero, confirmacao dupla e reenvio do mesmo pedido — e a atribuicao
+ * de atendente a um pedido pendente sem confirma-lo (atendimento do site).
  *
  * O QUE ELE CRIA E APAGA (tudo com prefixo "zz-teste-livro-razao"):
  *   - 1 produto de teste em rascunho (status draft: nao aparece na loja);
@@ -193,6 +194,20 @@ try {
   });
   if (erroPendente) throw new Error(`Nao consegui criar o pedido pendente: ${erroPendente.message}`);
   const idPendente = pendente.order.id;
+
+  // Atribuir o atendente SEM confirmar (assignPendingSalesOrder, usado pelo
+  // painel e pelo rodizio do checkout): a mesma RPC, com o patch so de
+  // atendente e nenhum movimento — o pedido segue pendente e o estoque parado.
+  const { data: atribuido, error: erroAtribuir } = await db.rpc("update_sales_order_status_v2", {
+    p_id: idPendente,
+    p_expected_status: "pending",
+    p_patch: { seller_id: "teste-atendente", seller_name: "Atendente de teste" },
+    p_movements: [],
+    p_audit: null,
+  });
+  checar("atribuir sem confirmar troca o atendente", !erroAtribuir && atribuido?.applied === true && atribuido?.order?.seller_id === "teste-atendente", erroAtribuir?.message ?? `seller_id = ${atribuido?.order?.seller_id}`);
+  checar("atribuir sem confirmar mantem o pedido pendente", atribuido?.order?.status === "pending", `status = ${atribuido?.order?.status}`);
+  checar("atribuir sem confirmar nao mexe no estoque", (await estoqueAtual()) === 10, `estoque = ${await estoqueAtual()}`);
   const confirmacoes = await Promise.all(
     Array.from({ length: 5 }, () =>
       db.rpc("update_sales_order_status_v2", {
