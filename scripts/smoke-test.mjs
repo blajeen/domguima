@@ -182,7 +182,9 @@ if (await page.getByRole("button", { name: "Enviar pedido" }).isVisible() && !(a
 else fail("checkout ainda exibe mais de um fluxo de envio");
 await page.getByRole("button", { name: "Enviar pedido" }).click();
 await page.waitForTimeout(400);
-const errors = await page.locator("p.text-promo").count();
+// Conta os campos marcados como inválidos, e não a cor da mensagem: a classe
+// muda com o visual, o aria-invalid é o que o leitor de tela anuncia.
+const errors = await page.locator('[aria-invalid="true"]').count();
 if (errors >= 8) pass(`validação bloqueia envio incompleto (${errors} campos)`);
 else fail(`validação mostrou só ${errors} erros`);
 

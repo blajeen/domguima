@@ -11,6 +11,7 @@ import { lineKey, useCart } from "@/lib/store/cart";
 import { CartTotals } from "@/components/cart/CartTotals";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, textLinkStyles } from "@/components/ui/Button";
+import { campoStyles } from "@/components/ui/campo";
 import { Icon } from "@/components/ui/Icon";
 import { PriceTag } from "@/components/ui/PriceTag";
 
@@ -121,10 +122,10 @@ export function QuickCheckout() {
           <input key={campo} type="hidden" name={campo} value={valor} readOnly />
         ))}
         <div className="rounded-card border border-fio bg-white p-5 sm:p-6">
-          <h2 className="text-lg font-extrabold text-ink-900">Só o essencial</h2>
+          <h2 className="text-lg font-bold text-grafite-900">Só o essencial</h2>
           <p className="mt-1 text-sm text-ink-500">Sem cadastro, CPF, endereço completo ou dados de cartão.</p>
 
-          <label className="mt-5 block text-sm font-bold text-ink-700">
+          <label className="mt-5 block text-sm font-semibold text-ink-700">
             Seu nome <span className="text-promo">*</span>
             <input
               value={name}
@@ -132,12 +133,14 @@ export function QuickCheckout() {
               autoComplete="name"
               autoFocus
               placeholder="Como o vendedor pode chamar você?"
-              className="mt-2 w-full rounded-xl border border-ink-200 px-4 py-3 text-base text-ink-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-200"
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "nome-erro" : undefined}
+              className={`mt-2 ${campoStyles}`}
             />
           </label>
 
           <fieldset className="mt-5">
-            <legend className="text-sm font-bold text-ink-700">Como prefere receber?</legend>
+            <legend className="text-sm font-semibold text-ink-700">Como prefere receber?</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <Choice
                 name="delivery"
@@ -158,7 +161,7 @@ export function QuickCheckout() {
 
           {!automatico && (
             <fieldset className="mt-5">
-              <legend className="text-sm font-bold text-ink-700">Enviar o pedido para quem?</legend>
+              <legend className="text-sm font-semibold text-ink-700">Enviar o pedido para quem?</legend>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {sellers.map((contact) => (
                   <Choice
@@ -174,34 +177,34 @@ export function QuickCheckout() {
             </fieldset>
           )}
 
-          <label className="mt-5 block text-sm font-bold text-ink-700">
-            Bairro <span className="font-normal text-ink-400">(opcional)</span>
+          <label className="mt-5 block text-sm font-semibold text-ink-700">
+            Bairro <span className="font-normal text-ink-500">(opcional)</span>
             <input
               value={neighborhood}
               onChange={(event) => setNeighborhood(event.target.value)}
               placeholder="Ex.: Santa Mônica"
-              className="mt-2 w-full rounded-xl border border-ink-200 px-4 py-3 text-base text-ink-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-200"
+              className={`mt-2 ${campoStyles}`}
             />
           </label>
 
-          <label className="mt-5 block text-sm font-bold text-ink-700">
-            Observação <span className="font-normal text-ink-400">(opcional)</span>
+          <label className="mt-5 block text-sm font-semibold text-ink-700">
+            Observação <span className="font-normal text-ink-500">(opcional)</span>
             <textarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               rows={3}
               placeholder="Horário, dúvida ou outra informação para o vendedor"
-              className="mt-2 w-full resize-y rounded-xl border border-ink-200 px-4 py-3 text-base text-ink-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-200"
+              className={`mt-2 resize-y ${campoStyles}`}
             />
           </label>
 
-          {error && <p role="alert" className="mt-3 text-sm font-semibold text-promo">{error}</p>}
+          {error && <p id="nome-erro" role="alert" className="mt-3 text-sm font-semibold text-promo">{error}</p>}
 
           <Button type="submit" variant="whatsapp" size="lg" fullWidth className="mt-5">
             <Icon name="whatsapp" />
             Enviar pedido ao vendedor
           </Button>
-          <p className="mt-3 text-center text-xs leading-relaxed text-ink-400">
+          <p className="mt-3 text-center text-xs leading-relaxed text-ink-500">
             O WhatsApp abrirá com os produtos e valores já preenchidos. Nenhuma cobrança é feita pelo site.
           </p>
         </div>

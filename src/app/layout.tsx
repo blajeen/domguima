@@ -35,16 +35,18 @@ const bodoniModa = Bodoni_Moda({
 });
 
 // Números de preço. O eixo de largura (wdth) dá o condensado do preço de
-// cartaz. Sem preload por enquanto: nenhuma tela usa o PriceTag ainda, e um
-// preload de ~90 KB que não é usado disputaria banda com a foto principal.
-// Religar o preload no bloco em que o PriceTag entrar no card e na página de
-// produto, medindo o LCP antes e depois.
+// cartaz. Com preload: o PriceTag está no card, na página de produto, na barra
+// fixa, no carrinho, no checkout e no banner, quase sempre acima da dobra. A
+// reserva que o next/font ajusta (Arial) tem a largura normal, não a
+// condensada, então sem a fonte o preço entra bem mais largo e estreita quando
+// ela chega; no card estreito o −X% quebra de linha e volta, e isso conta no
+// CLS. O custo é o arquivo latin (~90 KB) disputando banda com a foto
+// principal: conferir o LCP no preview antes do merge.
 const archivo = Archivo({
   subsets: ["latin"],
   axes: ["wdth"],
   variable: "--font-archivo",
   display: "swap",
-  preload: false,
 });
 
 export const metadata: Metadata = {

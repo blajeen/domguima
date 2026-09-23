@@ -41,7 +41,7 @@ export default function CartPage() {
       ) : items.length === 0 ? (
         <div className="mt-8 rounded-card border border-fio bg-white px-6 py-16 text-center">
           <Icon name="carrinho" size={40} className="mx-auto text-ink-400" />
-          <p className="mt-4 text-xl font-bold text-ink-900">
+          <p className="mt-4 text-xl font-bold text-grafite-900">
             Seu carrinho está vazio
           </p>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-ink-500">

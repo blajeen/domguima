@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { CartTotals } from "@/components/cart/CartTotals";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, textLinkStyles } from "@/components/ui/Button";
+import { campoStyles } from "@/components/ui/campo";
 import { Icon } from "@/components/ui/Icon";
 import { PriceTag } from "@/components/ui/PriceTag";
 import { site } from "@/config/site";
@@ -277,22 +278,27 @@ export default function CheckoutPage() {
                   autoComplete="postal-code"
                   placeholder="00000-000"
                   aria-invalid={Boolean(errors.cep)}
-                  className={inputClass(Boolean(errors.cep))}
+                  aria-describedby="cep-ajuda"
+                  className={campoStyles}
                 />
-                {cepStatus === "loading" && (
-                  <p className="mt-1 text-xs text-ink-400">Buscando endereço…</p>
-                )}
-                {cepStatus === "error" && (
-                  <p className="mt-1 text-xs text-promo">{cepMessage}</p>
-                )}
-                {errors.cep && cepStatus !== "error" && (
-                  <p className="mt-1 text-xs text-promo">{errors.cep}</p>
-                )}
-                {cepStatus === "idle" && !errors.cep && (
-                  <p className="mt-1 text-xs text-ink-400">
-                    Preenchemos o endereço automaticamente.
-                  </p>
-                )}
+                {/* Uma região só para ajuda, busca e erro do CEP: o leitor de
+                    tela ouve "Buscando endereço…" e a falha sem sair do campo. */}
+                <div id="cep-ajuda" aria-live="polite">
+                  {cepStatus === "loading" && (
+                    <p className="mt-1 text-xs text-ink-500">Buscando endereço…</p>
+                  )}
+                  {cepStatus === "error" && (
+                    <p className="mt-1 text-xs text-promo">{cepMessage}</p>
+                  )}
+                  {errors.cep && cepStatus !== "error" && (
+                    <p className="mt-1 text-xs text-promo">{errors.cep}</p>
+                  )}
+                  {cepStatus === "idle" && !errors.cep && (
+                    <p className="mt-1 text-xs text-ink-500">
+                      Preenchemos o endereço automaticamente.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <Field
@@ -335,30 +341,39 @@ export default function CheckoutPage() {
               />
               <div data-field="state">
                 <Label htmlFor="state">Estado</Label>
-                <select
-                  id="state"
-                  value={form.state}
-                  onChange={(e) => update("state", e.target.value)}
-                  aria-invalid={Boolean(errors.state)}
-                  className={inputClass(Boolean(errors.state))}
-                >
-                  <option value="">Selecione</option>
-                  {BRAZILIAN_STATES.map((uf) => (
-                    <option key={uf} value={uf}>
-                      {uf}
-                    </option>
-                  ))}
-                </select>
+                {/* Seta da loja no lugar da do sistema, como no "Ordenar por". */}
+                <span className="relative block">
+                  <select
+                    id="state"
+                    value={form.state}
+                    onChange={(e) => update("state", e.target.value)}
+                    aria-invalid={Boolean(errors.state)}
+                    aria-describedby={errors.state ? "state-error" : undefined}
+                    className={`cursor-pointer appearance-none pr-10 ${campoStyles}`}
+                  >
+                    <option value="">Selecione</option>
+                    {BRAZILIAN_STATES.map((uf) => (
+                      <option key={uf} value={uf}>
+                        {uf}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon
+                    name="seta-baixo"
+                    size={18}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-grafite-700"
+                  />
+                </span>
                 {errors.state && (
-                  <p className="mt-1 text-xs text-promo">{errors.state}</p>
+                  <p id="state-error" className="mt-1 text-xs text-promo">{errors.state}</p>
                 )}
               </div>
             </Grid>
           </Card>
 
           <Card title="Entrega e pagamento" step={3}>
-            <div className="rounded-lg border border-ink-100 bg-ink-50/60 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+            <div className="rounded-card border border-fio bg-papel p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-grafite-900">
                 <Icon name="caminhao" size={18} className="text-ink-500" />
                 Frete a combinar
               </p>
@@ -370,7 +385,7 @@ export default function CheckoutPage() {
             </div>
 
             <fieldset className="mt-4" data-field="paymentMethod">
-              <legend className="text-sm font-semibold text-ink-900">
+              <legend className="text-sm font-semibold text-grafite-900">
                 Como você prefere pagar?
               </legend>
               <p className="mt-1 text-sm leading-relaxed text-ink-600">
@@ -415,7 +430,7 @@ export default function CheckoutPage() {
                 value={form.notes}
                 onChange={(e) => update("notes", e.target.value)}
                 placeholder="Ponto de referência, horário de entrega, voltagem…"
-                className={`${inputClass(false)} resize-y`}
+                className={`resize-y ${campoStyles}`}
               />
             </div>
           </Card>
@@ -517,14 +532,6 @@ function isUberlandia(city: string): boolean {
 
 /* ── Peças do formulário ─────────────────────────────────────────────────── */
 
-function inputClass(hasError: boolean): string {
-  return `w-full rounded-lg border px-3 py-2.5 text-sm text-ink-900 outline-none transition-colors placeholder:text-ink-300 focus:ring-2 ${
-    hasError
-      ? "border-promo focus:border-promo focus:ring-promo/20"
-      : "border-ink-200 focus:border-gold-400 focus:ring-gold-400/20"
-  }`;
-}
-
 function Card({
   title,
   step,
@@ -536,8 +543,9 @@ function Card({
 }) {
   return (
     <section className="rounded-card border border-fio bg-white p-5 sm:p-6">
-      <h2 className="mb-4 flex items-center gap-2.5 text-base font-extrabold text-ink-900">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink-900 text-xs text-white">
+      {/* Número da etapa num selo de canto reto, como os selos da loja. */}
+      <h2 className="mb-4 flex items-center gap-2.5 text-base font-bold text-grafite-900">
+        <span className="flex size-6 items-center justify-center rounded-card bg-grafite-900 text-xs font-bold tabular-nums text-papel">
           {step}
         </span>
         {title}
@@ -567,7 +575,7 @@ function Label({
     >
       {children}
       {optional && (
-        <span className="ml-1 font-normal text-ink-400">(opcional)</span>
+        <span className="ml-1 font-normal text-ink-500">(opcional)</span>
       )}
     </label>
   );
@@ -611,7 +619,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${name}-error` : undefined}
-        className={inputClass(Boolean(error))}
+        className={campoStyles}
       />
       {error && (
         <p id={`${name}-error`} className="mt-1 text-xs text-promo">

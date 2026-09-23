@@ -1,4 +1,4 @@
-import { company, shopeeStats, site, social, whatsapp } from "@/config/site";
+import { commerce, company, shopeeStats, site, social, whatsapp } from "@/config/site";
 
 /**
  * Páginas institucionais.
@@ -152,8 +152,13 @@ export const institutionalPages: InstitutionalPage[] = [
       },
       {
         heading: "Parcelamento",
+        // As duas frases que o preço mostra (paymentLines, em utils/format):
+        // parcelamento informado pelo lojista sai "com taxa"; sem ele, vale a
+        // estimativa "sem juros" de `commerce`. Citar só uma contradiria o
+        // produto. CONFIG: o dono confirma as duas condições.
         paragraphs: [
-          "O parcelamento exibido nos produtos é uma estimativa em até 3x sem juros, sujeita a confirmação no momento da compra e ao valor mínimo de parcela.",
+          `O parcelamento no cartão aparece junto do preço de cada produto. Quando a linha diz "com taxa", é o parcelamento que a loja informou para aquele produto, com a taxa do cartão já no valor da parcela, e o preço em destaque é o do Pix ou dinheiro.`,
+          `Quando a linha diz "sem juros", é uma estimativa em até ${commerce.maxInstallments}x, sujeita a confirmação no momento da compra e ao valor mínimo de parcela.`,
         ],
       },
       {
