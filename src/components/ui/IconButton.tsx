@@ -19,9 +19,10 @@ const variants: Record<IconButtonVariant, string> = {
   // transição e sem descer na pressão: elemento com backdrop-filter que anima
   // recompõe o desfoque a cada quadro. O ícone fica sempre papel (ouro-claro
   // sobre o vidro, com foto branca atrás, cai para 2,8:1). Hover e pressão
-  // acendem um fio em volta; mexer no fundo desfaria o vidro.
+  // acendem um fio em volta; mexer no fundo desfaria o vidro. Tinta .86: as
+  // setas passam sobre cards brancos, e com a tinta padrão ficavam cinza.
   vidro:
-    "glass-dark rounded-pill text-papel hover:ring-1 hover:ring-papel/40 active:ring-1 active:ring-papel/70",
+    "glass-dark [--vidro-tinta:0.86] rounded-pill text-papel hover:ring-1 hover:ring-papel/40 active:ring-1 active:ring-papel/70",
   // Dentro de uma superfície de vidro que já existe (a pílula da galeria no
   // celular): sem vidro próprio, que seria vidro sobre vidro, mas com a forma
   // e o fio da variante `vidro`, por dentro para não vazar da pílula. O foco

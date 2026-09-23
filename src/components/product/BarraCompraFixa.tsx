@@ -64,7 +64,9 @@ export function BarraCompraFixa({
     <div
       // Escondida, fica fora do Tab e do leitor de tela.
       inert={!visivel}
-      className={`glass-dark fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] transition-[translate,visibility] duration-(--duracao-entrada) ease-out lg:hidden ${
+      // Tinta .9: o que passa por baixo são cards brancos. Com a tinta padrão o
+      // vidro vira uma placa cinza e o preço perde leitura (visto no celular).
+      className={`glass-dark [--vidro-tinta:0.9] fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] transition-[translate,visibility] duration-(--duracao-entrada) ease-out lg:hidden ${
         visivel ? "visible translate-y-0" : "invisible translate-y-full"
       }`}
     >

@@ -236,8 +236,10 @@ export function ProductGallery({
 
         {temVarias && (
           <>
-            {/* Celular: uma superfície de vidro só, com as setas e o contador. */}
-            <div className="glass-dark absolute bottom-3 right-3 flex items-center rounded-pill sm:hidden">
+            {/* Celular: uma pílula grafite só, com as setas e o contador. Sólida,
+                não vidro: as fotos de produto têm fundo branco, e vidro sobre
+                branco vira cinza (a mesma decisão da pílula do banner da home). */}
+            <div className="absolute bottom-3 right-3 flex items-center rounded-pill bg-grafite-900 sm:hidden">
               <IconButton
                 icon="seta-esquerda"
                 label="Foto anterior"
@@ -266,7 +268,7 @@ export function ProductGallery({
         )}
 
         {/* Com mouse: a dica some enquanto o zoom está ativo. */}
-        <span className="glass-dark pointer-events-none absolute bottom-3 right-3 hidden rounded-pill px-3 py-1.5 text-xs font-medium text-papel so-mouse:sm:block so-mouse:group-hover/palco:invisible">
+        <span className="pointer-events-none absolute bottom-3 right-3 hidden rounded-pill bg-grafite-900 px-3 py-1.5 text-xs font-medium text-papel so-mouse:sm:block so-mouse:group-hover/palco:invisible">
           Passe o mouse para ampliar
         </span>
       </div>
