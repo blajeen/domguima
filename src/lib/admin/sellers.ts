@@ -1,0 +1,150 @@
+import { onlyDigits } from "@/lib/utils/validators";
+import { normalize } from "@/lib/utils/format";
+import type { LeadDistributionMode, SalesOrderRecord, SellerRecord } from "./types";
+
+/**
+ * Regras puras sobre atendentes (sem Supabase, sem "server-only"): o que e um
+ * atendente valido, quais sao os padrao e como um registro antigo do JSONB vira
+ * um registro completo. Usado pela leitura do catalogo, pela action que salva a
+ * lista e pela vitrine.
+ */
+
+/** Id que o painel usava para o dono antes de o site e o painel falarem a mesma lingua. */
+export const LEGACY_OWNER_SELLER_ID = "dom-guima";
+/** Nome que acompanhava o id antigo. So ele e substituido no remapeamento. */
+export const LEGACY_OWNER_SELLER_NAME = "Dom Guima";
+/** Id canonico do dono — o mesmo que o site sempre usou em whatsappContacts. */
+export const OWNER_SELLER_ID = "juliano";
+
+export const SELLER_ID_PATTERN = /^[a-z0-9-]{2,40}$/;
+
+/**
+ * Ids que ja significam outra coisa e nao podem nascer do nome de um atendente:
+ * "pending" e o `seller_id` do pedido na fila livre, "auto" e o atendente
+ * sorteado pela rota do WhatsApp e "me" e o "puxar para mim" do painel. Um
+ * atendente chamado "Auto" herdaria todos os cliques do modo automatico.
+ */
+export const RESERVED_SELLER_IDS: readonly string[] = ["pending", "auto", "me"];
+
+/**
+ * O que dizer a quem entrou com um login sem atendente vinculado.
+ *
+ * O vinculo so existe pela CLI e vai dentro da sessao (JWT): sem o "saia e
+ * entre de novo", a pessoa roda o comando, atualiza a pagina e continua sem
+ * "Meus atendimentos". A CLI, com `--vendedor` e sem `--senha`, so grava o
+ * vinculo de quem ja existe — senha e nome ficam como estao.
+ */
+export const UNLINKED_LOGIN_HINT = "Este login ainda não está vinculado a um atendente. No terminal, rode npm run criar:usuario -- <usuario> --vendedor <atendente> (a senha e o nome não mudam) e depois saia e entre de novo no painel.";
+
+/**
+ * Os dois atendentes atuais. Os numeros batem com `whatsappContacts` de
+ * src/config/site.ts: o dono usa o numero principal da loja (por isso `null`),
+ * o vendedor tem numero proprio informado pelo lojista em 11/09/2026.
+ */
+export function defaultSellers(): SellerRecord[] {
+  return [
+    { id: OWNER_SELLER_ID, name: "Juliano", role_label: "Dono da loja", whatsapp_number: null, whatsapp_display: "", receives_leads: true, active: true, sort_order: 0 },
+    { id: "gabriel", name: "Gabriel", role_label: "Vendedor", whatsapp_number: "5534998648425", whatsapp_display: "(34) 99864-8425", receives_leads: true, active: true, sort_order: 1 },
+  ];
+}
+
+/** Troca o id antigo do dono pelo canonico; qualquer outro id volta igual. */
+export function canonicalSellerId(id: string): string {
+  return id === LEGACY_OWNER_SELLER_ID ? OWNER_SELLER_ID : id;
+}
+
+/**
+ * Completa um registro vindo do JSONB (ou de uma versao anterior do app) com
+ * os campos novos.
+ *
+ * Campo AUSENTE (registro antigo) herda o valor do atendente padrao de mesmo
+ * id — e assim que "gabriel" gravado como {id, name, active} ganha o numero
+ * dele sem ninguem precisar recadastrar. Campo presente, mesmo vazio, e
+ * respeitado: `whatsapp_number: null` e uma escolha ("usa o numero da loja").
+ */
+export function normalizeSeller(value: Partial<SellerRecord> | null | undefined, index = 0): SellerRecord {
+  const idBruto = typeof value?.id === "string" ? value.id.trim() : "";
+  const legado = idBruto === LEGACY_OWNER_SELLER_ID;
+  const id = canonicalSellerId(idBruto);
+  const padrao = defaultSellers().find((seller) => seller.id === id);
+
+  const nomeGravado = typeof value?.name === "string" ? value.name.trim() : "";
+  // O dono antigo se chamava "Dom Guima" no painel; no site sempre foi Juliano.
+  const name = legado && (!nomeGravado || nomeGravado === LEGACY_OWNER_SELLER_NAME) ? "Juliano" : nomeGravado || padrao?.name || id;
+
+  const numeroInformado = value?.whatsapp_number;
+  const whatsapp_number = numeroInformado === undefined
+    ? padrao?.whatsapp_number ?? null
+    : typeof numeroInformado === "string" && onlyDigits(numeroInformado) ? onlyDigits(numeroInformado) : null;
+
+  return {
+    id,
+    name,
+    role_label: typeof value?.role_label === "string" && value.role_label.trim() ? value.role_label.trim() : padrao?.role_label ?? "Vendedor",
+    whatsapp_number,
+    whatsapp_display: typeof value?.whatsapp_display === "string" ? value.whatsapp_display.trim() : padrao?.whatsapp_display ?? "",
+    receives_leads: typeof value?.receives_leads === "boolean" ? value.receives_leads : true,
+    active: typeof value?.active === "boolean" ? value.active : true,
+    sort_order: typeof value?.sort_order === "number" && Number.isFinite(value.sort_order) ? value.sort_order : index,
+  };
+}
+
+/**
+ * Normaliza a lista inteira: mapeia ids antigos, remove duplicatas (o primeiro
+ * vence) e devolve os padrao quando nao sobra nada — o painel precisa de pelo
+ * menos um vendedor para confirmar pedidos.
+ */
+export function normalizeSellers(value: unknown): SellerRecord[] {
+  if (!Array.isArray(value)) return defaultSellers();
+  const vistos = new Set<string>();
+  const lista: SellerRecord[] = [];
+  value.forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+    const seller = normalizeSeller(item as Partial<SellerRecord>, index);
+    if (!seller.id || vistos.has(seller.id)) return;
+    vistos.add(seller.id);
+    lista.push(seller);
+  });
+  return lista.length ? lista : defaultSellers();
+}
+
+/**
+ * Aplica o id canonico do dono aos pedidos ja gravados, na LEITURA.
+ *
+ * A migration 202609210001 corrige as linhas de `sales_orders`, mas ela e
+ * colada a mao no SQL Editor (nao ha tabela de controle) e o fallback local em
+ * arquivo nunca a recebe. Sem este ajuste, entre o deploy e o SQL — e para
+ * sempre no modo local — o filtro por "Juliano" em /painel/pedidos devolveria
+ * zero pedidos e o relatorio por vendedor mostraria duas linhas para a mesma
+ * pessoa, porque a lista de atendentes ja e normalizada e os pedidos nao.
+ *
+ * O nome segue a mesma regra conservadora de `normalizeSeller`: nome
+ * customizado no painel e respeitado, so o rotulo antigo e trocado.
+ */
+export function canonicalizeOrderSellers(orders: readonly SalesOrderRecord[], sellers: readonly SellerRecord[]): SalesOrderRecord[] {
+  return orders.map((order) => {
+    const seller_id = canonicalSellerId(order.seller_id);
+    if (seller_id === order.seller_id) return order;
+    const atendente = sellers.find((seller) => seller.id === seller_id);
+    const trocarNome = !order.seller_name || order.seller_name === LEGACY_OWNER_SELLER_NAME;
+    return { ...order, seller_id, seller_name: trocarNome ? atendente?.name ?? order.seller_name : order.seller_name };
+  });
+}
+
+export function sortSellers(sellers: readonly SellerRecord[]): SellerRecord[] {
+  return [...sellers].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/** Ativos que aparecem para o cliente e entram na distribuicao, na ordem configurada. */
+export function attendantsFrom(sellers: readonly SellerRecord[]): SellerRecord[] {
+  return sortSellers(sellers.filter((seller) => seller.active && seller.receives_leads));
+}
+
+/** Id de atendente a partir do nome: "José Carlos" → "jose-carlos". */
+export function sellerIdFromName(name: string): string {
+  return normalize(name).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+}
+
+export function normalizeLeadDistributionMode(value: unknown): LeadDistributionMode {
+  return value === "round_robin" || value === "least_busy" ? value : "customer_choice";
+}

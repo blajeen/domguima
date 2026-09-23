@@ -25,9 +25,34 @@
  * para revalidar antes de gravar.
  */
 
-import type { OrderPaymentMethod } from "./types";
+import type { OrderChannel, OrderPaymentMethod, TrafficSource } from "./types";
 
 export type BulkChannel = "retirada" | "entrega" | "shopee" | "mercado_livre" | "magalu" | "outro";
+
+export const BULK_CHANNELS = ["retirada", "entrega", "shopee", "mercado_livre", "magalu", "outro"] as const satisfies readonly BulkChannel[];
+
+/**
+ * Cabecalho da mensagem do grupo → canal e origem do pedido.
+ *
+ * Marketplace e canal e origem ao mesmo tempo: a venda aconteceu na Shopee e o
+ * cliente chegou pela Shopee. RETIRADA e ENTREGA sao vendas combinadas no
+ * WhatsApp; como o cliente conheceu a loja a mensagem nao diz, entao a origem
+ * fica `""` (nao informada) em vez de um palpite. Bloco sem cabecalho vira
+ * "outro canal", tambem sem origem.
+ *
+ * A migration 202609210003 aplica a mesma tabela aos pedidos antigos, lendo o
+ * cabecalho que ficou nas notas.
+ */
+export function mapBulkChannel(channel: BulkChannel): { channel: OrderChannel; source: TrafficSource | "" } {
+  switch (channel) {
+    case "shopee": return { channel: "shopee", source: "shopee" };
+    case "mercado_livre": return { channel: "mercado_livre", source: "mercado_livre" };
+    case "magalu": return { channel: "magalu", source: "magalu" };
+    case "retirada":
+    case "entrega": return { channel: "whatsapp", source: "" };
+    default: return { channel: "other", source: "" };
+  }
+}
 
 export interface BulkParsedItem {
   /** Linha original, para o operador reconhecer o que veio da mensagem. */

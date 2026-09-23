@@ -8,7 +8,21 @@ import {
   type LedgerMovementDraft,
   type OrderDraft,
 } from "./catalog-store";
-import type { OrderCustomerSnapshot, OrderDeliveryMethod, OrderPaymentMethod, SalesOrderRecord } from "./types";
+import { attributionCampaign, orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
+import { mapBulkChannel, type BulkChannel } from "./bulk-orders";
+import { customerKey } from "./customers";
+import {
+  UNASSIGNED_ORDER_SELLER_ID,
+  UNASSIGNED_ORDER_SELLER_NAME,
+  type OrderAttribution,
+  type OrderChannel,
+  type OrderCustomerSnapshot,
+  type OrderDeliveryMethod,
+  type OrderPaymentMethod,
+  type SalesOrderRecord,
+  type SellerRecord,
+  type TrafficSource,
+} from "./types";
 import { commissionForUnit } from "./commission";
 
 export interface CreateOrderInput {
@@ -16,6 +30,22 @@ export interface CreateOrderInput {
   sellerId: string;
   customer: OrderCustomerSnapshot;
   notes: string;
+  /** Onde a venda foi fechada (WhatsApp, loja fisica, outro), escolhido no painel. */
+  channel: OrderChannel;
+  /** Como o cliente chegou (Instagram, indicacao...), escolhido no painel. */
+  source: TrafficSource;
+  /**
+   * Atendimento de onde a venda saiu ("Lançar pedido" na tela de Atendimento).
+   * Quem chama ja conferiu que ele existe e ainda nao tem pedido: o vinculo vai
+   * gravado no proprio pedido, na mesma transacao.
+   */
+  leadId?: string | null;
+  /**
+   * Campanha e site de origem que o navegador do cliente registrou, copiados do
+   * atendimento de origem. Sem atendimento fica vazio: o painel nao ve o link
+   * por onde o cliente chegou.
+   */
+  attribution?: OrderAttribution;
   items: Array<{
     productId: string;
     quantity: number;
@@ -32,6 +62,12 @@ export interface CreatePendingOrderInput {
   notes: string;
   paymentMethod: OrderPaymentMethod;
   deliveryMethod: OrderDeliveryMethod;
+  /** Origem registrada no navegador do cliente (ja saneada pela rota). */
+  attribution: OrderAttribution;
+  /** `classifyTrafficSource(attribution)`. */
+  source: TrafficSource;
+  /** Cookie `domguima_visitante`, quando o navegador ja tem um. */
+  visitorId: string | null;
   items: Array<{
     productId: string;
     quantity: number;
@@ -137,6 +173,15 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     created_at: now,
     cancelled_at: null,
     cancelled_by: null,
+    channel: input.channel,
+    source: input.source,
+    // Pedido lancado no painel nao passa pelo navegador do cliente: UTM e site
+    // de origem so existem quando vem do atendimento que os registrou (e e
+    // assim que a venda entra na linha da campanha no relatorio de trafego).
+    attribution: input.attribution ?? {},
+    lead_id: input.leadId?.trim() || null,
+    customer_key: customerKey(input.customer),
+    visitor_id: null,
   };
 
   // `{{number}}` porque o numero do pedido so nasce dentro da transacao.
@@ -161,7 +206,7 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     entity_type: "order",
     entity_id: draft.id,
     before_data: null,
-    after_data: { seller: seller.name, customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents },
+    after_data: { seller: seller.name, customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, commissionCents: draft.commission_total_cents, canal: orderChannelLabel(input.channel), origem: trafficSourceLabel(input.source) },
   };
 
   const { order } = await gravarPedido(() => createOrderRecord(draft, movements, audit), prepared.map((item) => item.product));
@@ -210,8 +255,11 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     id: randomUUID(),
     request_id: input.requestId,
     status: "pending",
-    seller_id: "pending",
-    seller_name: "Aguardando definicao",
+    // Nasce na fila livre. Quando a loja distribui sozinha (rodizio ou menos
+    // ocupado), o atendimento criado junto com o pedido define o atendente logo
+    // em seguida — ver registerSiteOrderLead em lead-orders.ts.
+    seller_id: UNASSIGNED_ORDER_SELLER_ID,
+    seller_name: UNASSIGNED_ORDER_SELLER_NAME,
     payment_method: input.paymentMethod,
     delivery_method: input.deliveryMethod,
     customer: input.customer,
@@ -239,15 +287,31 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     created_at: now,
     cancelled_at: null,
     cancelled_by: null,
+    channel: "site",
+    source: input.source,
+    attribution: input.attribution,
+    // O atendimento do pedido nasce depois da resposta ao cliente; o vinculo e
+    // gravado ali (registerSiteOrderLead → linkOrderToLead).
+    lead_id: null,
+    customer_key: customerKey(input.customer),
+    visitor_id: input.visitorId,
   };
 
+  const campanha = attributionCampaign(input.attribution);
   const audit: LedgerAuditDraft = {
     actor_id: "public-site",
     action: "order.received",
     entity_type: "order",
     entity_id: draft.id,
     before_data: null,
-    after_data: { customer: input.customer.name, units: draft.total_units, totalCents: draft.total_cents, source: "site" },
+    after_data: {
+      customer: input.customer.name,
+      units: draft.total_units,
+      totalCents: draft.total_cents,
+      canal: orderChannelLabel("site"),
+      origem: trafficSourceLabel(input.source),
+      ...(campanha ? { campanha } : {}),
+    },
   };
 
   // Sem movimentos: a solicitacao ainda nao reserva estoque.
@@ -310,6 +374,44 @@ export async function confirmPendingSalesOrder(state: CatalogState, orderId: str
     throw new OrderOperationError("Este pedido ja foi cancelado.");
   }
   return resultado.order!;
+}
+
+/**
+ * Define (ou troca) quem cuida de um pedido do site que ainda aguarda
+ * confirmacao, sem confirmar nada: o estoque so baixa na confirmacao.
+ *
+ * `seller = null` devolve o pedido a fila livre. Quem chama ja validou o
+ * atendente (ativo, id canonico) e leu o pedido — a rota de pedidos, por
+ * exemplo, tem o pedido recem-criado em maos e nao o encontraria no estado lido
+ * antes de cria-lo.
+ *
+ * `expectedStatus: "pending"` e a mesma trava da confirmacao: se outra sessao
+ * confirmou ou cancelou no intervalo, nada e gravado e o erro diz por que.
+ */
+export async function assignPendingSalesOrder(order: SalesOrderRecord, seller: SellerRecord | null, actorId: string): Promise<{ order: SalesOrderRecord; changed: boolean }> {
+  if (order.status === "completed") throw new OrderOperationError("Este pedido já foi confirmado: o vendedor ficou definido na confirmação.");
+  if (order.status === "cancelled") throw new OrderOperationError("Este pedido já foi cancelado.");
+
+  const destino = seller
+    ? { seller_id: seller.id, seller_name: seller.name }
+    : { seller_id: UNASSIGNED_ORDER_SELLER_ID, seller_name: UNASSIGNED_ORDER_SELLER_NAME };
+  if (order.seller_id === destino.seller_id) return { order, changed: false };
+
+  const audit: LedgerAuditDraft = {
+    actor_id: actorId,
+    action: "order.assigned",
+    entity_type: "order",
+    entity_id: order.id,
+    before_data: { seller: order.seller_id === UNASSIGNED_ORDER_SELLER_ID ? "Fila livre" : order.seller_name },
+    after_data: { seller: seller?.name ?? "Fila livre" },
+  };
+
+  const resultado = await updateOrderRecord(order.id, "pending", destino, [], audit);
+  if (!resultado.found) throw new OrderOperationError("Pedido não encontrado.");
+  if (!resultado.applied || !resultado.order) {
+    throw new OrderOperationError("O pedido mudou de situação em outra sessão. Atualize a página e tente novamente.");
+  }
+  return { order: resultado.order, changed: true };
 }
 
 export async function cancelSalesOrder(state: CatalogState, orderId: string, actorId: string): Promise<SalesOrderRecord> {
@@ -420,6 +522,8 @@ function traduzir(error: unknown, produtos: Array<{ id: string; name: string }>)
 export interface ChannelOrderInput {
   requestId: string;
   sellerId: string;
+  /** Canal reconhecido no cabecalho. Vira `channel`/`source` do pedido (ver mapBulkChannel). */
+  channel: BulkChannel;
   /** Cabecalho da mensagem: "SHOPEE 04-09", "RETIRADA". Vai para as notas. */
   channelLabel: string;
   customerName: string;
@@ -429,6 +533,12 @@ export interface ChannelOrderInput {
   paymentMethod: OrderPaymentMethod;
   /** Endereco, recado e observacoes que vieram na mensagem e nao sao produto. */
   notes: string[];
+  /**
+   * Atendimento que originou a venda, quando se sabe. A mensagem do grupo nao
+   * traz esse dado — o importador nao manda —, mas o campo existe para o pedido
+   * de canal ter o mesmo vinculo dos outros caminhos.
+   */
+  leadId?: string | null;
   items: Array<{ productId: string; quantity: number; unitPriceCents: number; variantId?: string | null }>;
 }
 
@@ -512,6 +622,12 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     created_at: input.createdAt,
     cancelled_at: null,
     cancelled_by: null,
+    ...mapBulkChannel(input.channel),
+    attribution: {},
+    lead_id: input.leadId?.trim() || null,
+    // Sem telefone nem CPF na mensagem: a chave fica nula, nunca um palpite.
+    customer_key: null,
+    visitor_id: null,
   };
 
   const movements: LedgerMovementDraft[] = prepared.map((item) => {

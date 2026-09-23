@@ -1,11 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createOrderAction } from "@/app/painel/actions";
+import { createOrderAction, customerPurchasesAction } from "@/app/painel/actions";
 import { commissionForUnit } from "@/lib/admin/commission";
+import { customerIdentities } from "@/lib/admin/customers";
 import { InstallmentSimulator } from "./InstallmentSimulator";
-import type { ActionState, SellerRecord } from "@/lib/admin/types";
+import {
+  ORDER_CHANNEL_LABELS,
+  PANEL_ORDER_CHANNELS,
+  PANEL_TRAFFIC_SOURCES,
+  TRAFFIC_SOURCE_LABELS,
+  type ActionState,
+  type CustomerPurchaseLookup,
+  type SellerRecord,
+  type TrafficSource,
+} from "@/lib/admin/types";
 import { formatPrice, normalize } from "@/lib/utils/format";
 import { formatDocument, formatPhone, onlyDigits } from "@/lib/utils/validators";
 
@@ -65,11 +75,46 @@ const emptyCustomer = { name: "", cpf: "", phone: "", cep: "", street: "", numbe
 const fieldClass = "mt-1.5 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-gold-500 focus:ring-2 focus:ring-gold-100";
 const labelClass = "block text-xs font-bold text-ink-600";
 
-export function OrderComposer({ products, sellers }: { products: OrderProductOption[]; sellers: SellerRecord[] }) {
+/** Atendimento de onde o pedido está sendo lançado ("Lançar pedido" na tela de Atendimento). */
+export interface OrderComposerLead {
+  id: string;
+  /** "Dúvida de produto", "Lançado no painel"... */
+  kindLabel: string;
+  customerName: string;
+  /** Digitos sem o 55. */
+  customerPhone: string;
+  sellerId: string | null;
+  channel: (typeof PANEL_ORDER_CHANNELS)[number];
+  /** Pode ser uma origem fora das do painel (Shopee...): o select a mostra como opção extra. */
+  source: TrafficSource;
+}
+
+interface OrderComposerProps {
+  products: OrderProductOption[];
+  sellers: SellerRecord[];
+  lead?: OrderComposerLead | null;
+  /** Lista de Atendimento para onde voltar depois de lançar o pedido do atendimento. */
+  returnTo?: string;
+}
+
+/** Espera o operador parar de digitar antes de perguntar ao servidor. */
+const ESPERA_DA_CONSULTA_MS = 400;
+
+export function OrderComposer({ products, sellers, lead = null, returnTo }: OrderComposerProps) {
   const router = useRouter();
-  const [sellerId, setSellerId] = useState(sellers.find((seller) => seller.active)?.id ?? "");
-  const [customer, setCustomer] = useState(emptyCustomer);
+  const ativos = sellers.filter((seller) => seller.active);
+  // Com atendimento de origem, o vendedor sugerido é quem já atende o cliente.
+  const [sellerId, setSellerId] = useState((lead?.sellerId && ativos.some((seller) => seller.id === lead.sellerId) ? lead.sellerId : null) ?? ativos[0]?.id ?? "");
+  const [customer, setCustomer] = useState(lead ? { ...emptyCustomer, name: lead.customerName, phone: formatPhone(lead.customerPhone) } : emptyCustomer);
   const [notes, setNotes] = useState("");
+  // WhatsApp + Direto: o caminho mais comum de uma venda lançada à mão. O
+  // operador troca quando foi na loja física ou veio pelo Instagram. Vindo de
+  // um atendimento, valem o canal e a origem dele.
+  const [channel, setChannel] = useState<(typeof PANEL_ORDER_CHANNELS)[number]>(lead?.channel ?? "whatsapp");
+  const [source, setSource] = useState<TrafficSource>(lead?.source ?? "direct");
+  const origens: readonly TrafficSource[] = lead && !PANEL_TRAFFIC_SOURCES.some((valor) => valor === lead.source)
+    ? [...PANEL_TRAFFIC_SOURCES, lead.source]
+    : PANEL_TRAFFIC_SOURCES;
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [feedback, setFeedback] = useState<ActionState>({});
@@ -77,6 +122,35 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
   const [isPending, startTransition] = useTransition();
 
   const vendaveis = useMemo(() => expandirVendaveis(products), [products]);
+
+  // Cliente que volta: o operador fica sabendo enquanto digita, antes de
+  // finalizar. Telefone e CPF são conferidos separados — cada um pode já ser
+  // conhecido — e as contas só olham compras finalizadas. A pergunta vai ao
+  // servidor só com o telefone e o CPF deste cliente, quando estão completos:
+  // a página não recebe os telefones e CPFs de todo mundo que já comprou.
+  const telefone = customerIdentities({ phone: customer.phone })[0] ?? "";
+  const documento = customerIdentities({ cpf: customer.cpf })[0] ?? "";
+  const consulta = telefone || documento ? `${telefone}|${documento}` : "";
+  const [historico, setHistorico] = useState<{ consulta: string; resultado: CustomerPurchaseLookup } | null>(null);
+  useEffect(() => {
+    if (!consulta) return;
+    let descartada = false;
+    const espera = setTimeout(() => {
+      customerPurchasesAction({ phone: telefone, cpf: documento })
+        .then((resultado) => {
+          if (!descartada) setHistorico({ consulta, resultado });
+        })
+        // Best-effort: sem resposta, o aviso só não aparece.
+        .catch(() => undefined);
+    }, ESPERA_DA_CONSULTA_MS);
+    return () => {
+      descartada = true;
+      clearTimeout(espera);
+    };
+  }, [consulta, telefone, documento]);
+  // Resposta de uma digitação anterior não vale para o que está no formulário agora.
+  const recorrencia = historico && historico.consulta === consulta ? historico.resultado : null;
+  const avisoDeRecorrencia = recorrencia ? textoDeRecorrencia(recorrencia.phonePurchases, recorrencia.documentPurchases) : "";
 
   const matches = useMemo(() => {
     const term = normalize(query);
@@ -136,15 +210,27 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
         sellerId,
         customer: { ...customer, cpf: onlyDigits(customer.cpf), phone: onlyDigits(customer.phone), cep: onlyDigits(customer.cep) },
         notes,
+        channel,
+        source,
+        leadId: lead?.id ?? null,
         items: lines.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, expectedStock: line.stock, unitPriceCents: line.unitPriceCents })),
       });
       setFeedback(result);
-      if (result.ok && result.orderId) router.push(`/painel/pedidos?criado=${encodeURIComponent(result.orderId)}`);
+      if (!result.ok || !result.orderId) return;
+      // Vindo de um atendimento, a volta é para a mesma lista de Atendimento,
+      // onde o operador vê o atendimento já como Ganho e o pedido vinculado.
+      // O pedido saiu, mas o vínculo pode ter falhado: essa frase vai na faixa
+      // vermelha (`erro`), não junto do sucesso.
+      if (lead && returnTo) {
+        const aviso = result.warning ? `&erro=${encodeURIComponent(result.warning)}` : "";
+        router.push(`${returnTo}${returnTo.includes("?") ? "&" : "?"}feito=${encodeURIComponent(result.message ?? "")}${aviso}`);
+      } else router.push(`/painel/pedidos?criado=${encodeURIComponent(result.orderId)}`);
     });
   }
 
   return <form onSubmit={submitOrder} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
     <div className="space-y-6">
+      {lead && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-800"><strong>Pedido do atendimento de {lead.customerName || "cliente sem nome"}</strong> ({lead.kindLabel}). Ao finalizar, o atendimento fica vinculado a este pedido e passa para Ganho.</div>}
       <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black">Cliente e entrega</h2><p className="mt-1 text-xs text-ink-500">Os dados ficam registrados como estavam no momento da venda.</p></div><span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700">CEP com preenchimento automático</span></div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -159,6 +245,8 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
           <label className={labelClass}>Cidade<input required value={customer.city} onChange={(event) => updateCustomer("city", event.target.value)} className={fieldClass} /></label>
           <label className={labelClass}>Estado<input required maxLength={2} value={customer.state} onChange={(event) => updateCustomer("state", event.target.value.toUpperCase())} className={fieldClass} /></label>
         </div>
+        {/* Aba nova para o histórico: sair desta tela perderia o pedido em montagem. */}
+        {avisoDeRecorrencia && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><strong>Cliente recorrente.</strong> {avisoDeRecorrencia} {recorrencia?.reference && <a href={`/painel/clientes?cliente=${encodeURIComponent(recorrencia.reference)}`} target="_blank" rel="noopener noreferrer" className="font-bold underline">Ver histórico</a>}</p>}
       </section>
 
       <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
@@ -169,11 +257,28 @@ export function OrderComposer({ products, sellers }: { products: OrderProductOpt
     </div>
 
     <aside className="h-fit space-y-5 xl:sticky xl:top-8">
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-lg font-black">Fechamento</h2><label className={`${labelClass} mt-4`}>Vendedor<select required value={sellerId} onChange={(event) => setSellerId(event.target.value)} className={fieldClass}><option value="">Selecione</option>{sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label><div className="mt-5"><p className="text-xs font-bold text-ink-500">Desconto rápido</p><div className="mt-2 grid grid-cols-4 gap-2">{[0, 5, 10, 15].map((percent) => <button key={percent} type="button" onClick={() => applyDiscount(percent)} className="rounded-lg border border-ink-200 py-2 text-xs font-black hover:border-gold-400 hover:bg-gold-50">{percent}%</button>)}</div></div><label className={`${labelClass} mt-5`}>Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClass} placeholder="Pagamento, entrega ou condição combinada" /></label><dl className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm"><Summary label="Produtos" value={`${units} unidade(s)`} /><Summary label="Valor de tabela" value={formatPrice(gross)} /><Summary label="Desconto" value={`− ${formatPrice(discount)}`} muted={!discount} /><div className="flex items-end justify-between border-t border-ink-100 pt-3"><dt className="font-bold">Total do pedido</dt><dd className="text-2xl font-black">{formatPrice(total)}</dd></div></dl><div className="mt-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><strong>Comissão calculada: {formatPrice(commission)}</strong><p className="mt-1 leading-relaxed">A comissão usa o preço final de cada unidade e fica congelada no pedido.</p></div>{feedback.message && <p role="alert" className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{feedback.message}</p>}<button type="submit" disabled={isPending || !lines.length} className="mt-5 w-full rounded-xl bg-ink-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? "Finalizando pedido..." : "Finalizar pedido e baixar estoque"}</button><p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">A baixa acontece somente após a confirmação deste botão.</p></section>
+      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-lg font-black">Fechamento</h2><label className={`${labelClass} mt-4`}>Vendedor<select required value={sellerId} onChange={(event) => setSellerId(event.target.value)} className={fieldClass}><option value="">Selecione</option>{ativos.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label><div className="mt-4 grid grid-cols-2 gap-3"><label className={labelClass}>Canal<select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)} className={fieldClass}>{PANEL_ORDER_CHANNELS.map((valor) => <option key={valor} value={valor}>{ORDER_CHANNEL_LABELS[valor]}</option>)}</select></label><label className={labelClass}>Origem<select value={source} onChange={(event) => setSource(event.target.value as typeof source)} className={fieldClass}>{origens.map((valor) => <option key={valor} value={valor}>{TRAFFIC_SOURCE_LABELS[valor]}</option>)}</select></label><p className="col-span-2 text-[11px] leading-relaxed text-ink-400">Canal: onde a venda foi fechada. Origem: como o cliente conheceu a loja. Os dois alimentam o relatório de tráfego.</p></div><div className="mt-5"><p className="text-xs font-bold text-ink-500">Desconto rápido</p><div className="mt-2 grid grid-cols-4 gap-2">{[0, 5, 10, 15].map((percent) => <button key={percent} type="button" onClick={() => applyDiscount(percent)} className="rounded-lg border border-ink-200 py-2 text-xs font-black hover:border-gold-400 hover:bg-gold-50">{percent}%</button>)}</div></div><label className={`${labelClass} mt-5`}>Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClass} placeholder="Pagamento, entrega ou condição combinada" /></label><dl className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm"><Summary label="Produtos" value={`${units} unidade(s)`} /><Summary label="Valor de tabela" value={formatPrice(gross)} /><Summary label="Desconto" value={`− ${formatPrice(discount)}`} muted={!discount} /><div className="flex items-end justify-between border-t border-ink-100 pt-3"><dt className="font-bold">Total do pedido</dt><dd className="text-2xl font-black">{formatPrice(total)}</dd></div></dl><div className="mt-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><strong>Comissão calculada: {formatPrice(commission)}</strong><p className="mt-1 leading-relaxed">A comissão usa o preço final de cada unidade e fica congelada no pedido.</p></div>{feedback.message && <p role="alert" className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{feedback.message}</p>}<button type="submit" disabled={isPending || !lines.length} className="mt-5 w-full rounded-xl bg-ink-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? "Finalizando pedido..." : "Finalizar pedido e baixar estoque"}</button><p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">A baixa acontece somente após a confirmação deste botão.</p></section>
       {total > 0 && <InstallmentSimulator cents={total} titulo="Parcelamento deste pedido" />}
       <CommissionTable />
     </aside>
   </form>;
+}
+
+/**
+ * "Este telefone/CPF já comprou N vezes na loja." — ou vazio quando nenhum dos
+ * dois é conhecido. Se os dois apontam para compras diferentes (clientes
+ * diferentes com o mesmo telefone, por exemplo), diz cada um.
+ */
+function textoDeRecorrencia(porTelefone: number, porDocumento: number): string {
+  const vezes = (total: number) => `${total} ${total === 1 ? "vez" : "vezes"}`;
+  if (porTelefone && porTelefone === porDocumento) return `Este telefone/CPF já comprou ${vezes(porTelefone)} na loja.`;
+  const partes = [
+    porTelefone ? `este telefone já comprou ${vezes(porTelefone)}` : "",
+    porDocumento ? `este CPF já comprou ${vezes(porDocumento)}` : "",
+  ].filter(Boolean);
+  if (!partes.length) return "";
+  const frase = partes.join(" e ");
+  return `${frase.charAt(0).toUpperCase()}${frase.slice(1)} na loja.`;
 }
 
 function Summary({ label, value, muted }: { label: string; value: string; muted?: boolean }) { return <div className="flex justify-between gap-3"><dt className="text-ink-500">{label}</dt><dd className={`font-bold ${muted ? "text-ink-300" : ""}`}>{value}</dd></div>; }

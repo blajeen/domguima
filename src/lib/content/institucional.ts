@@ -220,12 +220,15 @@ export const institutionalPages: InstitutionalPage[] = [
           "Dados de contato: telefone, WhatsApp e e-mail",
           "Endereço de entrega: CEP, rua, número, complemento, bairro, cidade e estado",
           "Dados do pedido: produtos, quantidades e valores",
+          "Registro de contato: a página de onde você nos chamou e a mensagem que o site preencheu na conversa do WhatsApp",
+          "Origem da visita: por qual link ou site você chegou até a loja (por exemplo, uma publicação do Instagram ou uma busca no Google) e a primeira página que abriu",
         ],
       },
       {
         heading: "Para que usamos",
         paragraphs: [
-          "Usamos os seus dados exclusivamente para processar e entregar o seu pedido, calcular o frete, emitir a nota fiscal, prestar atendimento e cumprir obrigações legais.",
+          "Usamos os seus dados para processar e entregar o seu pedido, calcular o frete, emitir a nota fiscal, prestar atendimento, reconhecer quem já é cliente da loja e cumprir obrigações legais.",
+          "Para reconhecer quem volta, reunimos os pedidos feitos com o mesmo telefone ou CPF num histórico de compras: assim quem atende sabe que você já comprou com a gente, e a loja pode chamar você pelo WhatsApp algumas semanas depois de uma compra para saber se ficou tudo certo. Esse contato é feito por uma pessoa da loja, uma conversa de cada vez, nunca por envio automático. Se preferir não receber esse contato, é só nos avisar pelo próprio WhatsApp: a loja registra a sua recusa junto ao seu telefone e CPF e deixa de fazer esse contato.",
           "Não vendemos, alugamos nem cedemos os seus dados para terceiros com finalidade comercial.",
         ],
       },
@@ -238,7 +241,16 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Armazenamento do carrinho",
         paragraphs: [
-          "Os itens do seu carrinho ficam salvos no armazenamento local do seu próprio navegador, para que você não perca a seleção ao fechar a página. Esses dados não saem do seu dispositivo até você finalizar um pedido, e podem ser apagados a qualquer momento limpando os dados do site no navegador.",
+          "Os itens do seu carrinho ficam salvos no armazenamento local do seu próprio navegador, para que você não perca a seleção ao fechar a página. Eles só são enviados para a loja quando você finaliza um pedido ou pede para falar com um vendedor no WhatsApp, e podem ser apagados a qualquer momento limpando os dados do site no navegador.",
+        ],
+      },
+      {
+        heading: "Cookies e registro de contato",
+        paragraphs: [
+          "Quando você clica em um botão de WhatsApp, registramos o contato para que a loja saiba que a conversa existiu e com qual vendedor: guardamos a página de onde você saiu, a mensagem que o site preencheu e o nome, quando você mesmo o informa no pedido rápido. Nada disso gera cobrança nem envio automático de mensagens.",
+          "Para isso gravamos no seu navegador o cookie domguima_visitante: um identificador aleatório, sem nome e sem telefone, que dura 1 ano e serve para não registrar o mesmo contato duas vezes, para dividir o atendimento entre os vendedores e para ligar um pedido feito pelo site às conversas abertas no mesmo navegador. Ele é nosso, não é compartilhado com terceiros e é apagado ao limpar os dados do site no navegador.",
+          "Também gravamos o cookie domguima_origem, com uma cópia no armazenamento local do navegador: ele guarda por onde você chegou à loja — o nome da campanha e do canal que vieram no link (os parâmetros utm), o endereço do site que trouxe você (só o domínio, sem o que você pesquisou), a primeira página que abriu, a data da visita e, se o link era de anúncio, apenas essa informação. Dura 90 dias e serve para a loja saber quais divulgações trazem atendimentos e pedidos; quando você chama no WhatsApp ou finaliza um pedido, essa origem é registrada junto com o contato. Se você chegou por um link de campanha, o nome dela aparece no fim da mensagem que o site preenche no WhatsApp, e você pode apagá-lo antes de enviar. Não usamos Google Analytics, Pixel do Facebook nem nenhuma outra ferramenta de terceiros, e nada disso é enviado a ferramentas de análise ou de publicidade. Para apagar, limpe os dados do site no navegador.",
+          "O pedido feito pelo site também abre um registro de atendimento, com o nome, o telefone, os itens e a observação do pedido, para a loja saber quem está cuidando dele. Se você pedir a eliminação dos seus dados, esse registro é apagado junto com o pedido.",
         ],
       },
       {

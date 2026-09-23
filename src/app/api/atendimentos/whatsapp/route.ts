@@ -1,0 +1,356 @@
+import { randomUUID } from "node:crypto";
+import { after, NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { readAttendantsState } from "@/lib/admin/catalog-store";
+import { defaultStoreSettings } from "@/lib/admin/defaults";
+import { contactableAttendants, distributionCandidates, eligibleAttendants, resolveAttendantNumber } from "@/lib/admin/distribution";
+import { assignOrderLeadFromSite } from "@/lib/admin/lead-orders";
+import { createLead, findLeadByOrder } from "@/lib/admin/leads";
+import { canonicalSellerId, defaultSellers, normalizeLeadDistributionMode } from "@/lib/admin/sellers";
+import type { LeadDistributionMode, LeadRecord, OrderAttribution, SellerRecord, StoreSettings, TrafficSource } from "@/lib/admin/types";
+import {
+  classifyTrafficSource,
+  internalPagePath,
+  latestCampaign,
+  ORIGEM_COOKIE,
+  parseOrigemCookie,
+  VISITANTE_COOKIE,
+  VISITANTE_MAX_AGE,
+} from "@/lib/services/origem";
+import { genericMessage, whatsappLink, withCampaignRef } from "@/lib/services/whatsapp";
+
+/**
+ * ABRIR O WHATSAPP REGISTRANDO O ATENDIMENTO
+ * ==========================================
+ *
+ * Todos os botoes de WhatsApp do site passam por aqui em vez de apontarem
+ * direto para o wa.me. A rota decide quem atende (escolha do cliente, rodizio
+ * ou menos ocupado), grava o atendimento e so entao redireciona.
+ *
+ * REGRA INEGOCIAVEL: o cliente sempre chega ao WhatsApp. Catalogo fora do ar,
+ * tabela de atendimentos ainda nao criada, parametro adulterado, limite de
+ * requisicoes — nada disso pode devolver erro. Cada falha derruba o CRM
+ * daquele clique e mantem o redirect.
+ *
+ * O destino e SEMPRE um link wa.me montado por `whatsappLink` a partir de
+ * digitos vindos do cadastro de atendentes: nenhum parametro da URL vira
+ * destino, senao a rota seria um redirecionador aberto.
+ *
+ * A escolha do atendente decide o numero do redirect, entao ela acontece ANTES
+ * da resposta. So vai para o `after()` a gravacao que nao muda o destino
+ * (entregar o atendimento de um pedido a quem o cliente escolheu).
+ *
+ * Conversa sobre um pedido do checkout (parametro `pedido`, vindo da tela
+ * "Solicitação recebida"): o pedido ja nasceu com um atendimento, e e ELE o
+ * registro da conversa. Sem isso, no rodizio o cliente caia sempre na OUTRA
+ * pessoa — quem acabou de receber o pedido e a ultima da fila do sorteio — e
+ * nascia um segundo atendimento para o mesmo cliente.
+ *
+ * GET e POST fazem a mesma coisa e mudam so de onde vem os campos: os links do
+ * site usam o GET; o pedido rapido usa o POST, para o nome e o bairro do
+ * cliente nao viajarem na URL.
+ *
+ * Origem (controle de trafego): o cookie `domguima_origem`, escrito pela
+ * captura do site (CapturaOrigem), viaja nesta navegacao. Dele saem a origem
+ * classificada do atendimento (Instagram, Google, campanha) e o "(ref. ...)"
+ * que o atendente ve no fim da mensagem quando o cliente veio de campanha.
+ */
+
+const atendimentoInput = z.object({
+  /** Id do atendente escolhido no dialogo, ou "auto" quando o painel distribui. */
+  atendente: z.string().trim().max(60),
+  tipo: z.enum(["whatsapp_generic", "whatsapp_product", "whatsapp_cart", "quick_checkout"]),
+  produto: z.string().trim().max(200),
+  texto: z.string().max(4_000),
+  pagina: z.string().trim().max(300),
+  cliente: z.string().trim().max(140),
+  /** Id do pedido do checkout de onde a conversa parte. So serve para achar o atendimento dele. */
+  pedido: z.string().trim().max(80),
+});
+
+type AtendimentoParams = z.infer<typeof atendimentoInput>;
+
+const requestLog = new Map<string, { count: number; resetAt: number }>();
+const WINDOW_MS = 10 * 60 * 1_000;
+const MAX_REQUESTS = 40;
+
+export async function GET(request: NextRequest) {
+  const busca = request.nextUrl.searchParams;
+  return abrirWhatsapp(request, lerParametros((chave) => busca.get(chave)), 302);
+}
+
+/**
+ * A MESMA rota, com os campos no corpo em vez da query string.
+ *
+ * Quem usa e o pedido rapido (/checkout/rapido): ali o texto carrega nome,
+ * bairro e observacao do cliente, e numa URL de GET isso ficaria nos logs de
+ * acesso do servidor, no historico do navegador e na barra de endereco da aba
+ * nova. No corpo do POST o dado so existe onde a loja realmente precisa dele.
+ *
+ * O formulario e enviado pelo proprio navegador com `target="_blank"`, entao o
+ * 303 abre o WhatsApp na aba nova exatamente como o GET faz. 303 (e nao 302)
+ * porque e o status que manda o navegador trocar o POST por um GET no destino.
+ */
+export async function POST(request: NextRequest) {
+  const corpo = await lerCorpo(request);
+  const busca = request.nextUrl.searchParams;
+  return abrirWhatsapp(request, lerParametros((chave) => corpo.get(chave) ?? busca.get(chave)), 303);
+}
+
+async function abrirWhatsapp(request: NextRequest, entrada: AtendimentoParams, status: 302 | 303) {
+  // O limite e o referer governam o REGISTRO, nunca o redirect: um robo que
+  // varre links nao deve encher a fila de atendimentos, e um cliente que
+  // estourou o limite nao pode ficar sem falar com a loja.
+  const registrar = daPropriaLoja(request) && !isRateLimited(request);
+
+  // A lista padrao e a mesma de config/site (e a que o dialogo mostra quando o
+  // catalogo cai): com ela, "gabriel" continua resolvendo o numero do Gabriel
+  // mesmo com o cadastro fora do ar. Zerar a lista aqui mandaria para o numero
+  // principal da loja justamente o cliente que escolheu outra pessoa na tela.
+  let sellers: SellerRecord[] = defaultSellers();
+  let settings: StoreSettings = defaultStoreSettings;
+  try {
+    const cadastro = await readAttendantsState();
+    sellers = cadastro.sellers;
+    settings = cadastro.settings;
+  } catch (error) {
+    console.warn("Cadastro de atendentes indisponivel ao abrir o WhatsApp; usando a lista padrao do site.", error);
+  }
+
+  const modo = normalizeLeadDistributionMode(settings.leadDistributionMode);
+  const elegiveis = eligibleAttendants(sellers, settings);
+  // A lista que o dialogo mostrou e a unica que pode resolver quem o cliente
+  // escolheu. Quem marcou "recebe atendimentos" (elegiveis) continua sendo o
+  // que vai ao sorteio automatico.
+  const contactaveis = contactableAttendants(sellers, settings);
+  const escolhidoPeloCliente = acharAtendente(contactaveis, entrada.atendente);
+  // So deixamos a RPC escolher quando ha de fato o que sortear. Fora disso o
+  // atendente e resolvido aqui, para o atendimento gravado apontar exatamente
+  // para o WhatsApp que abriu na tela do cliente.
+  const automatico = !escolhidoPeloCliente && (modo === "round_robin" || modo === "least_busy") && elegiveis.length > 0;
+  const preDefinido = escolhidoPeloCliente ?? (automatico ? null : contactaveis[0] ?? null);
+
+  const visitante = request.cookies.get(VISITANTE_COOKIE)?.value ?? "";
+  const novoVisitante = visitante || randomUUID();
+
+  const attribution = parseOrigemCookie(request.cookies.get(ORIGEM_COOKIE)?.value);
+  // A mensagem que abre na conversa e a mesma que fica gravada no atendimento.
+  const texto = withCampaignRef(entrada.texto || genericMessage, latestCampaign(attribution));
+
+  // Conversa sobre um pedido do checkout (ver o cabecalho). A consulta nao
+  // depende de `registrar`: ela decide para quem o cliente vai, nao grava nada.
+  const doPedido = entrada.pedido ? await atendimentoDoPedido(entrada.pedido) : null;
+  // Pedido que ja tem dono (rodizio, menos ocupado ou alguem que puxou no
+  // painel): o cliente fala com essa pessoa, e nada novo e registrado.
+  const responsavel = doPedido?.seller_id
+    ? sellers.find((seller) => seller.id === doPedido.seller_id && seller.active) ?? null
+    : null;
+  // Pedido ainda na fila livre: quem o cliente escolheu (ou o unico destino
+  // possivel) assume o atendimento do pedido — e o pedido — em vez de nascer
+  // um segundo atendimento. Sem destino definido (rodizio com o pedido
+  // devolvido a fila), segue o fluxo normal.
+  const assumirPedido = doPedido && !doPedido.seller_id && preDefinido ? doPedido : null;
+  if (registrar && assumirPedido && preDefinido) {
+    after(() => assignOrderLeadFromSite(assumirPedido, preDefinido, escolhidoPeloCliente ? "customer" : "site"));
+  }
+
+  const atribuido = registrar && !responsavel && !assumirPedido
+    ? await registrarAtendimento({
+        entrada,
+        escolhidoPeloCliente,
+        preDefinido,
+        automatico,
+        modo,
+        elegiveis,
+        visitante: novoVisitante,
+        texto,
+        attribution,
+        source: classifyTrafficSource(attribution),
+        sellers,
+      })
+    : null;
+
+  const atendente = responsavel ?? preDefinido ?? atribuido ?? elegiveis[0] ?? null;
+  const numero = resolveAttendantNumber({ whatsapp_number: atendente?.whatsapp_number ?? null }, settings);
+  const destino = whatsappLink(texto, numero);
+
+  const response = NextResponse.redirect(destino, status);
+  if (!visitante) {
+    response.cookies.set(VISITANTE_COOKIE, novoVisitante, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: VISITANTE_MAX_AGE,
+    });
+  }
+  return response;
+}
+
+interface RegistroInput {
+  entrada: AtendimentoParams;
+  escolhidoPeloCliente: SellerRecord | null;
+  preDefinido: SellerRecord | null;
+  automatico: boolean;
+  modo: LeadDistributionMode;
+  elegiveis: SellerRecord[];
+  visitante: string;
+  /** Mensagem final da conversa, ja com a referencia da campanha. */
+  texto: string;
+  attribution: OrderAttribution;
+  source: TrafficSource;
+  sellers: SellerRecord[];
+}
+
+/** Grava o atendimento e devolve quem a distribuicao automatica escolheu (ou null). */
+async function registrarAtendimento(input: RegistroInput): Promise<SellerRecord | null> {
+  const { entrada, escolhidoPeloCliente, preDefinido, automatico, modo, elegiveis, visitante, texto, attribution, source, sellers } = input;
+  try {
+    const { lead } = await createLead(
+      {
+        kind: entrada.tipo,
+        sellerId: preDefinido?.id ?? null,
+        // "customer" quando o proprio cliente apontou no dialogo; "site" quando
+        // o botao era unico e a loja so tinha um destino possivel.
+        assignedBy: preDefinido ? (escolhidoPeloCliente ? "customer" : "site") : null,
+        customerName: entrada.cliente,
+        productId: entrada.produto || null,
+        message: texto,
+        pagePath: entrada.pagina,
+        source,
+        attribution,
+        visitorId: visitante,
+        createdBy: "public-site",
+      },
+      {
+        candidates: automatico ? distributionCandidates(elegiveis) : [],
+        mode: automatico ? modo : "customer_choice",
+      },
+    );
+    if (!lead?.seller_id) return null;
+    return sellers.find((seller) => seller.id === lead.seller_id) ?? null;
+  } catch (error) {
+    console.warn("Nao foi possivel registrar o atendimento; o WhatsApp abre mesmo assim.", error);
+    return null;
+  }
+}
+
+/**
+ * Atendimento criado junto com o pedido do checkout (`registerSiteOrderLead`),
+ * ou `null`: pedido sem atendimento, CRM fora do ar ou o atendimento ainda
+ * sendo gravado (ele e criado logo depois da resposta do pedido). Nos tres
+ * casos a conversa segue o fluxo normal — nunca um erro para o cliente.
+ */
+async function atendimentoDoPedido(orderId: string): Promise<LeadRecord | null> {
+  try {
+    return await findLeadByOrder(orderId);
+  } catch (error) {
+    console.warn("Nao foi possivel consultar o atendimento do pedido; seguindo com a distribuicao normal.", error);
+    return null;
+  }
+}
+
+/**
+ * Le os campos sem nunca falhar: parametro grande e cortado, tipo desconhecido
+ * vira contato generico. Uma URL estranha nao pode custar a conversa.
+ *
+ * `ler` e a fonte dos campos — a query string no GET, o corpo no POST — para a
+ * validacao e os tetos de tamanho existirem uma vez so.
+ *
+ * `pagina` so fica quando e caminho interno da loja (o botao manda o
+ * `usePathname()`): o painel de trafego mostra esse valor como link, e um
+ * endereco externo gravado por quem chama a rota direto viraria isca ali.
+ */
+function lerParametros(ler: (chave: string) => string | null | undefined): AtendimentoParams {
+  const campo = (chave: string, tamanho: number) => (ler(chave) ?? "").slice(0, tamanho);
+  const bruto = {
+    atendente: campo("atendente", 60),
+    tipo: ler("tipo") || "whatsapp_generic",
+    produto: campo("produto", 200),
+    texto: campo("texto", 4_000),
+    pagina: internalPagePath(campo("pagina", 300)),
+    cliente: campo("cliente", 140),
+    pedido: campo("pedido", 80),
+  };
+  const parsed = atendimentoInput.safeParse(bruto);
+  return parsed.success ? parsed.data : { ...bruto, tipo: "whatsapp_generic" };
+}
+
+/**
+ * Campos do corpo do POST. Corpo ausente, vazio ou em outro formato devolve um
+ * mapa vazio: a rota segue com o que houver na query e o cliente chega ao
+ * WhatsApp de qualquer jeito.
+ */
+async function lerCorpo(request: NextRequest): Promise<Map<string, string>> {
+  const campos = new Map<string, string>();
+  try {
+    for (const [chave, valor] of await request.formData()) {
+      if (typeof valor === "string") campos.set(chave, valor);
+    }
+  } catch (error) {
+    console.warn("Nao foi possivel ler o formulario do atendimento; seguindo com a query.", error);
+  }
+  return campos;
+}
+
+/**
+ * Atendente escolhido no dialogo.
+ *
+ * A busca e na lista de ELEGIVEIS, nao no cadastro inteiro: quem esta com
+ * "recebe atendimentos" desligado (viagem, folga) nao pode voltar a receber so
+ * porque o cliente tem em cache uma pagina antiga com o id dele — ou um link
+ * salvo. Nesse caso o cliente cai na distribuicao normal, em vez de mandar
+ * mensagem para um WhatsApp que ninguem vai abrir.
+ */
+function acharAtendente(elegiveis: readonly SellerRecord[], id: string): SellerRecord | null {
+  const procurado = canonicalSellerId(id.trim().toLowerCase());
+  if (!procurado || procurado === "auto") return null;
+  return elegiveis.find((seller) => seller.id === procurado) ?? null;
+}
+
+/**
+ * O clique saiu de uma pagina nossa?
+ *
+ * Quem decide e o `Sec-Fetch-Site`: ele e preenchido pelo proprio navegador e,
+ * ao contrario do `Referer`, nao pode ser suprimido pela pagina de origem.
+ * Isso importa porque os nossos links usam `rel="noreferrer"` — sem este
+ * cabecalho a checagem de referer nunca dispararia, e qualquer site de
+ * terceiros poderia encher a fila de atendimentos com um `<img>` apontando
+ * para ca.
+ *
+ * Cabecalho ausente (webview antiga, navegador velho) continua registrando:
+ * perder atendimento real e pior do que aceitar algum ruido. O referer segue
+ * como segunda camada para quem manda os dois.
+ */
+function daPropriaLoja(request: NextRequest): boolean {
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "same-site") return false;
+
+  const referer = request.headers.get("referer");
+  if (!referer) return true;
+  try {
+    const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host");
+    return Boolean(host && new URL(referer).host === host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Limite por IP, no mesmo desenho de /api/pedidos.
+ *
+ * Limite conhecido: o contador vive na memoria da instancia; em serverless com
+ * varias instancias o teto efetivo e maior. Serve para conter varredura, nao
+ * como protecao forte.
+ */
+function isRateLimited(request: NextRequest): boolean {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const now = Date.now();
+  const current = requestLog.get(ip);
+  if (!current || current.resetAt <= now) {
+    requestLog.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    return false;
+  }
+  current.count += 1;
+  return current.count > MAX_REQUESTS;
+}

@@ -1,14 +1,28 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/ui/IconButton";
 import type { WhatsappContact } from "@/config/site";
-import { whatsappLink } from "@/lib/services/whatsapp";
+import type { LeadKind } from "@/lib/admin/types";
+import { atendimentoLink } from "@/lib/services/whatsapp";
+import { useAttendants } from "@/lib/store/attendants";
 
 interface WhatsAppChooserProps {
   /** Texto já preenchido na conversa. */
   message?: string;
-  contacts: WhatsappContact[];
+  /**
+   * De onde partiu o contato. É o que o painel mostra como etiqueta do
+   * atendimento ("Dúvida de produto", "WhatsApp do site").
+   */
+  kind?: LeadKind;
+  /** Produto que gerou a conversa, quando houver. */
+  productId?: string;
+  /**
+   * Pedido do checkout que acabou de ser enviado. A conversa vai para quem já
+   * cuida dele e não abre um segundo atendimento.
+   */
+  orderId?: string;
   /** Classes do botão que dispara a escolha — o mesmo visual do link antigo. */
   className?: string;
   "aria-label"?: string;
@@ -18,15 +32,30 @@ interface WhatsAppChooserProps {
 /**
  * Substitui o link direto do WhatsApp: ao clicar, o cliente escolhe com quem
  * quer falar (dono ou vendedor) e só então a conversa abre em nova aba.
+ *
+ * O destino não é mais `wa.me` direto: é a rota `/api/atendimentos/whatsapp`,
+ * que registra o atendimento e redireciona. Sem essa passagem, todo contato
+ * feito pelo site continuaria invisível para o painel.
+ *
+ * Quando o painel está em rodízio ou "menos ocupado", não há o que escolher: o
+ * diálogo mostra um único botão e o servidor decide quem recebe.
  */
-export function WhatsAppChooser({ message, contacts, className, children, ...rest }: WhatsAppChooserProps) {
+export function WhatsAppChooser({ message, kind = "whatsapp_generic", productId, orderId, className, children, ...rest }: WhatsAppChooserProps) {
   const [open, setOpen] = useState(false);
+  const { contacts, mode } = useAttendants();
+  const pathname = usePathname();
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={className} aria-haspopup="dialog" {...rest}>
         {children}
       </button>
-      <ContactDialog open={open} onClose={() => setOpen(false)} message={message} contacts={contacts} />
+      <ContactDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        contacts={contacts}
+        automatico={mode !== "customer_choice"}
+        href={(attendantId) => atendimentoLink({ attendantId, kind, message, pagePath: pathname, productId, orderId })}
+      />
     </>
   );
 }
@@ -34,13 +63,15 @@ export function WhatsAppChooser({ message, contacts, className, children, ...res
 function ContactDialog({
   open,
   onClose,
-  message,
   contacts,
+  automatico,
+  href,
 }: {
   open: boolean;
   onClose: () => void;
-  message?: string;
   contacts: WhatsappContact[];
+  automatico: boolean;
+  href: (attendantId: string) => string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -65,6 +96,12 @@ function ContactDialog({
 
   if (!open) return null;
 
+  // Nos modos automáticos o cliente não escolhe: uma opção só, e quem recebe é
+  // decidido no servidor na hora do redirect.
+  const opcoes = automatico
+    ? [{ id: "auto", name: "Falar no WhatsApp", detail: "Vamos te conectar com um atendente disponível" }]
+    : contacts.map((contact) => ({ id: contact.id, name: contact.name, detail: `${contact.role} · ${contact.display}` }));
+
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center" role="presentation">
       <div className="absolute inset-0 bg-ink-950/50" onClick={onClose} />
@@ -73,34 +110,34 @@ function ContactDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Escolha com quem falar no WhatsApp"
-        className="relative w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-drawer sm:rounded-2xl"
+        className="relative w-full max-w-sm rounded-t-card bg-white p-5 shadow-float sm:rounded-card"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-extrabold text-ink-900">Falar no WhatsApp</h2>
-            <p className="mt-0.5 text-sm text-ink-500">Com quem você quer falar?</p>
+            <p className="mt-0.5 text-sm text-ink-500">
+              {automatico ? "Vamos te conectar com um atendente." : "Com quem você quer falar?"}
+            </p>
           </div>
           <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2 -mt-2" />
         </div>
 
         <ul className="mt-4 space-y-2">
-          {contacts.map((contact) => (
-            <li key={contact.id}>
+          {opcoes.map((opcao) => (
+            <li key={opcao.id}>
               <a
-                href={whatsappLink(message, contact.number)}
+                href={href(opcao.id)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={onClose}
-                className="flex items-center gap-3 rounded-xl border border-ink-100 px-4 py-3 transition-colors hover:border-whatsapp hover:bg-whatsapp/10"
+                className="flex items-center gap-3 rounded-control border border-fio px-4 py-3 transition-colors duration-(--duracao-toque) hover:border-whatsapp hover:bg-whatsapp/10"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp text-white">
                   <WhatsAppIcon className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-ink-900">{contact.name}</span>
-                  <span className="block text-xs text-ink-500">
-                    {contact.role} · {contact.display}
-                  </span>
+                  <span className="block text-sm font-bold text-ink-900">{opcao.name}</span>
+                  <span className="block text-xs text-ink-500">{opcao.detail}</span>
                 </span>
               </a>
             </li>

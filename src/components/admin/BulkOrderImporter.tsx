@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { createBulkOrdersAction, type BulkImportResult } from "@/app/painel/actions";
-import { bulkRequestId, matchBulkProduct, parseBulkSalesText, type BulkMatchConfidence } from "@/lib/admin/bulk-orders";
+import { bulkRequestId, matchBulkProduct, parseBulkSalesText, type BulkChannel, type BulkMatchConfidence } from "@/lib/admin/bulk-orders";
 import { ORDER_PAYMENT_METHOD_LABELS, type OrderPaymentMethod, type SellerRecord } from "@/lib/admin/types";
 import { formatPrice } from "@/lib/utils/format";
 import type { OrderProductOption } from "./OrderComposer";
@@ -23,6 +23,8 @@ interface LinhaConferida {
 
 interface BlocoConferido {
   key: string;
+  /** Canal reconhecido no cabeçalho: vira canal e origem do pedido no painel. */
+  channel: BulkChannel;
   channelLabel: string;
   customerName: string;
   date: string;
@@ -84,6 +86,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
         // Sem data na mensagem, cai em hoje: e o que evita dois lancamentos
         // iguais de semanas diferentes colidirem no mesmo request_id.
         key: `${indice}-${bulkRequestId(bloco)}`,
+        channel: bloco.channel,
         channelLabel: rotulo,
         customerName: bloco.customerName || rotulo,
         date: bloco.date ?? hoje,
@@ -158,6 +161,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
         customerName: bloco.customerName,
         items: linhas.map((linha) => ({ quantity: linha.quantity, name: `${linha.productId}${linha.variantId ?? ""}` })),
       }),
+      channel: bloco.channel,
       channelLabel: bloco.channelLabel,
       customerName: bloco.customerName,
       date: bloco.date,
@@ -169,7 +173,7 @@ export function BulkOrderImporter({ products, sellers }: { products: OrderProduc
 
     startTransition(async () => {
       const saida = await createBulkOrdersAction(sellerId, enviados.map((item) => ({
-        requestId: item.requestId, channelLabel: item.channelLabel, customerName: item.customerName,
+        requestId: item.requestId, channel: item.channel, channelLabel: item.channelLabel, customerName: item.customerName,
         date: item.date, paid: item.paid, paymentMethod: item.paymentMethod, notes: item.notes, items: item.items,
       })));
       setResultado(saida);

@@ -6,12 +6,33 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
+import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
+import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
-import { cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { assignLeadOfOrder, assignOrderOfLead, checkLeadStageChange, closeLeadsOfOrders, discardLeadsOfDeletedOrders, findOrderByNumber, linkLeadToOrder, orderLockForLead } from "@/lib/admin/lead-orders";
+import { createLead, findLead, LEAD_CRM_UNAVAILABLE_MESSAGE, updateLead } from "@/lib/admin/leads";
+import { assignPendingSalesOrder, cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
+import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName, UNLINKED_LOGIN_HINT } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
-import type { ActionState, AdminProductRow, AdminProductVariant, StoreSettings } from "@/lib/admin/types";
+import { BULK_CHANNELS } from "@/lib/admin/bulk-orders";
+import {
+  LEAD_LOST_REASON_LABELS,
+  LEAD_LOST_REASONS,
+  LEAD_STAGE_LABELS,
+  LEAD_STAGES,
+  PANEL_ORDER_CHANNELS,
+  PANEL_TRAFFIC_SOURCES,
+  type ActionState,
+  type AdminProductRow,
+  type AdminProductVariant,
+  type CustomerPurchaseLookup,
+  type SellerRecord,
+  type StoreSettings,
+  type TrafficSource,
+} from "@/lib/admin/types";
+import { isTrafficSource, trafficSourceLabel } from "@/lib/services/origem";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
-import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
+import { isValidCPF, isValidDocument, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
@@ -47,6 +68,12 @@ const orderInput = z.object({
     state: z.string().trim().length(2).transform((value) => value.toUpperCase()),
   }),
   notes: z.string().trim().max(500),
+  channel: z.enum(PANEL_ORDER_CHANNELS, { error: "Escolha onde a venda foi fechada." }),
+  // Qualquer origem conhecida passa aqui; a action restringe às do painel, mais
+  // a do atendimento de origem (um cliente que veio da Shopee continua Shopee).
+  source: z.custom<TrafficSource>(isTrafficSource, { error: "Escolha como o cliente chegou até a loja." }),
+  // Atendimento de onde o pedido saiu ("Lançar pedido" na tela de Atendimento).
+  leadId: z.string().trim().max(80).nullable().optional(),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
     variantId: z.string().trim().max(120).nullable().optional(),
@@ -336,14 +363,49 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
   const owner = await ownerOrThrow();
   const parsed = orderInput.safeParse(input);
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do pedido." };
+  const { leadId, ...pedido } = parsed.data;
   try {
+    const state = await readCatalogState(true);
+    // O atendimento de origem so entra no pedido se ainda existe e nao
+    // acompanha outro pedido vivo (um cancelado libera). Atendimento que sumiu
+    // nao impede a venda: o pedido sai sem vinculo e a mensagem avisa. No
+    // reenvio do mesmo pedido (mesmo requestId) o atendimento ja aponta para
+    // ele, e isso nao e "outro pedido".
+    const atendimento = leadId ? await findLead(leadId) : null;
+    const reenviado = state.operations.orders.find((order) => order.request_id === pedido.requestId);
+    const pedidoAtual = atendimento?.order_id ? state.operations.orders.find((order) => order.id === atendimento.order_id) : undefined;
+    const vinculavel = atendimento && (!atendimento.order_id || atendimento.order_id === reenviado?.id || !pedidoAtual || pedidoAtual.status === "cancelled") ? atendimento : null;
+    // O select do painel so oferece as origens do painel; a do atendimento de
+    // origem (Shopee, Mercado Livre...) entra como opcao extra e vale tambem.
+    if (!PANEL_TRAFFIC_SOURCES.some((valor) => valor === pedido.source) && pedido.source !== vinculavel?.source) {
+      return { message: "Escolha como o cliente chegou até a loja." };
+    }
+
     // Pedido, baixa de estoque e auditoria vao numa transacao so, direto na
-    // tabela — sem passar pelo salvamento do catalogo inteiro.
-    const created = await createSalesOrder(await readCatalogState(true), parsed.data, owner.id);
+    // tabela — sem passar pelo salvamento do catalogo inteiro. A campanha do
+    // atendimento vai junto: e ela que poe a venda na linha certa do relatorio
+    // de trafego por campanha.
+    const created = await createSalesOrder(state, { ...pedido, leadId: vinculavel?.id ?? null, attribution: vinculavel?.attribution ?? {} }, owner.id);
+
+    // A venda ja esta gravada: o vinculo com o atendimento (que vira Ganho) e
+    // best-effort. Se falhar, a frase volta em `warning`, para a tela mostrar
+    // como alerta e nao na faixa verde de sucesso.
+    let recado = "";
+    let aviso: string | undefined;
+    if (leadId) {
+      const vinculo = vinculavel
+        ? await linkLeadToOrder(vinculavel.id, created, state, owner.id)
+        : { ok: false, message: "O atendimento de origem não existe mais ou já acompanha outro pedido: o pedido foi criado sem vínculo." };
+      if (vinculo.ok) recado = ` ${vinculo.message}`;
+      else aviso = vinculo.message;
+      revalidatePath("/painel/atendimento");
+    }
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
-    return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.`, orderId: created.id, orderNumber: created.number };
+    revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
+    return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.${recado}`, warning: aviso, orderId: created.id, orderNumber: created.number };
   } catch (error) {
     if (error instanceof OrderOperationError) return { message: error.message };
     return catalogStorageError(error);
@@ -360,10 +422,16 @@ export async function confirmOrderAction(formData: FormData) {
   // confirmado e mesmo assim aparecia "nao foi possivel confirmar".
   let destino: string;
   try {
-    await confirmPendingSalesOrder(await readCatalogState(true), orderId, sellerId, owner.id);
+    const order = await confirmPendingSalesOrder(await readCatalogState(true), orderId, sellerId, owner.id);
+    // O atendimento do pedido vira "Ganho" com quem confirmou. Best-effort: a
+    // venda ja esta gravada e nao volta atras por causa do CRM.
+    await closeLeadsOfOrders([order], { stage: "won", seller: { id: order.seller_id, name: order.seller_name } }, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
     destino = `/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível confirmar o pedido agora.";
@@ -378,15 +446,67 @@ export async function cancelOrderAction(formData: FormData) {
   if (!orderId) return;
   let destino: string;
   try {
-    await cancelSalesOrder(await readCatalogState(true), orderId, owner.id);
+    const order = await cancelSalesOrder(await readCatalogState(true), orderId, owner.id);
+    // Venda que nao aconteceu: o atendimento vinculado fecha como perdido.
+    await closeLeadsOfOrders([order], { stage: "lost", note: "Pedido cancelado" }, owner.id);
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
+    revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
     destino = `/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível cancelar o pedido agora.";
     destino = `/painel/pedidos?erro=${encodeURIComponent(mensagem)}`;
   }
+  redirect(destino);
+}
+
+/**
+ * Define quem cuida de um pedido do site que ainda aguarda confirmação — sem
+ * confirmar e sem mexer no estoque. `sellerId` vazio devolve o pedido à fila
+ * livre.
+ *
+ * O atendimento vinculado ao pedido acompanha a troca (best-effort), para a
+ * tela de Atendimento mostrar a mesma pessoa que a de Pedidos.
+ */
+export async function assignOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  const volta = String(formData.get("volta") ?? "").trim();
+  if (!orderId) return;
+
+  // Volta para a mesma lista (busca e filtros) em vez de jogar o operador na
+  // lista cheia a cada atribuição.
+  const base = volta.startsWith("/painel/pedidos") ? volta : "/painel/pedidos";
+  const separador = base.includes("?") ? "&" : "?";
+  let destino: string;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, sellerId);
+    if (escolha.message) {
+      destino = `${base}${separador}erro=${encodeURIComponent(escolha.message)}`;
+    } else {
+      const pedido = (await readCatalogState(true)).operations.orders.find((item) => item.id === orderId);
+      if (!pedido) throw new OrderOperationError("Pedido não encontrado.");
+      const { order, changed } = await assignPendingSalesOrder(pedido, escolha.seller, owner.id);
+      // Mesmo sem mudança no pedido: se uma sincronização anterior falhou, reenviar
+      // o formulário acerta o atendimento (a função não grava nada quando já bate).
+      await assignLeadOfOrder(order.id, escolha.seller, owner.id);
+      revalidatePath("/painel/pedidos");
+      revalidatePath("/painel/atendimento");
+      const mensagem = escolha.seller
+        ? changed ? `Pedido ${order.number} com ${escolha.seller.name}.` : `O pedido ${order.number} já estava com ${escolha.seller.name}.`
+        : changed ? `Pedido ${order.number} devolvido à fila livre.` : `O pedido ${order.number} já estava na fila livre.`;
+      destino = `${base}${separador}feito=${encodeURIComponent(mensagem)}`;
+    }
+  } catch (error) {
+    if (!(error instanceof OrderOperationError)) console.error("Falha ao atribuir pedido:", error);
+    const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível atribuir o pedido agora.";
+    destino = `${base}${separador}erro=${encodeURIComponent(mensagem)}`;
+  }
+  // Fora do try: redirect() funciona lançando NEXT_REDIRECT e o catch o engoliria.
   redirect(destino);
 }
 
@@ -410,14 +530,568 @@ export async function saveCategoryAction(_: ActionState, formData: FormData): Pr
 
 export async function saveSettingsAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
-  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "pixDiscountPercent", "maxInstallments"];
+  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "pixDiscountPercent", "maxInstallments", "leadDistributionMode"];
   await mutateCatalogState((state) => {
     const before = { ...state.settings };
     for (const key of keys) state.settings[key] = String(formData.get(key) ?? "").trim();
+    // Valor fora da lista (form adulterado ou versao antiga) volta ao padrao.
+    state.settings.leadDistributionMode = normalizeLeadDistributionMode(state.settings.leadDistributionMode);
     audit(state, owner.id, "settings.updated", "settings", "store", before, state.settings);
   });
   refreshCatalog();
   return { ok: true, message: "Configuracoes salvas." };
+}
+
+// `name` vem primeiro de proposito: o zod reporta a primeira falha na ordem das
+// chaves e o formulario nao tem campo de identificador — mandar o dono revisar o
+// "identificador" de um nome curto nao lhe daria nada para corrigir.
+const sellerInput = z.object({
+  name: z.string().trim().min(2, "Informe o nome do atendente.").max(80, "O nome do atendente pode ter no máximo 80 caracteres."),
+  id: z.string().regex(SELLER_ID_PATTERN, "O identificador do atendente deve ter de 2 a 40 caracteres: letras minúsculas, números ou hífen."),
+  roleLabel: z.string().trim().max(40, "A função pode ter no máximo 40 caracteres."),
+  whatsappNumber: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 12 && value.length <= 13), "O WhatsApp do atendente precisa ter DDI, DDD e número (12 ou 13 dígitos) ou ficar em branco."),
+  whatsappDisplay: z.string().trim().max(30, "O número exibido pode ter no máximo 30 caracteres."),
+  receivesLeads: z.boolean(),
+  active: z.boolean(),
+  sortOrder: z.number().int().min(0).max(999),
+});
+
+/**
+ * Salva a lista de atendentes de Configuracoes.
+ *
+ * Cada linha do formulario vem com um `sellerRow` (chave da linha) e os campos
+ * `seller-<chave>-*`; checkbox desmarcado nao e enviado, por isso a leitura e
+ * por linha e nao por `getAll`. Linha existente manda o id escondido; linha
+ * nova recebe o id a partir do nome. Quem ja tem pedido nao pode sair da
+ * lista — so ser desativado — porque `sales_orders.seller_id` e texto sem FK
+ * e o relatorio ficaria orfao.
+ */
+export async function saveSellersAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const chaves = formData.getAll("sellerRow").map((value) => String(value)).filter(Boolean);
+  if (!chaves.length) return { message: "Cadastre pelo menos um atendente." };
+
+  // A leitura tambem fica no try: o formulario mostra o resultado com
+  // `setFeedback(result)`, entao uma falha de storage aqui virava promessa
+  // rejeitada e o dono ficava sem mensagem nenhuma, so com o botao travado.
+  try {
+    const state = await readCatalogState(true);
+    const atuais = new Map(state.operations.sellers.map((seller) => [seller.id, seller]));
+    const pedidosPorAtendente = new Map<string, number>();
+    for (const order of state.operations.orders) {
+      const id = canonicalSellerId(order.seller_id);
+      pedidosPorAtendente.set(id, (pedidosPorAtendente.get(id) ?? 0) + 1);
+    }
+
+    const lista: SellerRecord[] = [];
+    for (const chave of chaves) {
+      const campo = (nome: string) => String(formData.get(`seller-${chave}-${nome}`) ?? "");
+      const name = campo("name").trim();
+      const idInformado = campo("id").trim().toLowerCase();
+      // Canonico antes da checagem de duplicata: um "Dom Guima" novo viraria
+      // o id legado e se fundiria com o dono em silencio.
+      const id = canonicalSellerId(idInformado || sellerIdFromName(name));
+      // Linha nova nao manda identificador: ele sai do nome. Nome que nao gera
+      // identificador (sem letra nem numero latino) tem de reclamar do NOME,
+      // o unico campo que o dono pode corrigir na tela.
+      if (!idInformado && name.length >= 2 && !SELLER_ID_PATTERN.test(id)) {
+        return { message: `Use um nome com pelo menos 2 letras ou números para o atendente “${name}”.` };
+      }
+      if (!idInformado && RESERVED_SELLER_IDS.includes(id)) {
+        return { message: `O nome “${name}” é usado internamente pelo painel. Cadastre o atendente com outro nome (por exemplo, com o sobrenome).` };
+      }
+      const parsed = sellerInput.safeParse({
+        name,
+        id,
+        roleLabel: campo("roleLabel"),
+        whatsappNumber: campo("whatsappNumber"),
+        whatsappDisplay: campo("whatsappDisplay"),
+        receivesLeads: campo("receivesLeads") === "on",
+        active: campo("active") === "on",
+        sortOrder: Math.trunc(numberFrom(formData.get(`seller-${chave}-sortOrder`))),
+      });
+      if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados dos atendentes." };
+      const value = parsed.data;
+      if (lista.some((seller) => seller.id === value.id)) return { message: `O atendente “${value.name}” está repetido na lista.` };
+      lista.push({
+        id: value.id,
+        name: value.name,
+        role_label: value.roleLabel || "Vendedor",
+        whatsapp_number: value.whatsappNumber || null,
+        whatsapp_display: value.whatsappDisplay,
+        receives_leads: value.receivesLeads,
+        active: value.active,
+        sort_order: value.sortOrder,
+      });
+    }
+
+    const ativos = lista.filter((seller) => seller.active);
+    if (!ativos.length) return { message: "Mantenha pelo menos um atendente ativo: é ele quem assina os pedidos." };
+
+    const idsEnviados = new Set(lista.map((seller) => seller.id));
+    const removidoComPedidos = [...atuais.values()].find((seller) => !idsEnviados.has(seller.id) && (pedidosPorAtendente.get(seller.id) ?? 0) > 0);
+    if (removidoComPedidos) {
+      return { message: `“${removidoComPedidos.name}” já tem pedidos registrados e não pode ser removido. Desmarque “Ativo” para tirá-lo de circulação.` };
+    }
+
+    await mutateCatalogState((current) => {
+      const before = current.operations.sellers;
+      current.operations.sellers = lista.map((seller, index) => normalizeSeller(seller, index));
+      audit(current, owner.id, "seller.updated", "seller", "all", before, current.operations.sellers);
+    });
+  } catch (error) {
+    console.error("Falha ao salvar atendentes:", error);
+    return catalogStorageError(error);
+  }
+  refreshCatalog();
+  return { ok: true, message: "Atendentes salvos. O site já mostra a lista nova." };
+}
+
+// ---------------------------------------------------------------------------
+// Atendimentos
+// ---------------------------------------------------------------------------
+
+const CRM_INDISPONIVEL = LEAD_CRM_UNAVAILABLE_MESSAGE;
+
+const leadInput = z.object({
+  customerName: z.string().trim().min(2, "Informe o nome do cliente.").max(140, "O nome do cliente pode ter no máximo 140 caracteres."),
+  // Telefone em branco e aceito: cliente que chegou na loja fisica muitas vezes
+  // so deixa o nome, e exigir o numero faria o atendente inventar um.
+  customerPhone: z.string().transform(onlyDigits).refine((value) => value.length === 0 || (value.length >= 10 && value.length <= 13), "Informe um telefone com DDD ou deixe o campo em branco."),
+  sellerId: z.string().trim().max(80),
+  notes: z.string().trim().max(500, "A observação pode ter no máximo 500 caracteres."),
+  // Sem o campo (formulario antigo em cache), o atendimento entra como direto,
+  // como antes do controle de trafego.
+  source: z.enum(PANEL_TRAFFIC_SOURCES, { error: "Escolha como o cliente chegou até a loja." }).default("direct"),
+});
+
+/**
+ * Atendimento lancado a mao: cliente que chegou pela loja fisica, por indicacao
+ * ou por uma conversa de WhatsApp que comecou fora do site.
+ *
+ * Diferente dos atendimentos do site, este PASSA auditoria: sao poucos por dia
+ * e e util saber quem cadastrou. A origem e escolhida pelo operador — sem ela,
+ * todo cliente da loja fisica somaria como "Direto" no relatorio de trafego.
+ */
+export async function createLeadAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const parsed = leadInput.safeParse({
+    customerName: formData.get("customerName"),
+    customerPhone: formData.get("customerPhone"),
+    sellerId: formData.get("sellerId"),
+    notes: formData.get("notes"),
+    source: formData.get("source") ?? undefined,
+  });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do atendimento." };
+  const value = parsed.data;
+
+  let atendente: SellerRecord | null = null;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, value.sellerId);
+    if (escolha.message) return { message: escolha.message };
+    atendente = escolha.seller;
+
+    const { lead } = await createLead(
+      {
+        kind: "manual",
+        sellerId: atendente?.id ?? null,
+        assignedBy: atendente ? owner.id : null,
+        customerName: value.customerName,
+        customerPhone: value.customerPhone,
+        notes: value.notes,
+        source: value.source,
+        createdBy: owner.id,
+      },
+      {
+        mode: "manual",
+        audit: {
+          actor_id: owner.id,
+          action: "lead.created",
+          after_data: { cliente: value.customerName, atendente: atendente?.name ?? "Fila livre", origem: trafficSourceLabel(value.source) },
+        },
+      },
+    );
+    if (!lead) return { message: CRM_INDISPONIVEL };
+  } catch (error) {
+    console.error("Falha ao registrar atendimento:", error);
+    return { message: "Não foi possível registrar o atendimento agora. Tente novamente em instantes." };
+  }
+
+  revalidatePath("/painel/atendimento");
+  revalidatePath("/painel/trafego");
+  return { ok: true, message: atendente ? `Atendimento registrado para ${atendente.name}.` : "Atendimento registrado na fila livre." };
+}
+
+/**
+ * Puxar para mim, transferir para outro atendente ou devolver a fila livre.
+ *
+ * `sellerId` aceita "me" (o atendente vinculado ao login), vazio (fila livre)
+ * ou o id de um atendente ativo.
+ */
+export async function assignLeadAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const leadId = String(formData.get("leadId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  const volta = String(formData.get("volta") ?? "").trim();
+  if (!leadId) return;
+
+  const base = volta.startsWith("/painel/atendimento") ? volta : "/painel/atendimento";
+  const separador = base.includes("?") ? "&" : "?";
+  let destino: string;
+  try {
+    const escolha = await resolverAtendente(owner.sellerId, sellerId);
+    // Atendimento de pedido ja confirmado ou cancelado fica com quem cuidou do
+    // pedido (e responde pela comissao): trocar so o atendimento desalinharia
+    // Atendimento e Pedidos.
+    const impedimento = escolha.message ?? (await orderLockForLead(leadId));
+    if (impedimento) {
+      destino = `${base}${separador}erro=${encodeURIComponent(impedimento)}`;
+    } else {
+      const { found, unavailable, lead } = await updateLead(
+        leadId,
+        { seller_id: escolha.seller?.id ?? null, assigned_by: owner.id },
+        {
+          actor_id: owner.id,
+          action: "lead.assigned",
+          after_data: { atendente: escolha.seller?.name ?? "Fila livre" },
+        },
+      );
+      // Atendimento de pedido do site ainda pendente (os de pedido fechado foram
+      // barrados acima): o pedido acompanha, para Pedidos e Atendimento
+      // apontarem a mesma pessoa.
+      if (lead?.order_id) {
+        await assignOrderOfLead(lead, escolha.seller, owner.id);
+        revalidatePath("/painel/pedidos");
+      }
+      // "Nao encontrei o atendimento" e "a tabela nao existe" sao problemas
+      // diferentes: mandar aplicar uma migration quando o operador so clicou
+      // numa linha que outra pessoa ja tinha mexido confunde mais do que ajuda.
+      const mensagem = unavailable
+        ? CRM_INDISPONIVEL
+        : !found
+          ? "Este atendimento não existe mais. Atualize a página."
+          : escolha.seller
+            ? `Atendimento com ${escolha.seller.name}.`
+            : "Atendimento devolvido à fila livre.";
+      destino = `${base}${separador}${found ? "feito" : "erro"}=${encodeURIComponent(mensagem)}`;
+    }
+    revalidatePath("/painel/atendimento");
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) throw error;
+    console.error("Falha ao redistribuir atendimento:", error);
+    destino = `${base}${separador}erro=${encodeURIComponent("Não foi possível redistribuir o atendimento agora.")}`;
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+const leadStageInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  stage: z.enum(LEAD_STAGES, { error: "Escolha uma etapa válida." }),
+  lostReason: z.enum(LEAD_LOST_REASONS, { error: "Escolha um motivo da perda da lista." }).optional(),
+}).refine((value) => value.stage !== "lost" || Boolean(value.lostReason), { message: "Escolha o motivo da perda.", path: ["lostReason"] });
+
+/**
+ * Move o atendimento no funil: Novo → Em atendimento → Orçamento enviado →
+ * Aguardando pagamento → Ganho ou Perdido (com motivo obrigatório).
+ *
+ * E a etapa que o modo "menos ocupado" le para decidir quem recebe o proximo
+ * atendimento: Ganho e Perdido deixam de contar como carga. `OrderStatus` nao
+ * muda aqui — pedido so se confirma ou cancela em Pedidos.
+ */
+export async function changeLeadStageAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadStageInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    stage: String(formData.get("stage") ?? ""),
+    // Select de motivo vazio (ou ausente, fora de "Perdido") = sem motivo.
+    lostReason: String(formData.get("lostReason") ?? "").trim() || undefined,
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Revise a etapa escolhida.");
+  } else {
+    const { leadId, stage, lostReason } = parsed.data;
+    try {
+      // Pedido ja confirmado prende a etapa em Ganho; pedido pendente so ganha
+      // um lembrete na mensagem.
+      const conferencia = await checkLeadStageChange(leadId, stage);
+      if (conferencia.blocker) {
+        destino = voltaParaAtendimento(volta, "erro", conferencia.blocker);
+      } else {
+        const motivo = stage === "lost" && lostReason ? lostReason : null;
+        const { found, unavailable } = await updateLead(
+          leadId,
+          { stage, lost_reason: motivo },
+          {
+            actor_id: owner.id,
+            action: "lead.stage_changed",
+            after_data: { etapa: LEAD_STAGE_LABELS[stage], ...(motivo ? { motivo: LEAD_LOST_REASON_LABELS[motivo] } : {}) },
+          },
+        );
+        // A frase vai para a URL (?feito=): nada de nome de cliente nela.
+        destino = unavailable
+          ? voltaParaAtendimento(volta, "erro", CRM_INDISPONIVEL)
+          : !found
+            ? voltaParaAtendimento(volta, "erro", "Este atendimento não existe mais. Atualize a página.")
+            : voltaParaAtendimento(volta, "feito", `Atendimento movido para “${LEAD_STAGE_LABELS[stage]}”${motivo ? ` (${LEAD_LOST_REASON_LABELS[motivo]})` : ""}.${conferencia.hint}`);
+      }
+      revalidatePath("/painel/atendimento");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      console.error("Falha ao mudar a etapa do atendimento:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível mudar a etapa agora. Tente novamente em instantes.");
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+const leadLinkInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  orderNumber: z.string().trim().min(3, "Informe o número do pedido, como DG-20260922-001.").max(40, "Número de pedido longo demais."),
+});
+
+/**
+ * "Vincular a pedido": liga o atendimento a um pedido pelo número (DG-…).
+ *
+ * Pedido finalizado fecha o atendimento como Ganho; pedido aguardando
+ * confirmação fica ligado e fecha sozinho na confirmação ou no cancelamento. As
+ * regras (um pedido por atendimento, quem herda o atendente) moram em
+ * `linkLeadToOrder`, também usada pelo Novo pedido lançado a partir do
+ * atendimento.
+ */
+export async function linkLeadToOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadLinkInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    orderNumber: String(formData.get("orderNumber") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Informe o número do pedido.");
+  } else {
+    try {
+      const state = await readCatalogState(true);
+      const pedido = findOrderByNumber(state.operations.orders, parsed.data.orderNumber);
+      if (!pedido) {
+        destino = voltaParaAtendimento(volta, "erro", `Pedido “${parsed.data.orderNumber}” não encontrado. Confira o número em Pedidos.`);
+      } else {
+        const resultado = await linkLeadToOrder(parsed.data.leadId, pedido, state, owner.id);
+        destino = voltaParaAtendimento(volta, resultado.ok ? "feito" : "erro", resultado.message);
+        revalidatePath("/painel/atendimento");
+        revalidatePath("/painel/pedidos");
+        revalidatePath("/painel/clientes");
+        revalidatePath("/painel");
+      }
+    } catch (error) {
+      console.error("Falha ao vincular atendimento a pedido:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível vincular o atendimento agora. Tente novamente em instantes.");
+    }
+  }
+  redirect(destino);
+}
+
+const leadCustomerInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  customerName: z.string().trim().max(140, "O nome do cliente pode ter no máximo 140 caracteres."),
+  // Com ou sem o 55 e a pontuação; o que vale é sobrar um número com DDD.
+  customerPhone: z.string().transform(onlyDigits).refine((value) => value.length === 0 || [10, 11].includes(phoneKey(value).length), "Informe o telefone com DDD, como (34) 99999-9999, ou deixe em branco."),
+  customerDocument: z.string().transform(onlyDigits).refine((value) => value.length === 0 || isValidDocument(value), "CPF ou CNPJ inválido. Confira os números ou deixe em branco."),
+}).refine((value) => Boolean(value.customerName || value.customerPhone || value.customerDocument), { message: "Informe o telefone, o CPF/CNPJ ou o nome do cliente.", path: ["customerPhone"] });
+
+/**
+ * "Identificar cliente" de um atendimento: nome, telefone e/ou CPF/CNPJ que o
+ * atendente descobriu na conversa.
+ *
+ * O clique no WhatsApp do site nasce sem telefone — o número do cliente só
+ * aparece no aparelho de quem atende. Sem este passo, o atendimento mais comum
+ * da loja nunca ganhava a etiqueta "Recorrente", ficava fora do aviso de
+ * "atendimento em aberto" em Clientes e só era reconhecido se alguém o
+ * vinculasse a um pedido. A chave gravada segue a mesma regra dos pedidos
+ * (`customerKey`: telefone quando há, senão o documento); o documento não tem
+ * coluna própria no atendimento, só vira a chave quando não há telefone.
+ *
+ * A auditoria registra que o cliente foi identificado, não o telefone nem o
+ * CPF; a mensagem de volta vai na URL e também não os leva.
+ */
+export async function identifyLeadCustomerAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadCustomerInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    customerName: String(formData.get("customerName") ?? ""),
+    customerPhone: String(formData.get("customerPhone") ?? ""),
+    customerDocument: String(formData.get("customerDocument") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Revise os dados do cliente.");
+  } else {
+    const { leadId, customerName, customerPhone, customerDocument } = parsed.data;
+    const chave = customerKey({ phone: customerPhone, cpf: customerDocument });
+    try {
+      const { found, unavailable } = await updateLead(
+        leadId,
+        { customer_name: customerName, customer_phone: customerPhone, customer_key: chave },
+        {
+          actor_id: owner.id,
+          action: "lead.customer_updated",
+          after_data: { cliente: customerName || "(sem nome)", identificacao: customerPhone ? "telefone" : customerDocument ? "CPF/CNPJ" : "só o nome" },
+        },
+      );
+      destino = unavailable
+        ? voltaParaAtendimento(volta, "erro", CRM_INDISPONIVEL)
+        : !found
+          ? voltaParaAtendimento(volta, "erro", "Este atendimento não existe mais. Atualize a página.")
+          : voltaParaAtendimento(volta, "feito", chave ? "Cliente identificado no atendimento." : "Nome do cliente salvo no atendimento.");
+      revalidatePath("/painel/atendimento");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      console.error("Falha ao identificar o cliente do atendimento:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível salvar os dados do cliente agora. Tente novamente em instantes.");
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+/**
+ * Volta para a mesma lista de Atendimento (aba e filtros) com a faixa de
+ * resultado. Só aceita caminhos do próprio painel de atendimento.
+ */
+function voltaParaAtendimento(volta: string, chave: "feito" | "erro", mensagem: string): string {
+  const base = volta.startsWith("/painel/atendimento") ? volta : "/painel/atendimento";
+  return `${base}${base.includes("?") ? "&" : "?"}${chave}=${encodeURIComponent(mensagem)}`;
+}
+
+const customerLookupInput = z.object({
+  phone: z.string().trim().max(30),
+  cpf: z.string().trim().max(30),
+});
+
+const SEM_HISTORICO: CustomerPurchaseLookup = { phonePurchases: 0, documentPurchases: 0, reference: null };
+
+/**
+ * "Este telefone/CPF já comprou N vezes" do Novo pedido: o formulário pergunta
+ * por UM cliente, enquanto o operador digita, em vez de receber a tabela de
+ * todos os telefones e CPFs da loja. Só leitura e best-effort: qualquer falha
+ * responde "sem histórico" e o pedido segue normalmente.
+ */
+export async function customerPurchasesAction(input: unknown): Promise<CustomerPurchaseLookup> {
+  await ownerOrThrow();
+  const parsed = customerLookupInput.safeParse(input);
+  if (!parsed.success) return SEM_HISTORICO;
+  try {
+    return await getCustomerPurchases(parsed.data);
+  } catch (error) {
+    console.warn("Nao foi possivel conferir o historico do cliente:", error);
+    return SEM_HISTORICO;
+  }
+}
+
+const customerContactInput = z.object({
+  // O cliente vem pelo número de um pedido dele (DG-…), como nos links entre
+  // as telas: telefone e CPF não viajam no formulário.
+  cliente: z.string().trim().min(3, "Cliente não informado.").max(40, "Número de pedido longo demais."),
+  contato: z.enum(["recusar", "permitir"], { error: "Escolha se o cliente aceita ou recusa o recontato." }),
+});
+
+/** Cliente do link não existe mais na lista de pedidos: aborta a gravação sem escrever nada. */
+class ClienteNaoEncontrado extends Error {}
+
+/**
+ * "Não quer recontato" / "Permitir recontato" da tela de Clientes.
+ *
+ * A política de privacidade promete que quem pedir pelo WhatsApp para não
+ * receber o contato pós-compra deixa de ser chamado. Sem esta marca, a lista de
+ * sugestões continuava oferecendo o cliente, com a mensagem pronta no botão.
+ *
+ * Todas as identidades do cliente (telefones e CPF/CNPJ, inclusive os antigos)
+ * entram na lista: quem trocou de número continua fora das sugestões. A lista
+ * mora no JSONB privado das configurações, ao lado dos atendentes.
+ */
+export async function customerContactAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = customerContactInput.safeParse({
+    cliente: String(formData.get("cliente") ?? ""),
+    contato: String(formData.get("contato") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaClientes(volta, "erro", parsed.error.issues[0]?.message ?? "Revise o pedido do cliente.");
+  } else {
+    const { cliente, contato } = parsed.data;
+    try {
+      await mutateCatalogState((state) => {
+        const indice = buildCustomerIndex(state.operations.orders);
+        const chave = indice.keyOfOrderNumber(cliente);
+        if (!chave) throw new ClienteNaoEncontrado();
+        const identidades = indice.identitiesOf(chave);
+        const recusas = new Set(state.operations.contact_opt_outs);
+        for (const identidade of identidades.length ? identidades : [chave]) {
+          if (contato === "recusar") recusas.add(identidade);
+          else recusas.delete(identidade);
+        }
+        state.operations.contact_opt_outs = [...recusas];
+        // Só o número do pedido e a decisão: nada de telefone ou CPF no histórico.
+        audit(state, owner.id, contato === "recusar" ? "customer.contact_opt_out" : "customer.contact_opt_in", "customer", cliente, null, { recontato: contato === "recusar" ? "recusado pelo cliente" : "permitido de novo" });
+      });
+      destino = voltaParaClientes(volta, "feito", contato === "recusar"
+        ? "Anotado: este cliente não aparece mais nas sugestões de recontato."
+        : "Recontato permitido de novo para este cliente.");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      if (error instanceof ClienteNaoEncontrado) {
+        destino = voltaParaClientes(volta, "erro", `Nenhum cliente encontrado para o pedido ${cliente}. Atualize a página.`);
+      } else {
+        console.error("Falha ao salvar a preferência de recontato:", error);
+        destino = voltaParaClientes(volta, "erro", "Não foi possível salvar agora. Tente novamente em instantes.");
+      }
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+/** Volta para a mesma lista de Clientes (filtros) com a faixa de resultado. */
+function voltaParaClientes(volta: string, chave: "feito" | "erro", mensagem: string): string {
+  const base = volta.startsWith("/painel/clientes") ? volta : "/painel/clientes";
+  return `${base}${base.includes("?") ? "&" : "?"}${chave}=${encodeURIComponent(mensagem)}`;
+}
+
+/**
+ * Traduz o valor do formulario ("me" | "" | id) no atendente de verdade.
+ *
+ * Devolve `message` preenchido quando o operador escolheu algo impossivel — o
+ * login sem vinculo e o caso mais comum, e a mensagem precisa dizer como
+ * resolver, porque o vinculo so existe pela CLI.
+ */
+async function resolverAtendente(ownerSellerId: string | null, escolhido: string): Promise<{ seller: SellerRecord | null; message?: string }> {
+  if (escolhido === "me") {
+    if (!ownerSellerId) return { seller: null, message: UNLINKED_LOGIN_HINT };
+    const seller = await acharAtendenteAtivo(ownerSellerId);
+    return seller ? { seller } : { seller: null, message: "O atendente vinculado a este login não está ativo." };
+  }
+  if (!escolhido) return { seller: null };
+  const seller = await acharAtendenteAtivo(escolhido);
+  return seller ? { seller } : { seller: null, message: "Escolha um atendente ativo." };
+}
+
+async function acharAtendenteAtivo(id: string): Promise<SellerRecord | null> {
+  const procurado = canonicalSellerId(id.trim().toLowerCase());
+  const sellers = (await readCatalogState()).operations.sellers;
+  return sellers.find((seller) => seller.id === procurado && seller.active) ?? null;
 }
 
 export async function importCurrentCatalogAction(_: ActionState, formData: FormData): Promise<ActionState> {
@@ -440,25 +1114,28 @@ export async function importCurrentCatalogAction(_: ActionState, formData: FormD
 /**
  * Invalida o que o cliente ve depois de qualquer mudanca no catalogo.
  *
- * As paginas publicas de produto e categoria sao geradas estaticamente
- * (generateStaticParams). Sem revalidar o PADRAO da rota, elas ficavam
- * congeladas no momento do build: preco, estoque e variacao so chegavam na
- * loja no proximo deploy. Foi assim que um produto com 30 unidades em estoque
- * continuou anunciado como indisponivel.
+ * As paginas publicas sao geradas estaticamente (generateStaticParams). Sem
+ * revalidar, elas ficavam congeladas no momento do build: preco, estoque e
+ * variacao so chegavam na loja no proximo deploy. Foi assim que um produto
+ * com 30 unidades em estoque continuou anunciado como indisponivel.
  *
- * Rota com segmento dinamico exige o segundo parametro "page" — sem ele o
- * Next nao sabe se e a pagina ou o layout, e a chamada nao pega nada.
+ * Era uma lista fixa de caminhos ("/", "/produto/[slug]", ...) e ela envelhecia
+ * a cada rota nova: a lista de atendentes passou a ser lida no layout raiz
+ * (src/app/layout.tsx) e entra no payload de TODA rota, inclusive /conta,
+ * /carrinho, /checkout/rapido e /institucional/[slug], que nao estavam na
+ * lista e nao tem revalidate proprio — trocar o WhatsApp de um atendente nao
+ * chegava nelas ate o proximo deploy. Revalidar o layout raiz cobre a arvore
+ * inteira de uma vez (Next 16: o 2o parametro "layout" invalida o layout e
+ * tudo aninhado nele).
  */
 function refreshCatalog() {
   updateTag("catalog");
 
-  // Publico: tudo que lista ou detalha produto.
-  revalidatePath("/produto/[slug]", "page");
-  revalidatePath("/categoria/[slug]", "page");
-  for (const path of ["/", "/busca", "/ofertas", "/mais-vendidos", "/sitemap.xml"]) revalidatePath(path);
+  // Site inteiro: o layout raiz e pai de todas as paginas publicas e do painel.
+  revalidatePath("/", "layout");
 
-  // Painel.
-  for (const path of ["/painel", "/painel/produtos", "/painel/estoque", "/painel/ofertas", "/painel/configuracoes", "/painel/pedidos", "/painel/financeiro"]) revalidatePath(path);
+  // Rota de metadata: gerada por src/app/sitemap.ts, fora da arvore do layout.
+  revalidatePath("/sitemap.xml");
 }
 
 function audit(state: CatalogState, actorId: string, action: string, entityType: string, entityId: string, beforeData: unknown, afterData: unknown) {
@@ -533,6 +1210,9 @@ function inventoryActionError(error: unknown): ActionState {
 
 const bulkBlockInput = z.object({
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/),
+  // Canal reconhecido no cabecalho (vira canal/origem do pedido). A tela ja
+  // manda sempre; sem ele (pagina antiga aberta), o bloco entra como "outro".
+  channel: z.enum(BULK_CHANNELS).default("outro"),
   channelLabel: z.string().trim().min(1).max(120),
   customerName: z.string().trim().min(1).max(140),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -583,6 +1263,7 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
       const order = await createChannelSalesOrder(await readCatalogState(true), {
         requestId: block.requestId,
         sellerId: parsedSeller.data,
+        channel: block.channel,
         channelLabel: block.channelLabel,
         customerName: block.customerName,
         // Meio-dia para a data nao escorregar de dia por fuso.
@@ -604,6 +1285,8 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
+    revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
   }
 
   const resumo = created.length === 1 ? "1 pedido gerado" : `${created.length} pedidos gerados`;
@@ -822,7 +1505,8 @@ export async function deleteProductAction(formData: FormData) {
  *     cancelado. E o certo para venda que nao aconteceu.
  *   * EXCLUIR remove o pedido dos relatorios. Se ele estava finalizado, o
  *     estoque e devolvido ANTES de apagar — senao as unidades sumiriam do
- *     saldo sem nenhum pedido para justificar.
+ *     saldo sem nenhum pedido para justificar. O atendimento que o checkout
+ *     criou para o pedido (copia dos dados do cliente) e apagado junto.
  *
  * Os movimentos de estoque ficam nos dois casos: inventory_movements nao tem
  * vinculo com o pedido, entao a baixa e a devolucao continuam no historico.
@@ -842,7 +1526,8 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     }
 
     const falhas: string[] = [];
-    const cancelados: string[] = [];
+    const cancelados: Array<{ id: string; number: string }> = [];
+    const encontrados: Array<{ id: string; number: string }> = [];
 
     for (const id of ids) {
       try {
@@ -850,11 +1535,12 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
         const estado = await readCatalogState(true);
         const pedido = estado.operations.orders.find((item) => item.id === id);
         if (!pedido) continue;
+        encontrados.push({ id: pedido.id, number: pedido.number });
         // Excluir um pedido finalizado sem devolver o estoque antes deixaria o
         // saldo menor sem nenhum registro explicando por quê.
         if (pedido.status !== "cancelled") {
           await cancelSalesOrder(estado, id, owner.id);
-          cancelados.push(pedido.number);
+          cancelados.push({ id: pedido.id, number: pedido.number });
         }
       } catch (error) {
         falhas.push(error instanceof OrderOperationError ? error.message : `Pedido ${id} falhou.`);
@@ -864,15 +1550,26 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     let excluidos = 0;
     if (acao === "excluir") {
       excluidos = await deleteOrderRecords(ids);
+      // O atendimento criado pelo checkout é cópia do pedido (nome, telefone,
+      // observação) e sai junto; um atendimento só vinculado ao pedido fica,
+      // fechado como perdido. Best-effort, uma consulta para o lote inteiro.
+      // Entram também os que já estavam cancelados.
+      const atendimentos = await discardLeadsOfDeletedOrders(encontrados, owner.id);
       await mutateCatalogState((state) => {
-        audit(state, owner.id, "order.bulk_deleted", "order", ids[0], { ids, total: ids.length }, null);
+        audit(state, owner.id, "order.bulk_deleted", "order", ids[0], { ids, total: ids.length, ...(atendimentos ? { atendimentos } : {}) }, null);
       });
+    } else {
+      // Atendimentos dos pedidos cancelados fecham como perdidos (best-effort).
+      await closeLeadsOfOrders(cancelados, { stage: "lost", note: "Pedido cancelado" }, owner.id);
     }
 
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
+    revalidatePath("/painel/atendimento");
+    revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
 
     const resumo = acao === "excluir"
       ? `${excluidos} pedido(s) excluído(s)${cancelados.length ? ` · estoque devolvido de ${cancelados.length}` : ""}.`

@@ -3,10 +3,12 @@ import "server-only";
 import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
+import { normalizeOrderOrigin } from "@/lib/services/origem";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
-import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, StoreSettings } from "./types";
+import { canonicalizeOrderSellers, defaultSellers, normalizeSellers } from "./sellers";
+import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, SellerRecord, StoreSettings } from "./types";
 
 export interface InventoryMovementRecord {
   id: string;
@@ -108,6 +110,58 @@ export async function readCatalogState(fresh = false): Promise<CatalogState> {
   }
 }
 
+/**
+ * Retrato minimo para a rota publica do WhatsApp: quem atende e as
+ * configuracoes da loja, nada mais.
+ *
+ * `readCatalogState()` dispara oito consultas (entre elas ate 5.000 pedidos e
+ * 1.000 linhas de historico) porque o painel precisa do catalogo inteiro. O
+ * clique do cliente no botao de WhatsApp precisa de DOIS dados, e esperar o
+ * catalogo inteiro antes do redirect e latencia no caminho mais critico do
+ * site — alem de virar uma superficie publica de carga sobre o banco.
+ */
+export interface AttendantsSnapshot {
+  sellers: SellerRecord[];
+  settings: StoreSettings;
+}
+
+let attendantsPromise: Promise<AttendantsSnapshot> | null = null;
+let attendantsExpiresAt = 0;
+
+export async function readAttendantsState(): Promise<AttendantsSnapshot> {
+  // Sem Supabase o estado inteiro e um arquivo local so: ler um recorte
+  // separado nao economizaria nada e duplicaria a normalizacao.
+  if (!hasSupabaseConfig()) {
+    const state = await readCatalogState();
+    return { sellers: state.operations.sellers, settings: state.settings };
+  }
+
+  if (!attendantsPromise || Date.now() >= attendantsExpiresAt) {
+    attendantsExpiresAt = Date.now() + 5_000;
+    const leitura = readSupabaseAttendants();
+    attendantsPromise = leitura;
+    // Falha NAO fica guardada no cache: uma consulta que caiu nao pode
+    // contaminar todos os cliques dos 5 segundos seguintes.
+    leitura.catch(() => {
+      if (attendantsPromise === leitura) {
+        attendantsPromise = null;
+        attendantsExpiresAt = 0;
+      }
+    });
+  }
+  return attendantsPromise;
+}
+
+async function readSupabaseAttendants(): Promise<AttendantsSnapshot> {
+  const { data, error } = await createSupabaseAdminClient().from("store_settings").select("settings").eq("id", "store").maybeSingle();
+  if (error) throw new Error(`Nao foi possivel ler os atendentes no Supabase: ${error.message}`);
+  const persisted = (data as { settings?: Partial<StoreSettings> & { __operations?: AdminOperationsState } } | null)?.settings ?? {};
+  const { __operations, ...publicSettings } = persisted;
+  // Mesma normalizacao de `normalizeOperations`: registro antigo do JSONB ganha
+  // os campos novos e a lista vazia volta com os atendentes padrao.
+  return { sellers: normalizeSellers(__operations?.sellers), settings: { ...defaultStoreSettings, ...publicSettings } };
+}
+
 export async function writeCatalogState(state: CatalogState): Promise<void> {
   state.updatedAt = new Date().toISOString();
   if (hasSupabaseConfig()) {
@@ -115,7 +169,7 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
     // product_meta). Pedidos NAO vao mais aqui: eles moram em sales_orders,
     // gravados por INSERT. Mandar a lista junto faria o replace competir com
     // o livro-razao e reintroduzir a perda de pedido concorrente.
-    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta };
+    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs };
     const persistedState = {
       ...state,
       settings: { ...state.settings, __operations: operationsSemPedidos },
@@ -230,6 +284,39 @@ export async function deleteOrderRecords(ids: string[]): Promise<number> {
 }
 
 /**
+ * Anota no pedido o atendimento que nasceu com ele (`lead_id`).
+ *
+ * O atendimento do checkout e criado DEPOIS do pedido (em `after()`, fora do
+ * tempo de resposta do cliente), entao o vinculo so pode ser gravado depois. E
+ * um UPDATE direcionado de uma coluna, como a exclusao acima faz com o DELETE —
+ * nada de reescrever o pedido — e so vale enquanto o pedido ainda nao tem
+ * vinculo: repetir nunca troca o atendimento de um pedido.
+ *
+ * Devolve `false` sem lancar quando a coluna ainda nao existe (migration
+ * 202609210003 nao aplicada) ou o banco falha: quem chama e best-effort.
+ */
+export async function linkOrderToLead(orderId: string, leadId: string): Promise<boolean> {
+  if (!orderId || !leadId) return false;
+  if (hasSupabaseConfig()) {
+    const { error } = await createSupabaseAdminClient().from("sales_orders").update({ lead_id: leadId }).eq("id", orderId).is("lead_id", null);
+    if (error) {
+      console.warn("Nao foi possivel vincular o pedido ao atendimento (aplique supabase/migrations/202609210003_origem_do_pedido.sql se a coluna lead_id ainda nao existe):", error.message);
+      return false;
+    }
+    invalidarCacheRemoto();
+    return true;
+  }
+  let vinculado = false;
+  await mutateCatalogState((state) => {
+    const order = state.operations.orders.find((item) => item.id === orderId);
+    if (!order || order.lead_id) return;
+    order.lead_id = leadId;
+    vinculado = true;
+  });
+  return vinculado;
+}
+
+/**
  * Quantos movimentos de estoque o produto ja tem.
  *
  * Usado antes de excluir: inventory_movements.product_id tem ON DELETE
@@ -323,7 +410,9 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
   // Vendedores e product_meta continuam no JSONB (config pequena e mutavel).
   // Os pedidos vem da tabela propria — nunca mais do JSONB.
   const operations = normalizeOperations(__operations);
-  operations.orders = (ordersResult.data ?? []) as SalesOrderRecord[];
+  // normalizeOrderOrigin: antes da migration 202609210003 as colunas de origem
+  // nao vem na linha, e o pedido tem de sair com os valores padrao.
+  operations.orders = canonicalizeOrderSellers(((ordersResult.data ?? []) as SalesOrderRecord[]).map(normalizeOrderOrigin), operations.sellers);
 
   return {
     version: 2,
@@ -340,22 +429,37 @@ async function readSupabaseCatalogState(): Promise<CatalogState> {
 
 export function defaultOperationsState(): AdminOperationsState {
   return {
-    sellers: [
-      { id: "dom-guima", name: "Dom Guima", active: true },
-      { id: "gabriel", name: "Gabriel", active: true },
-    ],
+    sellers: defaultSellers(),
     orders: [],
     product_meta: {},
+    contact_opt_outs: [],
   };
 }
 
 function normalizeOperations(value?: Partial<AdminOperationsState> | null): AdminOperationsState {
-  const fallback = defaultOperationsState();
+  // Cada atendente passa por normalizeSeller: registro antigo ({id, name,
+  // active}) ganha os campos novos e o id legado "dom-guima" vira "juliano".
+  // O JSONB so e corrigido de fato no proximo save do catalogo.
+  const sellers = normalizeSellers(value?.sellers);
   return {
-    sellers: Array.isArray(value?.sellers) && value.sellers.length ? value.sellers : fallback.sellers,
-    orders: Array.isArray(value?.orders) ? value.orders : [],
+    sellers,
+    // Os pedidos recebem o mesmo mapeamento: no modo local (sem Supabase) a
+    // migration nunca roda, e a lista de atendentes nao pode discordar dos
+    // pedidos no filtro e no relatorio.
+    // E os pedidos gravados antes do controle de trafego ganham os campos de
+    // origem com o valor padrao ("nao informado").
+    orders: canonicalizeOrderSellers((Array.isArray(value?.orders) ? value.orders : []).map(normalizeOrderOrigin), sellers),
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
+    // Gravado antes desta lista existir = ninguem pediu para sair. So digitos,
+    // sem repetir: e o formato das identidades de customers.ts.
+    contact_opt_outs: normalizeContactOptOuts(value?.contact_opt_outs),
   };
+}
+
+function normalizeContactOptOuts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const digitos = value.flatMap((item) => (typeof item === "string" && /^\d{10,14}$/.test(item.trim()) ? [item.trim()] : []));
+  return [...new Set(digitos)];
 }
 
 function normalizeCatalogState(value: Partial<CatalogState>): CatalogState {
@@ -472,7 +576,8 @@ export async function createOrderRecord(
     if (error) throw traduzirErroDeEstoque(error.message, "Nao foi possivel registrar o pedido");
     invalidarCacheRemoto();
     const payload = data as { already_existed: boolean; order: SalesOrderRecord };
-    return { order: payload.order, alreadyExisted: Boolean(payload.already_existed) };
+    // Antes da migration 202609210003 a RPC antiga devolve a linha sem as colunas de origem.
+    return { order: normalizeOrderOrigin(payload.order), alreadyExisted: Boolean(payload.already_existed) };
   }
 
   return mutarLivroRazaoLocal((state) => {
@@ -513,7 +618,7 @@ export async function updateOrderRecord(
     if (error) throw traduzirErroDeEstoque(error.message, "Nao foi possivel atualizar o pedido");
     invalidarCacheRemoto();
     const payload = data as { found: boolean; applied: boolean; order?: SalesOrderRecord };
-    return { order: payload.order ?? null, found: Boolean(payload.found), applied: Boolean(payload.applied) };
+    return { order: payload.order ? normalizeOrderOrigin(payload.order) : null, found: Boolean(payload.found), applied: Boolean(payload.applied) };
   }
 
   return mutarLivroRazaoLocal((state) => {

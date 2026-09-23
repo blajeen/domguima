@@ -8,7 +8,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { social } from "@/config/site";
 import { categoryIcon } from "@/lib/catalog/categories";
 import type { Category } from "@/lib/catalog/types";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "./WhatsAppChooser";
 
 /** Menu lateral do celular — mesma navegação do desktop, em formato de gaveta. */
@@ -72,7 +72,6 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
           <div className="mt-4 space-y-2 border-t border-ink-100 p-3">
             <WhatsAppChooser
               message={genericMessage}
-              contacts={contactsFor()}
               className={buttonStyles({ variant: "whatsapp", fullWidth: true })}
             >
               <Icon name="whatsapp" />

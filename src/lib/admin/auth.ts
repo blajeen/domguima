@@ -13,6 +13,26 @@ const SESSION_HOURS = 12;
 export interface AdminAccount {
   username: string;
   name: string;
+  /** Atendente (SellerRecord.id) que este login representa; null = login sem vinculo. */
+  sellerId: string | null;
+}
+
+/** Quem esta logado no painel, como as paginas e actions enxergam. */
+export interface AdminOwner {
+  /** O username — e o que vira actor_id/created_by em toda a auditoria. */
+  id: string;
+  email: string;
+  name: string;
+  sellerId: string | null;
+}
+
+/** Linha de public.admin_users. `seller_id` so existe apos 202609210001_atendentes.sql. */
+interface AdminUserRow {
+  username: string;
+  name: string;
+  password_hash: string;
+  active: boolean;
+  seller_id?: string | null;
 }
 
 /**
@@ -46,17 +66,20 @@ export async function verifyAdminCredentials(username: string, password: string)
 
   if (hasSupabaseConfig()) {
     try {
+      // `*` em vez da lista de colunas: se o codigo subir antes da migration
+      // que cria seller_id, o login por tabela continua funcionando.
       const { data } = await createSupabaseAdminClient()
         .from("admin_users")
-        .select("username, name, password_hash, active")
+        .select("*")
         .eq("username", informado)
         .maybeSingle();
-      if (data?.active && senhaConfere(password, data.password_hash)) {
-        return { username: data.username, name: data.name };
+      const row = (data ?? null) as AdminUserRow | null;
+      if (row?.active && senhaConfere(password, row.password_hash)) {
+        return { username: row.username, name: row.name, sellerId: typeof row.seller_id === "string" && row.seller_id.trim() ? row.seller_id.trim() : null };
       }
       // Usuario existe na tabela mas a senha errou: nao cai para o ambiente,
       // senao a senha do dono abriria qualquer nome de usuario cadastrado.
-      if (data) return null;
+      if (row) return null;
     } catch {
       // Tabela ausente ou banco fora do ar: segue para a conta do ambiente.
     }
@@ -64,12 +87,12 @@ export async function verifyAdminCredentials(username: string, password: string)
 
   if (informado !== adminConfig.username.toLowerCase()) return null;
   return senhaConfere(password, adminConfig.passwordHash)
-    ? { username: adminConfig.username, name: "Dom Guima" }
+    ? { username: adminConfig.username, name: "Dom Guima", sellerId: null }
     : null;
 }
 
 export async function createAdminSession(account: AdminAccount) {
-  const token = await new SignJWT({ role: "owner", username: account.username, name: account.name })
+  const token = await new SignJWT({ role: "owner", username: account.username, name: account.name, sellerId: account.sellerId })
     .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${SESSION_HOURS}h`)
     .sign(new TextEncoder().encode(adminConfig.sessionSecret));
   (await cookies()).set(COOKIE_NAME, token, {
@@ -89,15 +112,23 @@ export async function destroyAdminSession() { (await cookies()).delete(COOKIE_NA
  * Nao consulta o banco: isso roda em toda requisicao do painel, e a assinatura
  * do JWT ja prova que a sessao foi emitida por nos. O preco e que desativar um
  * usuario so surte efeito no proximo login — a sessao aberta dura ate 12h.
+ *
+ * `sellerId` e opcional no token de proposito: sessoes emitidas antes dele
+ * existir continuam validas (vem como null) ate expirarem.
  */
-export async function getOwner() {
+export async function getOwner(): Promise<AdminOwner | null> {
   if (!hasAdminConfig()) return null;
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(adminConfig.sessionSecret), { algorithms: ["HS256"] });
     if (payload.role !== "owner" || typeof payload.username !== "string") return null;
-    return { id: payload.username, email: "", name: typeof payload.name === "string" ? payload.name : payload.username };
+    return {
+      id: payload.username,
+      email: "",
+      name: typeof payload.name === "string" ? payload.name : payload.username,
+      sellerId: typeof payload.sellerId === "string" && payload.sellerId ? payload.sellerId : null,
+    };
   } catch { return null; }
 }
 

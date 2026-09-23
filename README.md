@@ -123,7 +123,7 @@ integração desligada apenas esconde a sua seção, em vez de mostrar promessa 
 | Variável | Para quê | Sem ela |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | canonical, sitemap, Open Graph, JSON-LD | usa `domguima.com.br` |
-| `NEXT_PUBLIC_WHATSAPP_NUMBER` | botão flutuante, "comprar pelo WhatsApp", checkout | usa o número da bio do Instagram |
+| `NEXT_PUBLIC_WHATSAPP_NUMBER` | número inicial da loja, usado até o painel gravar o seu | usa o número da bio do Instagram |
 | `NEXT_PUBLIC_GOOGLE_PROFILE_URL` | sobrescreve o perfil público do Google já configurado | usa o link verificado no código |
 | `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_USER_ID` | grade de posts reais | mostra o convite para seguir |
 | `OPENAI_API_KEY` | pesquisa inteligente de modelo, descrição, especificações e sugestão de NCM no painel | o cadastro continua manual; o assistente pede configuração |
@@ -132,6 +132,12 @@ integração desligada apenas esconde a sua seção, em vez de mostrar promessa 
 A chave do Instagram é **server-side** — nunca use o prefixo `NEXT_PUBLIC_` nela.
 As métricas do Google são um retrato público datado em `src/config/site.ts` e
 levam ao perfil oficial; não dependem de API.
+
+O WhatsApp da loja e o de cada atendente vivem no painel (**Configurações →
+Loja e atendimento** e **Configurações → Atendentes**) — é de lá que saem todos
+os botões do site. `NEXT_PUBLIC_WHATSAPP_NUMBER` só vale enquanto o painel não
+tiver um número gravado; trocar de número depois disso é no painel, não na
+Vercel.
 
 ### Assistente inteligente de cadastro
 
@@ -170,16 +176,26 @@ consulte o [Guia de pesquisa de produtos](docs/GUIA-PESQUISA-DE-PRODUTOS.md).
 
 ## Painel administrativo
 
-O painel fica em `/painel` e gerencia produtos, preços, fotos, estoque,
-categorias, ofertas, dados da loja e a exportação do catálogo em PDF. Existe
-uma única conta de proprietário e não há cadastro público. Em produção, os
-dados e imagens ficam no Vercel Blob; localmente, ficam em arquivos ignorados
-pelo Git.
+O painel fica em `/painel` e cuida de duas frentes:
+
+- **Catálogo:** produtos, preços, fotos, estoque, categorias, ofertas, dados da
+  loja e a exportação do catálogo em PDF.
+- **Operação comercial:** pedidos, **Atendimento** (a fila de conversas de
+  WhatsApp e pedidos do site, com etapas até a venda), **Clientes** (quem já
+  comprou, quem voltou e quem vale recontatar), **Tráfego** (de onde vêm os
+  clientes) e **Relatórios**.
+
+Não há cadastro público. Em produção, os dados ficam no **Supabase** (tabelas
+e funções em `supabase/migrations/`) e as fotos no Storage do Supabase;
+localmente, sem `SUPABASE_URL`, tudo vai para arquivos ignorados pelo Git
+(`data/admin-catalog.json`, `data/admin-leads.json` e `public/uploads/`). Na
+Vercel, sem o Supabase configurado, o painel recusa gravações em vez de mostrar
+uma confirmação que seria perdida.
 
 ### Configuração inicial
 
-1. Gere a conta local. A senha é convertida em hash e não fica gravada no
-   código nem no arquivo de configuração:
+1. Gere a conta do ambiente. A senha é convertida em hash e não fica gravada
+   no código nem no arquivo de configuração:
 
 ```bash
 npm run setup:admin
@@ -187,9 +203,8 @@ npm run setup:admin
 
 2. Reinicie o Next.js e entre em `/painel/login`.
 3. No painel, abra Configurações e digite `IMPORTAR` na importação inicial.
-4. Para produção, conecte um Vercel Blob **público** ao projeto. A Vercel cria
-   `BLOB_READ_WRITE_TOKEN` automaticamente.
-5. Cadastre na Vercel os três valores `ADMIN_*` gerados em `.env.local`:
+4. Para produção, cadastre na Vercel `SUPABASE_URL` e `SUPABASE_SECRET_KEY`
+   (somente servidor) e os três valores `ADMIN_*` gerados em `.env.local`:
 
 ```env
 ADMIN_USERNAME=...
@@ -197,11 +212,113 @@ ADMIN_PASSWORD_HASH=...
 ADMIN_SESSION_SECRET=...
 ```
 
-O catálogo salvo no Blob é criptografado com AES-256-GCM usando o segredo da
-sessão. As imagens são públicas porque aparecem na loja; cada arquivo recebe
-um nome único. Toda Server Action revalida a sessão do proprietário antes de
-escrever. No ambiente da Vercel, o painel recusa gravações se o Blob não estiver
-conectado, evitando mostrar uma confirmação que seria perdida depois.
+Toda Server Action revalida a sessão antes de escrever. Não troque
+`ADMIN_SESSION_SECRET` durante uma implantação: isso derruba todas as sessões
+abertas.
+
+### Quem entra no painel
+
+Todo mundo que entra no painel vê e pode fazer tudo — um papel só, por decisão
+do dono. As abas “Meus atendimentos” e “Puxar para mim” são só conveniência.
+
+- **Conta do ambiente** (`ADMIN_USERNAME`): a rede de segurança. Continua
+  valendo mesmo se a tabela de usuários sumir ou o banco cair.
+- **Usuários do banco** (tabela `admin_users`), gerenciados pelo terminal:
+
+```bash
+npm run criar:usuario -- gabriel "Gabriel"                    # cria e sorteia a senha
+npm run criar:usuario -- gabriel "Gabriel" --vendedor gabriel # cria já vinculado ao atendente
+npm run criar:usuario -- gabriel --vendedor gabriel           # só vincula: senha e nome ficam
+npm run criar:usuario -- gabriel                              # sorteia senha nova
+npm run criar:usuario -- gabriel --desativar
+npm run criar:usuario -- --listar
+```
+
+`--vendedor <id>` diz ao painel qual atendente (Configurações → Atendentes)
+aquele login representa. O vínculo vai dentro da sessão: **depois do comando,
+saia e entre de novo** no painel. A conta do ambiente não mora na tabela; para
+vinculá-la, o comando exige `--senha "..."`, porque a senha do banco passa a
+valer no lugar da senha do ambiente.
+
+### Atendimento
+
+Todo botão de WhatsApp do site passa por `/api/atendimentos/whatsapp`, que
+registra o atendimento e só então abre o WhatsApp de quem vai atender — o
+cliente sempre chega à conversa, mesmo com o banco fora do ar. O pedido do
+checkout também vira atendimento, ligado ao pedido.
+
+- **Quem recebe** (Configurações → Distribuição de novos atendimentos):
+  *Cliente escolhe o atendente* (padrão; o pedido do site cai na fila livre),
+  *Rodízio entre os atendentes* ou *Atendente com menos atendimentos em aberto*.
+  Só entra no sorteio quem está ativo e com “Recebe atendimentos” ligado.
+- **Fila livre:** atendimento sem dono. Cada linha tem “Puxar para mim”,
+  “Transferir para…” e “Devolver à fila”.
+- **Etapas:** Novo → Em atendimento → Orçamento enviado → Aguardando pagamento
+  → Ganho ou Perdido (com motivo: preço, sem estoque, entrega ou frete, cliente
+  não respondeu, comprou em outro lugar, outro). As etapas são do
+  **atendimento**; o pedido mantém os próprios status (aguardando,
+  finalizado, cancelado), que são os que mexem no estoque. Confirmar o pedido
+  fecha o atendimento como Ganho; cancelar ou excluir fecha como Perdido.
+- **Vincular a pedido** (número DG-…) e **Lançar pedido** a partir do
+  atendimento.
+- **Identificar cliente:** o clique no WhatsApp chega sem telefone. Quando a
+  conversa revelar o telefone ou o CPF, informe em “Identificar cliente” na
+  linha do atendimento: é o que faz aparecer a etiqueta “Recorrente” e o aviso
+  de atendimento em aberto em Clientes.
+
+### Clientes e recontato
+
+A loja não tem cadastro de cliente: `/painel/clientes` reconhece quem comprou
+pelo telefone ou CPF dos pedidos **finalizados** e separa em Cliente novo,
+Recorrente (2 compras ou mais), VIP (3 compras ou R$ 3.000) e Inativo (mais de
+120 dias sem comprar). As regras moram em `src/lib/admin/customers.ts`.
+
+As **sugestões de recontato** listam quem comprou entre 60 e 180 dias atrás.
+O botão abre o WhatsApp com uma mensagem pronta para revisar — nada é enviado
+sozinho e não há cobrança recorrente. Quem pedir para não ser chamado recebe
+**“Não quer recontato”** na linha do cliente e sai das sugestões (a política de
+privacidade promete isso); “Permitir recontato” desfaz.
+
+### Controle de tráfego
+
+Só atribuição própria da loja, sem Google Analytics, Pixel nem contagem de
+visitas. O site guarda no navegador a origem da primeira visita rastreável
+(UTM, anúncio, site de origem) no cookie `domguima_origem` (90 dias), e ela
+acompanha o atendimento e o pedido. `/painel/trafego` soma atendimentos,
+pedidos e vendas por origem, campanha e página, e tem o gerador de links de
+campanha (UTM) para bio, anúncios e grupos.
+
+### Implantação do CRM (migrations)
+
+As migrations **não rodam sozinhas**: cada arquivo de `supabase/migrations/` é
+colado à mão no SQL Editor do Supabase, e não há tabela de controle dizendo o
+que já foi aplicado. As três do CRM têm de entrar **nesta ordem e ANTES do
+deploy do código**:
+
+| Ordem | Arquivo | Sem ela |
+| --- | --- | --- |
+| 1 | `202609210001_atendentes.sql` | nenhum login pode ser vinculado a atendente (“Meus atendimentos” vazio) |
+| 2 | `202609210002_atendimentos.sql` | nenhum atendimento é gravado: a fila e os cards de atendimento ficam zerados, e Clientes perde o aviso de atendimento em aberto |
+| 3 | `202609210003_origem_do_pedido.sql` | a função antiga do banco **descarta** canal, origem e campanha dos pedidos novos — e não há como recuperar depois |
+
+Cada arquivo pode ser rodado de novo sem efeito e traz no cabeçalho o motivo e
+o bloco “Rollback”. O código sobrevive a subir antes do SQL (a loja e o login
+continuam funcionando, o WhatsApp continua abrindo), mas o que for criado nesse
+intervalo fica sem atendimento ou sem origem. Enquanto faltar alguma, as telas
+do painel (início, Pedidos, Atendimento, Clientes e Tráfego) mostram uma faixa
+amarela dizendo qual arquivo aplicar.
+
+Depois de colar o SQL, confira contra o banco de verdade (usam o `.env.local`
+e apagam tudo o que criam, com prefixo `zz-teste-`):
+
+```bash
+npm run verify:leads     # atendimentos: dedupe, rodízio, menos ocupado, puxar/transferir, etapas
+npm run verify:ledger    # pedidos: concorrência, estoque, atribuição e canal/origem gravados
+```
+
+Por fim, vincule cada login ao seu atendente com
+`npm run criar:usuario -- <usuario> --vendedor <atendente>` e peça para cada um
+sair e entrar de novo.
 
 ### Regras operacionais
 
@@ -299,9 +416,22 @@ npm run test:smoke           # noutro
 
 Percorre a loja num navegador real e falha (exit 1) se algo quebrar: rotas fora do ar,
 erro de console, exceção de JS, imagem quebrada, vazamento horizontal de 320px a 1920px,
-fluxo de carrinho, validação do checkout, busca por CEP e autocomplete.
+fluxo de carrinho, validação do checkout, busca por CEP e autocomplete. Também confere o
+WhatsApp do site: o diálogo “Com quem você quer falar?” abre, o clique num atendente
+passa por `/api/atendimentos/whatsapp` e ela responde 302 para o `wa.me` do atendente
+certo, e o pedido rápido é um POST (303). Essas chamadas vão marcadas para a rota **não
+registrar** atendimento, e a aba aberta recebe uma página simulada: o smoke não suja a
+fila do painel nem abre conversa.
 
-Estado atual: **todas as verificações passam**, zero erros de console.
+Para incluir o painel (início, Pedidos, Atendimento, Clientes e Tráfego sem erro de
+console ou de hidratação, sem aviso de migration faltando, e a seleção em massa de
+pedidos), informe um login:
+
+```bash
+SMOKE_PAINEL_USUARIO=gabriel SMOKE_PAINEL_SENHA='...' npm run test:smoke
+```
+
+Sem essas variáveis, a parte do painel é pulada com aviso.
 
 ```bash
 npm run lint                 # ESLint — limpo

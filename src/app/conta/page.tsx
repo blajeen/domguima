@@ -3,7 +3,7 @@ import Link from "next/link";
 import { buttonStyles, textLinkStyles } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { social, whatsapp } from "@/config/site";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 export const metadata: Metadata = {
@@ -66,7 +66,6 @@ export default function AccountPage() {
         </p>
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor()}
           className={buttonStyles({ variant: "whatsapp", size: "lg", className: "mt-3" })}
         >
           <Icon name="whatsapp" />
@@ -105,7 +104,7 @@ function Card({
       <h2 className="mt-3 text-base font-bold text-ink-900">{title}</h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-600">{text}</p>
       {whatsappMessage ? (
-        <WhatsAppChooser message={whatsappMessage} contacts={contactsFor()} className={className}>
+        <WhatsAppChooser message={whatsappMessage} className={className}>
           {cta}
         </WhatsAppChooser>
       ) : external ? (

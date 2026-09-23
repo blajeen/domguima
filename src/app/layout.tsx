@@ -1,10 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Bodoni_Moda, Libre_Franklin } from "next/font/google";
+import { Suspense } from "react";
 import { CartDrawer } from "@/components/cart/CartDrawer";
+import { CapturaOrigem } from "@/components/layout/CapturaOrigem";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { WhatsAppFloat } from "@/components/layout/WhatsAppFloat";
 import { site } from "@/config/site";
+import { loadPublicAttendants } from "@/lib/catalog/database";
+import { AttendantsProvider } from "@/lib/store/attendants";
 import { CartProvider } from "@/lib/store/cart";
 import { JsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/utils/seo";
 import "./globals.css";
@@ -92,9 +96,12 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Uma leitura so para todos os botoes de WhatsApp do site. Header, rodape e
+  // flutuante ja leem o catalogo; readCatalogState deduplica no cache de 5s.
+  const attendants = await loadPublicAttendants();
   return (
     <html
       lang="pt-BR"
@@ -104,6 +111,14 @@ export default function RootLayout({
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />
 
+        {/* Origem da visita (controle de tráfego próprio, sem terceiros). O
+            Suspense é obrigatório: o componente lê a query string com
+            useSearchParams, e sem a fronteira as páginas estáticas deixariam
+            de ser pré-renderizadas. */}
+        <Suspense fallback={null}>
+          <CapturaOrigem />
+        </Suspense>
+
         <a
           href="#conteudo"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-ink-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
@@ -111,13 +126,15 @@ export default function RootLayout({
           Pular para o conteúdo
         </a>
 
-        <CartProvider>
-          <Header />
-          <main id="conteudo">{children}</main>
-          <Footer />
-          <CartDrawer />
-          <WhatsAppFloat />
-        </CartProvider>
+        <AttendantsProvider value={attendants}>
+          <CartProvider>
+            <Header />
+            <main id="conteudo">{children}</main>
+            <Footer />
+            <CartDrawer />
+            <WhatsAppFloat />
+          </CartProvider>
+        </AttendantsProvider>
       </body>
     </html>
   );

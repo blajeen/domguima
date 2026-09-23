@@ -2,7 +2,7 @@ import Link from "next/link";
 import { company, shopeeStats, site, social, support, whatsapp } from "@/config/site";
 import { getCatalogCategories } from "@/lib/catalog/queries";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "./WhatsAppChooser";
 import { Logo } from "./Logo";
 
@@ -37,7 +37,6 @@ export async function Footer() {
             <li>
               <WhatsAppChooser
                 message={genericMessage}
-                contacts={contactsFor(settings)}
                 className={FOOTER_LINK_CLASS}
               >
                 WhatsApp {settings.whatsappDisplay || whatsapp.display}

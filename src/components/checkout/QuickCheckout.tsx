@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { site } from "@/config/site";
-import { contactsFor, quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
+import { ATENDIMENTO_ROUTE, atendimentoFields, quickCartMessage } from "@/lib/services/whatsapp";
+import { useAttendants } from "@/lib/store/attendants";
 import { lineKey, useCart } from "@/lib/store/cart";
 import { CartTotals } from "@/components/cart/CartTotals";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
@@ -15,14 +16,17 @@ import { PriceTag } from "@/components/ui/PriceTag";
 
 type DeliveryChoice = "local" | "combinar";
 
-const sellers = contactsFor();
-
 export function QuickCheckout() {
   const router = useRouter();
   const { items, ready, subtotal, savings, clear } = useCart();
+  // Os mesmos atendentes do dialogo de WhatsApp, cadastrados no painel.
+  const { contacts: sellers, mode } = useAttendants();
+  // Em rodizio ou "menos ocupado" quem escolhe e a loja: esconder o radio evita
+  // prometer ao cliente uma escolha que o servidor vai ignorar.
+  const automatico = mode !== "customer_choice";
   const [name, setName] = useState("");
   const [delivery, setDelivery] = useState<DeliveryChoice>("local");
-  const [sellerId, setSellerId] = useState(sellers[0].id);
+  const [sellerId, setSellerId] = useState(sellers[0]?.id ?? "");
   const [neighborhood, setNeighborhood] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -32,33 +36,42 @@ export function QuickCheckout() {
     if (ready && items.length === 0 && !submitted) router.replace("/carrinho");
   }, [items.length, ready, router, submitted]);
 
+  // Esvaziar o carrinho e sair da página só DEPOIS que o navegador montou o
+  // POST: o envio é do próprio formulário, então um re-render durante o submit
+  // apagaria os campos ocultos e o cliente chegaria ao WhatsApp sem o pedido.
+  // O efeito roda numa tarefa seguinte, com o formulário já serializado.
+  useEffect(() => {
+    if (!submitted) return;
+    clear();
+    router.push("/pedido-enviado");
+  }, [submitted, clear, router]);
+
+  const escolhido = sellers.find((contact) => contact.id === sellerId);
+  const message = quickCartMessage(
+    items.map((item) => ({
+      name: item.variant ? `${item.name} (${item.variant})` : item.name,
+      quantity: item.quantity,
+      price: item.price,
+    })),
+    subtotal,
+    {
+      name: name.trim(),
+      delivery: delivery === "local" ? "Entrega em Uberlândia" : "Retirada ou entrega a combinar",
+      neighborhood: neighborhood.trim(),
+      notes: notes.trim(),
+    },
+  );
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
     if (name.trim().length < 2) {
+      event.preventDefault();
       setError("Informe seu nome para o vendedor identificar o pedido.");
       return;
     }
-
-    const message = quickCartMessage(
-      items.map((item) => ({
-        name: item.variant ? `${item.name} (${item.variant})` : item.name,
-        quantity: item.quantity,
-        price: item.price,
-      })),
-      subtotal,
-      {
-        name: name.trim(),
-        delivery: delivery === "local" ? "Entrega em Uberlândia" : "Retirada ou entrega a combinar",
-        neighborhood: neighborhood.trim(),
-        notes: notes.trim(),
-      },
-    );
-
-    const seller = sellers.find((contact) => contact.id === sellerId) ?? sellers[0];
-    window.open(whatsappLink(message, seller.number), "_blank", "noopener,noreferrer");
+    // SEM preventDefault: quem envia é o navegador, para a rota, em aba nova
+    // (target="_blank"). A rota registra o atendimento e redireciona para o
+    // wa.me — é o único ponto em que o pedido rápido deixa rastro no painel.
     setSubmitted(true);
-    clear();
-    router.push("/pedido-enviado");
   }
 
   if (!ready || items.length === 0) {
@@ -87,7 +100,26 @@ export function QuickCheckout() {
         </p>
       </div>
 
-      <form onSubmit={submit} className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
+      {/* POST nativo em aba nova: o nome, o bairro e a observação do cliente
+          vão no CORPO da requisição, e não na query string de um GET — que
+          ficaria guardada nos logs de acesso e no histórico do navegador. */}
+      <form
+        onSubmit={submit}
+        action={ATENDIMENTO_ROUTE}
+        method="post"
+        target="_blank"
+        rel="noopener"
+        className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8"
+      >
+        {atendimentoFields({
+          attendantId: automatico || !escolhido ? "auto" : escolhido.id,
+          kind: "quick_checkout",
+          message,
+          pagePath: "/checkout/rapido",
+          customerName: name.trim(),
+        }).map(([campo, valor]) => (
+          <input key={campo} type="hidden" name={campo} value={valor} readOnly />
+        ))}
         <div className="rounded-card border border-fio bg-white p-5 sm:p-6">
           <h2 className="text-lg font-extrabold text-ink-900">Só o essencial</h2>
           <p className="mt-1 text-sm text-ink-500">Sem cadastro, CPF, endereço completo ou dados de cartão.</p>
@@ -124,21 +156,23 @@ export function QuickCheckout() {
             </div>
           </fieldset>
 
-          <fieldset className="mt-5">
-            <legend className="text-sm font-bold text-ink-700">Enviar o pedido para quem?</legend>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {sellers.map((contact) => (
-                <Choice
-                  key={contact.id}
-                  name="seller"
-                  checked={sellerId === contact.id}
-                  onChange={() => setSellerId(contact.id)}
-                  title={contact.name}
-                  text={`${contact.role} · ${contact.display}`}
-                />
-              ))}
-            </div>
-          </fieldset>
+          {!automatico && (
+            <fieldset className="mt-5">
+              <legend className="text-sm font-bold text-ink-700">Enviar o pedido para quem?</legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {sellers.map((contact) => (
+                  <Choice
+                    key={contact.id}
+                    name="seller"
+                    checked={sellerId === contact.id}
+                    onChange={() => setSellerId(contact.id)}
+                    title={contact.name}
+                    text={`${contact.role} · ${contact.display}`}
+                  />
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <label className="mt-5 block text-sm font-bold text-ink-700">
             Bairro <span className="font-normal text-ink-400">(opcional)</span>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { buttonStyles, ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { whatsapp } from "@/config/site";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
@@ -12,9 +12,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function OrderSentPage({ searchParams }: { searchParams: Promise<{ tipo?: string; numero?: string }> }) {
+export default async function OrderSentPage({ searchParams }: { searchParams: Promise<{ tipo?: string; numero?: string; pedido?: string }> }) {
   const [params, settings] = await Promise.all([searchParams, loadPublicStoreSettings()]);
   const siteOrder = params.tipo === "site";
+  // O pedido do checkout ja tem um atendimento (e, no rodizio, um atendente).
+  // Com o id, o botao leva o cliente a quem cuida do pedido em vez de sortear
+  // outra pessoa. Quem valida o valor e a rota do WhatsApp.
+  const orderId = siteOrder && typeof params.pedido === "string" ? params.pedido.slice(0, 80) : undefined;
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success-light text-success">
@@ -37,7 +41,7 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor(settings)}
+          orderId={orderId}
           className={buttonStyles({ variant: "whatsapp", size: "lg" })}
         >
           <Icon name="whatsapp" />

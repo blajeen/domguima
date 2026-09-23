@@ -7,12 +7,15 @@ const nav = [
   { href: "/painel/produtos", label: "Produtos", icon: "▦" },
   { href: "/painel/pedidos/novo", label: "Novo pedido", icon: "+" },
   { href: "/painel/pedidos", label: "Pedidos", icon: "P" },
+  { href: "/painel/atendimento", label: "Atendimento", icon: "☎" },
+  { href: "/painel/clientes", label: "Clientes", icon: "☺" },
   { href: "/painel/ofertas", label: "Ofertas", icon: "%" },
   { href: "/painel/estoque", label: "Estoque", icon: "↕" },
   { href: "/painel/categorias", label: "Categorias", icon: "◇" },
   { href: "/painel/catalogo-pdf", label: "Catalogo PDF", icon: "PDF" },
   { href: "/painel/historico", label: "Historico", icon: "H" },
   { href: "/painel/financeiro", label: "Relatórios", icon: "$" },
+  { href: "/painel/trafego", label: "Trafego", icon: "↗" },
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 

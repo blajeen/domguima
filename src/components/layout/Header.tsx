@@ -3,7 +3,7 @@ import { Icon } from "@/components/ui/Icon";
 import { social, whatsapp } from "@/config/site";
 import { getCatalogCategories } from "@/lib/catalog/queries";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "./WhatsAppChooser";
 import { CartButton } from "./CartButton";
 import { CategoryMenu } from "./CategoryMenu";
@@ -41,7 +41,6 @@ export async function Header() {
             </a>
             <WhatsAppChooser
               message={genericMessage}
-              contacts={contactsFor(settings)}
               className="font-semibold text-gold-300 transition-colors hover:text-gold-200"
             >
               WhatsApp {settings.whatsappDisplay || whatsapp.display}

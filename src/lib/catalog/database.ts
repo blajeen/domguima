@@ -1,11 +1,21 @@
 import "server-only";
 
+import { whatsappContacts, type WhatsappContact } from "@/config/site";
 import { readCatalogState } from "@/lib/admin/catalog-store";
 import { defaultStoreSettings } from "@/lib/admin/defaults";
+import { contactableAttendants } from "@/lib/admin/distribution";
+import { normalizeLeadDistributionMode } from "@/lib/admin/sellers";
+import { contactsFor } from "@/lib/services/whatsapp";
 import { categories as fallbackCategories } from "./categories";
 import { products as fallbackProducts } from "./products";
 import type { Category, Product, ProductImage } from "./types";
-import type { StoreSettings } from "@/lib/admin/types";
+import type { LeadDistributionMode, StoreSettings } from "@/lib/admin/types";
+
+export interface PublicAttendants {
+  /** Quem o cliente pode escolher no dialogo do WhatsApp, na ordem configurada. */
+  contacts: WhatsappContact[];
+  mode: LeadDistributionMode;
+}
 
 export async function loadCatalogProducts(): Promise<Product[]> {
   try {
@@ -29,6 +39,27 @@ export async function loadPublicStoreSettings(): Promise<StoreSettings> {
   try {
     return { ...defaultStoreSettings, ...(await readCatalogState()).settings };
   } catch { return defaultStoreSettings; }
+}
+
+/**
+ * Atendentes que o site mostra, derivados do mesmo cadastro que o painel usa
+ * nos pedidos. O botao de WhatsApp nunca pode ficar sem destino: se nenhum
+ * atendente recebe atendimentos, mostra os ativos; se nao ha ativos ou o
+ * catalogo nao pode ser lido, volta para a lista estatica de config/site.
+ */
+export async function loadPublicAttendants(): Promise<PublicAttendants> {
+  const fallback: PublicAttendants = { contacts: [...whatsappContacts], mode: "customer_choice" };
+  try {
+    const state = await readCatalogState();
+    const settings = { ...defaultStoreSettings, ...state.settings };
+    const sellers = state.operations.sellers;
+    const visiveis = contactableAttendants(sellers, settings);
+    if (!visiveis.length) return { ...fallback, mode: normalizeLeadDistributionMode(settings.leadDistributionMode) };
+    return { contacts: contactsFor(settings, visiveis), mode: normalizeLeadDistributionMode(settings.leadDistributionMode) };
+  } catch (error) {
+    console.warn("Atendentes indisponiveis; usando a lista estatica do site.", error);
+    return fallback;
+  }
 }
 
 function toProduct(row: Record<string, unknown>): Product {

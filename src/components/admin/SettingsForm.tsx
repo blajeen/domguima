@@ -2,8 +2,11 @@
 
 import { useActionState } from "react";
 import { importCurrentCatalogAction, saveSettingsAction } from "@/app/painel/actions";
-import type { StoreSettings } from "@/lib/admin/types";
+import { normalizeLeadDistributionMode } from "@/lib/admin/sellers";
+import { LEAD_DISTRIBUTION_MODE_LABELS, type LeadDistributionMode, type StoreSettings } from "@/lib/admin/types";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
+
+const distributionModes = Object.keys(LEAD_DISTRIBUTION_MODE_LABELS) as LeadDistributionMode[];
 
 export function SettingsForm({ settings }: { settings: StoreSettings }) {
   const [state, action] = useActionState(saveSettingsAction, {});
@@ -21,7 +24,13 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
     <Field name="googleRatingCount" label="Quantidade de avaliacoes" value={settings.googleRatingCount} type="number" />
     <Field name="googleVerifiedAt" label="Data da conferencia" value={settings.googleVerifiedAt} type="date" />
     <Field name="pixDiscountPercent" label="Desconto no Pix (%)" value={settings.pixDiscountPercent} type="number" min="0" max="100" />
-    <Field name="maxInstallments" label="Maximo de parcelas" value={settings.maxInstallments} type="number" min="1" className="sm:col-span-2 sm:max-w-xs" />
+    <Field name="maxInstallments" label="Maximo de parcelas" value={settings.maxInstallments} type="number" min="1" />
+    <label className={labelClass}>Distribuição de novos atendimentos
+      <select name="leadDistributionMode" defaultValue={normalizeLeadDistributionMode(settings.leadDistributionMode)} className={fieldClass}>
+        {distributionModes.map((mode) => <option key={mode} value={mode}>{LEAD_DISTRIBUTION_MODE_LABELS[mode]}</option>)}
+      </select>
+      <span className="mt-1 block font-normal text-ink-500">Vale para os cliques de WhatsApp do site, o pedido rápido e os pedidos do checkout. No rodízio ou em “menos atendimentos em aberto”, o cliente vê um botão único e a loja escolhe quem recebe; no checkout completo o pedido já chega com o atendente definido (em “cliente escolhe”, ele entra na fila livre). Quem entra na distribuição é definido em “Atendentes”, abaixo. “Menos atendimentos em aberto” entrega para quem tem menos atendimentos nas etapas Novo, Em atendimento, Orçamento enviado e Aguardando pagamento — o mesmo número “em aberto” da tela de Atendimento — e desempata pelo rodízio. Para a conta ficar justa, marque cada conversa como Ganho ou Perdido em Atendimento ao encerrá-la (pedido confirmado ou cancelado fecha sozinho); um clique no WhatsApp que ninguém fechou continua contando como carga de quem o recebeu.</span>
+    </label>
   </div><FormMessage state={state} /><SubmitButton>Salvar configuracoes</SubmitButton></form>;
 }
 

@@ -49,6 +49,8 @@ shopee-cookie.txt
 
 # Persistencia local do painel; em producao os dados ficam no Vercel Blob.
 /data/admin-catalog.json
+# Atendimentos gravados em arquivo quando nao ha Supabase configurado (dev).
+/data/admin-leads.json
 /public/uploads/
 /.image-audit/
 

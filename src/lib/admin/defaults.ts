@@ -1,3 +1,4 @@
+import { whatsapp } from "@/config/site";
 import { categories as fallbackCategories } from "@/lib/catalog/categories";
 import { products as fallbackProducts } from "@/lib/catalog/products";
 import type { AdminCategoryRow, AdminProductRow, StoreSettings } from "./types";
@@ -9,7 +10,10 @@ export const defaultStoreSettings: StoreSettings = {
   cnpj: "36.720.898/0001-10",
   fiscalAddress: "",
   whatsappDisplay: "+55 34 9874-8425",
-  whatsappNumber: "553498748425",
+  // Enquanto o painel nao gravar um numero proprio, vale NEXT_PUBLIC_WHATSAPP_NUMBER
+  // (config/site.ts). Todos os botoes de WhatsApp do site passaram a sair daqui;
+  // repetir a constante deixaria a variavel de ambiente sem efeito nenhum.
+  whatsappNumber: whatsapp.number,
   instagramUrl: "https://www.instagram.com/domguima/",
   shopeeUrl: "https://shopee.com.br/domguima",
   googleUrl: "",
@@ -18,6 +22,7 @@ export const defaultStoreSettings: StoreSettings = {
   googleVerifiedAt: "2026-08-20",
   pixDiscountPercent: "5",
   maxInstallments: "3",
+  leadDistributionMode: "customer_choice",
 };
 
 export function initialProducts(): AdminProductRow[] { return fallbackProducts.map(fallbackProductRow); }

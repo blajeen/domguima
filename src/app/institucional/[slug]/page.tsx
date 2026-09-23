@@ -9,7 +9,7 @@ import {
   getInstitutionalPage,
   institutionalPages,
 } from "@/lib/content/institucional";
-import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
+import { genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 
 interface PageProps {
@@ -100,7 +100,6 @@ export default async function InstitutionalPage({ params }: PageProps) {
         </p>
         <WhatsAppChooser
           message={genericMessage}
-          contacts={contactsFor()}
           className={buttonStyles({ variant: "whatsapp", size: "lg", className: "mt-4" })}
         >
           <Icon name="whatsapp" />
