@@ -26,7 +26,10 @@ export function Badge({
   className?: string;
 }) {
   return (
+    // data-selo: marca a exceção da caixa alta (só selo de venda). O smoke
+    // test do padrão acusa caixa alta por CSS em qualquer outro lugar.
     <span
+      data-selo={variant === "neutro" ? undefined : ""}
       className={`inline-flex items-center gap-1 rounded-card px-1.5 py-1 text-xs leading-none ${styles[variant]} ${className}`}
     >
       {children}

@@ -90,7 +90,11 @@ export function PriceTag({
   const discount = discountPercent(cents, oldCents);
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    // `relative`: os textos sr-only abaixo são position:absolute. Sem um
+    // ancestral posicionado por perto, eles se posicionavam pela página e, nos
+    // cards fora da tela dos carrosséis da home, escapavam do overflow-hidden
+    // do card e alargavam a página em milhares de px (rolagem lateral).
+    <div className={`relative flex flex-col ${className}`}>
       {discount > 0 && oldCents !== undefined && (
         <p className={`${s.old} ${t.old}`}>
           <span className="sr-only">Preço anterior: </span>
