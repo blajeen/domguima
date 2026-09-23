@@ -1,175 +1,152 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
-import { Icon } from "@/components/ui/Icon";
+import { Button, ButtonLink } from "@/components/ui/Button";
+import { PriceTag } from "@/components/ui/PriceTag";
 import { Rating } from "@/components/ui/Rating";
 import type { Product } from "@/lib/catalog/types";
-import { useCart } from "@/lib/store/cart";
-import { bestInstallment, discountPercent, formatPrice } from "@/lib/utils/format";
+import type { CartProductInput } from "@/lib/store/cart-types";
+import { discountPercent, paymentLines } from "@/lib/utils/format";
+import { AddToCartButton } from "./AddToCartButton";
 
 interface ProductCardProps {
   product: Product;
-  /** Prioriza o download da imagem — use nos primeiros cards da tela. */
-  priority?: boolean;
+  /** Baixa a foto já, sem esperar a rolagem: só nos primeiros cards da tela. */
+  eager?: boolean;
   /** Largura fixa quando dentro de carrossel. */
   fixedWidth?: boolean;
 }
 
-export function ProductCard({
-  product,
-  priority = false,
-  fixedWidth = false,
-}: ProductCardProps) {
-  const router = useRouter();
-  const { addItem } = useCart();
-  const [justAdded, setJustAdded] = useState(false);
-
-  const discount = discountPercent(product.price, product.oldPrice);
-  // Parcelamento real informado pelo lojista (com taxa) tem prioridade sobre
-  // o cálculo "sem juros" — não inventamos condição melhor do que a real.
-  const installment = product.cardInstallment ?? bestInstallment(product.price);
-  const outOfStock = product.stock <= 0;
+/**
+ * Card de produto. Server component: numa grade de 48 cards, só os botões de
+ * "Adicionar" hidratam (AddToCartButton), não o card inteiro.
+ *
+ * Desenho: poço de foto branco, separação por fio de 1 px e nenhuma sombra. No
+ * hover a borda escurece e o botão aparece; nada sobe nem cresce. A foto é a
+ * do cadastro, do jeito que está: aqui só muda a moldura em volta dela.
+ */
+export function ProductCard({ product, eager = false, fixedWidth = false }: ProductCardProps) {
+  const href = `/produto/${product.slug}`;
   const image = product.images[0];
-
-  function handleAdd(event: React.MouseEvent) {
-    // O card inteiro é um link: impede a navegação ao clicar em "Adicionar".
-    event.preventDefault();
-    event.stopPropagation();
-    if (outOfStock) return;
-
-    // Produto com variação precisa de escolha — manda para a página dele.
-    if (product.variants?.length) {
-      router.push(`/produto/${product.slug}`);
-      return;
-    }
-
-    addItem(product, 1);
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 1400);
-  }
+  const outOfStock = product.stock <= 0;
+  // Com opção para escolher (voltagem, cor), o botão leva à página do produto:
+  // do card não dá para saber qual opção o cliente quer.
+  const needsChoice = Boolean(product.variantOptions?.length || product.variants?.length);
+  const discount = discountPercent(product.price, product.oldPrice);
+  const selo = seloDoCard(product, discount, outOfStock);
 
   return (
     <article
-      // Sem sombra: o card se separa pelo fio, e o hover só escurece a borda
-      // (nada de subir nem de animar sombra na grade).
       className={`group relative flex flex-col overflow-hidden rounded-card border border-fio bg-white transition-colors duration-(--duracao-toque) hover:border-grafite-900 ${
         fixedWidth
           ? "w-[46vw] max-w-[232px] sm:w-[224px] lg:w-full lg:max-w-none"
           : "w-full"
       }`}
     >
-      <Link
-        href={`/produto/${product.slug}`}
-        className="flex flex-1 flex-col focus-visible:outline-none"
-      >
-        <div className="relative aspect-square overflow-hidden bg-white">
+      {/* O contorno de foco fica por dentro: o card corta o que passa da borda. */}
+      <Link href={href} className="flex flex-1 flex-col focus-visible:-outline-offset-2">
+        <div className="relative aspect-square border-b border-fio bg-white">
           {image ? (
             <Image
               src={image.src}
               alt={image.alt}
               fill
-              preload={priority}
-              loading={priority ? undefined : "lazy"}
+              loading={eager ? "eager" : "lazy"}
               sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 232px"
-              className={`object-contain p-3 ${
-                outOfStock ? "opacity-45 grayscale" : ""
-              }`}
+              className={`object-contain p-3 ${outOfStock ? "opacity-45 grayscale" : ""}`}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 bg-ink-50 p-5 text-center"><Image src="/brand/logo-dom-guima.png" alt="" width={48} height={48} className="size-12 object-contain opacity-30" /><span className="text-xs font-semibold text-ink-500">Foto em preparação</span></div>
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-5 text-center">
+              <Image
+                src="/brand/logo-dom-guima.png"
+                alt=""
+                width={48}
+                height={48}
+                className="size-12 object-contain opacity-30"
+              />
+              <span className="text-xs font-semibold text-ink-500">Foto em preparação</span>
+            </div>
           )}
 
-          {/* No máximo um selo por card: desconto primeiro, depois mais vendido. */}
-          <div className="absolute left-2 top-2">
-            {discount > 0 ? (
-              <Badge variant="oferta">−{discount}%</Badge>
-            ) : (
-              product.isBestSeller &&
-              !outOfStock && <Badge variant="destaque">Mais vendido</Badge>
-            )}
-          </div>
+          {selo && <div className="absolute left-2 top-2">{selo}</div>}
 
           {outOfStock && (
-            <div className="absolute inset-x-0 bottom-0 bg-ink-900/85 py-1.5 text-center text-xs font-semibold text-white">
+            <p className="absolute inset-x-0 bottom-0 bg-grafite-900 py-1.5 text-center text-xs font-semibold text-papel">
               Indisponível
-            </div>
+            </p>
           )}
         </div>
 
-        <div className="flex flex-1 flex-col gap-1.5 border-t border-ink-50 p-3">
-          {product.brand && (
-            <p className="text-xs font-medium text-ink-500">{product.brand}</p>
-          )}
-          <h3 className="line-clamp-2-safe min-h-[2.5rem] text-[13px] font-medium leading-tight text-ink-700 transition-colors duration-(--duracao-toque) group-hover:text-grafite-900 sm:text-sm">
+        <div className="flex flex-1 flex-col p-3">
+          {product.brand && <p className="text-xs text-ink-500">{product.brand}</p>}
+          {/* Duas linhas sempre reservadas: os preços da mesma fileira alinham. */}
+          <h3 className="line-clamp-2-safe mt-0.5 min-h-10 text-sm font-medium leading-5 text-grafite-900">
             {product.name}
           </h3>
 
-          {/* Estrelas só aparecem com nota real. Nunca 5 estrelas vazias. */}
+          {/* Estrelas só com nota real. Nunca 5 estrelas vazias. */}
           {product.rating !== undefined && (
-            <Rating value={product.rating} reviewCount={product.reviewCount} />
+            <Rating value={product.rating} reviewCount={product.reviewCount} className="mt-1.5" />
           )}
 
-          <div className="mt-auto pt-1">
-            {product.oldPrice && (
-              <p className="text-xs text-ink-400 line-through">
-                {formatPrice(product.oldPrice)}
-              </p>
-            )}
-            <div className="flex flex-wrap items-baseline gap-x-1">
-              <p className="text-lg font-extrabold leading-tight tracking-tight text-ink-900">
-                {formatPrice(product.price)}
-              </p>
-              <span className="text-xs font-medium text-ink-500">à vista</span>
-            </div>
-            {installment && (
-              <p className="mt-0.5 text-xs text-ink-500">
-                ou {installment.count}x de{" "}
-                <span className="font-semibold text-ink-700">
-                  {formatPrice(installment.value)}
-                </span>
-                {product.cardInstallment && " (com taxa)"}
-              </p>
-            )}
-          </div>
+          <PriceTag
+            className="mt-3"
+            cents={product.price}
+            oldCents={product.oldPrice}
+            lines={paymentLines(product.price, product.cardInstallment)}
+          />
         </div>
       </Link>
 
-      <div className="px-3 pb-3">
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={outOfStock}
-          aria-label={
-            product.variants?.length
-              ? `Escolher opções de ${product.name}`
-              : `Adicionar ${product.name} ao carrinho`
-          }
-          className={`flex w-full items-center justify-center gap-1.5 rounded-control px-3 py-2 text-sm font-bold transition-[background-color,color,translate] duration-(--duracao-toque) ease-out ${
-            outOfStock
-              ? "cursor-not-allowed bg-ink-100 text-ink-400"
-              : justAdded
-                ? "bg-success text-white"
-                : "bg-grafite-900 text-papel hover:bg-grafite-800 active:translate-y-px"
-          }`}
-        >
-          {outOfStock ? (
-            "Indisponível"
-          ) : justAdded ? (
-            <>
-              No carrinho
-              <Icon name="check" size={16} />
-            </>
-          ) : product.variants?.length ? (
-            "Escolher opções"
-          ) : (
-            "Adicionar"
-          )}
-        </button>
+      {/* Só com mouse (e nenhuma tela de toque), o botão aparece no hover ou
+          quando o foco entra no card (teclado). Com toque, inclusive em
+          notebook híbrido, ele fica sempre à vista. O espaço é reservado nos
+          dois casos: a grade não pula. */}
+      <div className="px-3 pb-3 transition-opacity duration-(--duracao-toque) group-focus-within:opacity-100 group-hover:opacity-100 so-mouse:opacity-0">
+        {outOfStock ? (
+          <Button size="sm" fullWidth disabled>
+            Indisponível
+          </Button>
+        ) : needsChoice ? (
+          <ButtonLink
+            href={href}
+            size="sm"
+            fullWidth
+            aria-label={`Escolher opções de ${product.name}`}
+          >
+            Escolher opções
+          </ButtonLink>
+        ) : (
+          <AddToCartButton product={paraOCarrinho(product)} />
+        )}
       </div>
     </article>
   );
+}
+
+/**
+ * No máximo um selo por card, na ordem desconto > mais vendido > exclusivo.
+ * O desconto já é o "−X%" colado ao preço: com desconto a foto fica sem selo,
+ * para o card não repetir o número nem somar um segundo selo.
+ */
+function seloDoCard(product: Product, discount: number, outOfStock: boolean) {
+  if (outOfStock || discount > 0) return null;
+  if (product.isBestSeller) return <Badge variant="destaque">Mais vendido</Badge>;
+  if (product.isExclusive) return <Badge variant="exclusivo">Só na Dom Guima</Badge>;
+  return null;
+}
+
+/** Só o que o carrinho usa: descrição e ficha técnica não vão para o navegador. */
+function paraOCarrinho(product: Product): CartProductInput {
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    price: product.price,
+    oldPrice: product.oldPrice,
+    stock: product.stock,
+    images: product.images[0] ? [{ src: product.images[0].src }] : [],
+    shipping: { weight: product.shipping.weight },
+    cardInstallment: product.cardInstallment,
+  };
 }

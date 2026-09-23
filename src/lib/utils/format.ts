@@ -91,6 +91,51 @@ export function paymentLines(cents: number, cardInstallment?: Installment): Paym
   };
 }
 
+/** O que a conta do total precisa de cada linha do carrinho. */
+export interface PaymentLineItem {
+  /** Centavos, por unidade. */
+  price: number;
+  quantity: number;
+  /**
+   * Parcelamento real (com taxa) do produto. `null`: o produto não tem, e vale
+   * a regra do Pix com desconto. `undefined`: não se sabe (linha salva antes
+   * deste campo existir), então nada é afirmado sobre o total.
+   */
+  cardInstallment?: Installment | null;
+}
+
+/**
+ * Linhas de pagamento do TOTAL do carrinho, com a mesma frase do card e da
+ * página de produto. Só afirma o que as linhas permitem afirmar:
+ * - todas com parcelamento real no mesmo número de vezes: soma as parcelas
+ *   informadas pelo lojista (o preço de cada uma já é o do Pix/dinheiro);
+ * - todas com parcelamento real, mas em números de vezes diferentes: só a
+ *   linha do Pix. O total já é o preço do Pix/dinheiro de todas, mas não há
+ *   um "em até Nx" comum para somar (de propósito: não é caso de sumir tudo);
+ * - nenhuma com parcelamento real: a regra de sempre aplicada ao total;
+ * - mistura das duas, ou linha sem a informação: não há frase honesta para o
+ *   total, e nada aparece (a loja confirma o valor pelo WhatsApp).
+ */
+export function totalPaymentLines(items: PaymentLineItem[]): PaymentLines | null {
+  if (items.length === 0) return null;
+  if (items.some((item) => item.cardInstallment === undefined)) return null;
+
+  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const reais = items.flatMap((item) => (item.cardInstallment ? [item.cardInstallment] : []));
+  if (reais.length === 0) return paymentLines(total);
+  if (reais.length < items.length) return null;
+
+  const count = reais[0].count;
+  if (reais.some((installment) => installment.count !== count)) {
+    return { pix: "no Pix ou dinheiro", cartao: null };
+  }
+  const value = items.reduce(
+    (sum, item) => sum + (item.cardInstallment?.value ?? 0) * item.quantity,
+    0,
+  );
+  return paymentLines(total, { count, value });
+}
+
 /** "1.200 g" → "1,2 kg" quando fizer sentido. */
 export function formatWeight(grams: number): string {
   return grams >= 1000

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CatalogView } from "@/components/catalog/CatalogView";
-import { parseFilterState, parseSort, toProductFilters } from "@/lib/catalog/filters";
+import { parseFilterState, parseSort, priceRangesFor, toProductFilters } from "@/lib/catalog/filters";
 import { getBrands, getCatalogCategories, getProductsByCategory, queryProducts } from "@/lib/catalog/queries";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -55,9 +55,10 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   const products = await queryProducts(
     toProductFilters(filters, sort, { categoryId: category.id }),
   );
-  // As marcas do filtro saem da categoria inteira, não do resultado já filtrado —
-  // senão a opção some assim que o usuário a marca.
-  const brands = getBrands(await getProductsByCategory(category.id));
+  // Marcas e faixas de preço do filtro saem da categoria inteira, não do
+  // resultado já filtrado — senão a opção some assim que o usuário a marca.
+  const categoryProducts = await getProductsByCategory(category.id);
+  const brands = getBrands(categoryProducts);
 
   return (
     <CatalogView
@@ -69,6 +70,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
       ]}
       products={products}
       brands={brands}
+      priceRanges={priceRangesFor(categoryProducts)}
       filters={filters}
       sort={sort}
     />

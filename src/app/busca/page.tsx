@@ -5,7 +5,7 @@ import { ProductCarousel } from "@/components/product/ProductCarousel";
 import { chipStyles } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { categoryIcon } from "@/lib/catalog/categories";
-import { parseFilterState, parseSort, toProductFilters } from "@/lib/catalog/filters";
+import { parseFilterState, parseSort, priceRangesFor, toProductFilters } from "@/lib/catalog/filters";
 import { getBestSellers, getBrands, getCatalogCategories, queryProducts, searchProducts } from "@/lib/catalog/queries";
 
 interface PageProps {
@@ -37,14 +37,16 @@ export default async function SearchPage({ searchParams }: PageProps) {
   if (!term) return <EmptyQuery />;
 
   const products = await queryProducts(toProductFilters(filters, sort, { query: term }));
-  const brands = getBrands(await searchProducts(term));
+  // Facetas do filtro a partir de tudo que a busca encontra, sem os filtros.
+  const found = await searchProducts(term);
 
   return (
     <CatalogView
       title={`Busca por “${term}”`}
       breadcrumbs={[{ label: "Início", href: "/" }, { label: `Busca: ${term}` }]}
       products={products}
-      brands={brands}
+      brands={getBrands(found)}
+      priceRanges={priceRangesFor(found)}
       filters={filters}
       sort={sort}
       emptyMessage="Não encontramos exatamente o que você procura"

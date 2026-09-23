@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { CartTotals } from "@/components/cart/CartTotals";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
-import { Button } from "@/components/ui/Button";
+import { Button, textLinkStyles } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { PriceTag } from "@/components/ui/PriceTag";
 import { site } from "@/config/site";
 import { ORDER_PAYMENT_METHOD_LABELS, type OrderPaymentMethod } from "@/lib/admin/types";
 import {
@@ -14,8 +16,7 @@ import {
   isValidCep,
   lookupCep,
 } from "@/lib/services/shipping";
-import { useCart } from "@/lib/store/cart";
-import { formatPrice } from "@/lib/utils/format";
+import { lineKey, useCart } from "@/lib/store/cart";
 import {
   formatDocument,
   formatPhone,
@@ -206,7 +207,7 @@ export default function CheckoutPage() {
         siteUrl={site.url}
       />
 
-      <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+      <h1 className="mt-4 text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
         Finalizar pedido
       </h1>
 
@@ -373,7 +374,7 @@ export default function CheckoutPage() {
                 {paymentOptions(isUberlandia(form.city)).map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors ${form.paymentMethod === option.value ? "border-grafite-900 bg-papel text-grafite-900" : "border-ink-200 hover:border-grafite-700"}`}
+                    className={`flex cursor-pointer items-start gap-3 rounded-control border p-3 text-sm transition-colors duration-(--duracao-toque) ${form.paymentMethod === option.value ? "border-grafite-900 bg-papel text-grafite-900" : "border-ink-200 hover:border-grafite-700"}`}
                   >
                     <input
                       type="radio"
@@ -415,59 +416,57 @@ export default function CheckoutPage() {
         </div>
 
         <aside className="lg:sticky lg:top-[calc(var(--header-h)+1.5rem)] lg:h-fit">
-          <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card">
-            <h2 className="mb-4 text-base font-extrabold text-ink-900">
+          <div className="rounded-card border border-fio bg-white p-5">
+            <h2 className="mb-2 text-base font-bold text-grafite-900">
               Resumo
             </h2>
 
-            <ul className="mb-4 max-h-64 space-y-3 overflow-y-auto">
+            <ul className="mb-3 max-h-64 divide-y divide-fio overflow-y-auto">
               {items.map((item) => (
                 <li
-                  key={`${item.productId}-${item.variant ?? ""}`}
-                  className="flex justify-between gap-3 text-sm"
+                  key={lineKey(item)}
+                  className="flex items-start justify-between gap-3 py-2.5 text-sm"
                 >
-                  <span className="min-w-0 text-ink-600">
-                    <span className="font-semibold text-ink-900">
-                      {item.quantity}x
-                    </span>{" "}
-                    <span className="line-clamp-2-safe">{item.name}</span>
+                  <span className="min-w-0 text-ink-700">
+                    <span className="line-clamp-2-safe">
+                      <span className="font-semibold tabular-nums text-grafite-900">
+                        {item.quantity}x
+                      </span>{" "}
+                      {item.name}
+                    </span>
+                    {item.variant && (
+                      <span className="mt-0.5 block text-xs text-ink-500">{item.variant}</span>
+                    )}
                   </span>
-                  <span className="shrink-0 font-semibold text-ink-900">
-                    {formatPrice(item.price * item.quantity)}
-                  </span>
+                  <PriceTag
+                    size="compacto"
+                    className="shrink-0 items-end text-right"
+                    cents={item.price * item.quantity}
+                    oldCents={item.oldPrice ? item.oldPrice * item.quantity : undefined}
+                  />
                 </li>
               ))}
             </ul>
 
-            <dl className="space-y-2 border-t border-ink-100 pt-3 text-sm">
-              <div className="flex justify-between text-ink-600">
-                <dt>Subtotal</dt>
-                <dd>{formatPrice(subtotal)}</dd>
-              </div>
-              {savings > 0 && (
-                <div className="flex justify-between font-semibold text-success">
-                  <dt>Você economiza</dt>
-                  <dd>−{formatPrice(savings)}</dd>
-                </div>
-              )}
-              <div className="flex justify-between text-ink-600">
-                <dt>Frete</dt>
-                <dd className="text-ink-400">A combinar</dd>
-              </div>
-              <div className="flex justify-between border-t border-ink-100 pt-2 text-lg font-extrabold text-ink-900">
-                <dt>Total</dt>
-                <dd>{formatPrice(subtotal)}</dd>
-              </div>
-            </dl>
+            <div className="border-t border-fio pt-3">
+              <CartTotals
+                items={items}
+                subtotal={subtotal}
+                savings={savings}
+                shipping="A combinar"
+              />
+            </div>
 
-            <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <p className="text-sm font-extrabold text-blue-950">Pedido pelo site</p>
-              <p className="mt-1 text-xs leading-relaxed text-blue-800">
+            <div className="mt-5 rounded-card border border-fio bg-papel p-4">
+              <p className="text-sm font-bold text-grafite-900">Pedido pelo site</p>
+              <p className="mt-1 text-xs leading-relaxed text-ink-700">
                 Enviamos sua solicitação para a Dom Guima. O dono entra em contato pelo WhatsApp para confirmar o pedido, o frete, o pagamento e avisar quando ele for enviado.
               </p>
             </div>
 
-            {siteError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{siteError}</p>}
+            {/* Mesmo vermelho dos erros dos campos (`oferta` é só desconto). Sem
+                fundo tingido: sobre ele este vermelho cairia abaixo de 4,5:1. */}
+            {siteError && <p role="alert" className="mt-3 rounded-control border border-promo/40 px-3 py-2 text-sm font-semibold text-promo">{siteError}</p>}
             <Button
               type="submit"
               disabled={sitePending}
@@ -478,16 +477,15 @@ export default function CheckoutPage() {
               {sitePending ? "Enviando pedido..." : "Enviar pedido"}
             </Button>
 
-            <p className="mt-3 text-center text-xs leading-relaxed text-ink-400">
+            <p className="mt-3 text-center text-xs leading-relaxed text-ink-500">
               Nenhum pagamento é cobrado nesta etapa. A confirmação será feita pelo WhatsApp.
             </p>
 
-            <Link
-              href="/carrinho"
-              className="mt-3 block text-center text-sm font-medium text-ink-500 transition-colors hover:text-ink-800"
-            >
-              Voltar ao carrinho
-            </Link>
+            <div className="mt-1 text-center">
+              <Link href="/carrinho" className={textLinkStyles}>
+                Voltar ao carrinho
+              </Link>
+            </div>
           </div>
         </aside>
       </form>
@@ -531,7 +529,7 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-card border border-ink-100 bg-white p-5 shadow-card sm:p-6">
+    <section className="rounded-card border border-fio bg-white p-5 sm:p-6">
       <h2 className="mb-4 flex items-center gap-2.5 text-base font-extrabold text-ink-900">
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink-900 text-xs text-white">
           {step}

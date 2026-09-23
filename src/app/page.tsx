@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { CategoryStrip } from "@/components/home/CategoryStrip";
 import { HeroBanner } from "@/components/home/HeroBanner";
-import { ExclusiveProductCarousel } from "@/components/home/ExclusiveProductCarousel";
+import {
+  ExclusiveProductCarousel,
+  type ProdutoExclusivo,
+} from "@/components/home/ExclusiveProductCarousel";
 import { InstagramSection } from "@/components/home/InstagramSection";
 import { ReviewsSection } from "@/components/home/ReviewsSection";
 import { TrustBar } from "@/components/home/TrustBar";
@@ -37,7 +40,21 @@ export default async function HomePage() {
   );
   const offers = await getOffers(12);
   const heroBanners = await getSmartBanners();
-  const exclusiveProducts = await getExclusiveProducts();
+  // O carrossel é client: só vai para o navegador o que ele mostra.
+  const exclusiveProducts = (await getExclusiveProducts()).map(
+    (product): ProdutoExclusivo => ({
+      id: product.id,
+      slug: product.slug,
+      name: product.name,
+      brand: product.brand,
+      price: product.price,
+      oldPrice: product.oldPrice,
+      cardInstallment: product.cardInstallment,
+      image: product.images[0]
+        ? { src: product.images[0].src, alt: product.images[0].alt }
+        : null,
+    }),
+  );
 
   return (
     <>

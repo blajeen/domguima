@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { CatalogView } from "@/components/catalog/CatalogView";
-import { parseFilterState, parseSort, toProductFilters } from "@/lib/catalog/filters";
+import { parseFilterState, parseSort, priceRangesFor, toProductFilters } from "@/lib/catalog/filters";
 import { getBestSellers, getBrands, queryProducts } from "@/lib/catalog/queries";
 
 export const metadata: Metadata = {
@@ -33,6 +33,7 @@ export default async function BestSellersPage({
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Mais vendidos" }]}
       products={products}
       brands={getBrands(bestSellers)}
+      priceRanges={priceRangesFor(bestSellers)}
       filters={filters}
       sort={sort}
     />

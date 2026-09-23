@@ -19,10 +19,12 @@ export function CartButton() {
       <span className="relative">
         <Icon name="carrinho" />
         {ready && count > 0 && (
+          // A chave muda a cada item que entra: o contador remonta e o pulso
+          // roda uma vez. Só transform, e nada para quem pediu menos movimento.
           <span
-            key={lastAdded ?? "count"}
-            className={`absolute -right-2 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-400 px-1 text-xs font-extrabold text-ink-900 ${
-              lastAdded ? "animate-[fade-up_0.35s_ease-out]" : ""
+            key={`${lastAdded ?? ""}:${count}`}
+            className={`absolute -right-2 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-pill bg-ouro-claro px-1 text-xs font-bold tabular-nums text-grafite-900 ${
+              lastAdded ? "motion-safe:animate-pulso" : ""
             }`}
           >
             {count > 99 ? "99+" : count}

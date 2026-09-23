@@ -10,7 +10,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { Product } from "@/lib/catalog/types";
 import {
   getReadySnapshot,
   getReadyServerSnapshot,
@@ -20,10 +19,10 @@ import {
   subscribe,
   subscribeReady,
 } from "./cart-storage";
-import { type CartItem, lineKey } from "./cart-types";
+import { type CartItem, type CartProductInput, lineKey } from "./cart-types";
 
 export { lineKey };
-export type { CartItem };
+export type { CartItem, CartProductInput };
 
 interface CartContextValue {
   items: CartItem[];
@@ -37,7 +36,7 @@ interface CartContextValue {
   isOpen: boolean;
   /** Id do item recém-adicionado, para o feedback visual do header. */
   lastAdded: string | null;
-  addItem: (product: Product, quantity?: number, variant?: string, variantId?: string) => void;
+  addItem: (product: CartProductInput, quantity?: number, variant?: string, variantId?: string) => void;
   removeItem: (key: string) => void;
   setQuantity: (key: string, quantity: number) => void;
   clear: () => void;
@@ -67,12 +66,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addItem = useCallback(
-    (product: Product, quantity = 1, variant?: string, variantId?: string) => {
+    (product: CartProductInput, quantity = 1, variant?: string, variantId?: string) => {
       // Com variacao, quem manda em preco e estoque e a OPCAO escolhida, nao o
       // produto: o produto so guarda o menor preco e a soma dos estoques.
       const opcao = variantId ? product.variantOptions?.find((item) => item.id === variantId) : undefined;
       const estoque = opcao ? opcao.stock : product.stock;
       if (estoque <= 0) return;
+
+      // O parcelamento real vale para o preço do produto. Opção com preço
+      // próprio fica sem ele (undefined), e o total não inventa parcela.
+      const parcelamento = !product.cardInstallment
+        ? null
+        : !opcao || opcao.price === product.price
+          ? product.cardInstallment
+          : undefined;
 
       const incoming: CartItem = {
         productId: product.id,
@@ -88,6 +95,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         weight: product.shipping.weight,
         variant: opcao ? opcao.label : variant,
         ...(opcao ? { variantId: opcao.id } : {}),
+        ...(parcelamento !== undefined ? { cardInstallment: parcelamento } : {}),
       };
 
       const key = lineKey(incoming);
@@ -98,7 +106,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         existing
           ? current.map((i) =>
               lineKey(i) === key
-                ? { ...i, quantity: Math.min(i.quantity + quantity, i.stock) }
+                ? {
+                    ...i,
+                    quantity: Math.min(i.quantity + quantity, i.stock),
+                    // Linha antiga, sem o parcelamento salvo: completa agora,
+                    // se o preço dela ainda é o mesmo do produto.
+                    ...(i.cardInstallment === undefined &&
+                    incoming.cardInstallment !== undefined &&
+                    i.price === incoming.price
+                      ? { cardInstallment: incoming.cardInstallment }
+                      : {}),
+                  }
                 : i,
             )
           : [...current, incoming],

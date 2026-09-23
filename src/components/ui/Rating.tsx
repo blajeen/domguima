@@ -35,19 +35,21 @@ export function Rating({
           const fill = Math.max(0, Math.min(1, value - i));
           return (
             <span key={i} className={`relative ${star}`}>
-              <Star className={`${star} absolute inset-0 text-ink-200`} />
+              <Star className={`${star} absolute inset-0 text-fio`} />
               <span
                 className="absolute inset-0 overflow-hidden"
                 style={{ width: `${fill * 100}%` }}
               >
-                <Star className={`${star} text-gold-400`} />
+                {/* Ouro chapado: 3,4:1 sobre branco (o gold-400 antigo dava 2,6:1). */}
+                <Star className={`${star} text-ouro`} />
               </span>
             </span>
           );
         })}
       </div>
       {showCount && reviewCount !== undefined && (
-        <span className={`${text} text-ink-400`}>({reviewCount})</span>
+        // ink-500: o ink-400 antigo ficava em 4:1, abaixo do AA para 12 px.
+        <span className={`${text} text-ink-500`}>({reviewCount})</span>
       )}
     </div>
   );

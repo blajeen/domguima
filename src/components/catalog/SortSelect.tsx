@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Icon } from "@/components/ui/Icon";
 // Direto de filters.ts, não de queries.ts: queries.ts importa o catálogo
 // inteiro (que usa `node:fs` para detectar fotos reais em disco) e isso não
 // pode ser puxado para o bundle do cliente.
@@ -24,20 +25,31 @@ export function SortSelect({ value }: { value: SortKey }) {
 
   return (
     <label className="flex items-center gap-2 text-sm">
-      <span className="hidden whitespace-nowrap text-ink-500 sm:inline">
+      {/* No celular o rótulo some da tela, mas não do leitor de tela: sem ele
+          o select ficaria sem nome. */}
+      <span className="sr-only whitespace-nowrap text-ink-600 sm:not-sr-only">
         Ordenar por
       </span>
-      <select
-        value={value}
-        onChange={onChange}
-        className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium text-ink-700 outline-none transition-colors hover:border-ink-300 focus:border-gold-400"
-      >
-        {SORT_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {/* Mesmo desenho do botão "Filtrar" ao lado: raio de controle, fio de
+          1 px e a seta da loja no lugar da seta do sistema. */}
+      <span className="relative flex">
+        <select
+          value={value}
+          onChange={onChange}
+          className="min-h-11 cursor-pointer appearance-none rounded-control border border-fio bg-white py-2 pl-3.5 pr-9 text-sm font-medium text-grafite-900 transition-colors duration-(--duracao-toque) hover:border-grafite-900"
+        >
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <Icon
+          name="seta-baixo"
+          size={18}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-grafite-700"
+        />
+      </span>
     </label>
   );
 }

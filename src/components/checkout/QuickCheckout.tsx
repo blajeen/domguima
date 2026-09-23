@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { site } from "@/config/site";
 import { contactsFor, quickCartMessage, whatsappLink } from "@/lib/services/whatsapp";
-import { useCart } from "@/lib/store/cart";
-import { formatPrice } from "@/lib/utils/format";
+import { lineKey, useCart } from "@/lib/store/cart";
+import { CartTotals } from "@/components/cart/CartTotals";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
-import { Button } from "@/components/ui/Button";
+import { Button, textLinkStyles } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { PriceTag } from "@/components/ui/PriceTag";
 
 type DeliveryChoice = "local" | "combinar";
 
@@ -18,7 +19,7 @@ const sellers = contactsFor();
 
 export function QuickCheckout() {
   const router = useRouter();
-  const { items, ready, subtotal, clear } = useCart();
+  const { items, ready, subtotal, savings, clear } = useCart();
   const [name, setName] = useState("");
   const [delivery, setDelivery] = useState<DeliveryChoice>("local");
   const [sellerId, setSellerId] = useState(sellers[0].id);
@@ -75,11 +76,10 @@ export function QuickCheckout() {
         siteUrl={site.url}
       />
 
+      {/* Título sem rótulo acima, como no /checkout; o parágrafo já diz que o
+          vendedor combina o resto. */}
       <div className="mt-4 max-w-2xl">
-        <span className="inline-flex rounded-full bg-[#25D366]/10 px-3 py-1 text-xs font-bold text-[#128C7E]">
-          Compra assistida pelo vendedor
-        </span>
-        <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+        <h1 className="text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
           Finalização rápida
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-600">
@@ -88,7 +88,7 @@ export function QuickCheckout() {
       </div>
 
       <form onSubmit={submit} className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
-        <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card sm:p-6">
+        <div className="rounded-card border border-fio bg-white p-5 sm:p-6">
           <h2 className="text-lg font-extrabold text-ink-900">Só o essencial</h2>
           <p className="mt-1 text-sm text-ink-500">Sem cadastro, CPF, endereço completo ou dados de cartão.</p>
 
@@ -172,39 +172,60 @@ export function QuickCheckout() {
           </p>
         </div>
 
-        <aside className="h-fit rounded-card border border-ink-100 bg-white p-5 shadow-card lg:sticky lg:top-[calc(var(--header-h)+1.5rem)]">
-          <h2 className="text-base font-extrabold text-ink-900">Seu carrinho</h2>
-          <ul className="mt-3 divide-y divide-ink-100">
+        <aside className="h-fit rounded-card border border-fio bg-white p-5 lg:sticky lg:top-[calc(var(--header-h)+1.5rem)]">
+          <h2 className="text-base font-bold text-grafite-900">Seu carrinho</h2>
+          <ul className="mt-2 divide-y divide-fio">
             {items.map((item) => (
-              <li key={`${item.productId}-${item.variant ?? ""}`} className="flex gap-3 py-3 first:pt-0">
-                <Image src={item.image} alt="" width={52} height={52} className="size-13 rounded-lg border border-ink-100 object-contain" />
+              <li key={lineKey(item)} className="flex gap-3 py-3">
+                <span className="relative size-13 shrink-0 overflow-hidden rounded-card border border-fio bg-white">
+                  {item.image && (
+                    <Image src={item.image} alt="" fill sizes="52px" className="object-contain p-0.5" />
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2-safe text-xs font-semibold text-ink-700">{item.quantity}x {item.name}</p>
+                  <p className="line-clamp-2-safe text-xs font-medium text-ink-700">
+                    <span className="font-semibold tabular-nums text-grafite-900">{item.quantity}x</span> {item.name}
+                  </p>
                   {item.variant && <p className="text-xs text-ink-500">{item.variant}</p>}
-                  <p className="mt-1 text-xs font-extrabold text-ink-900">{formatPrice(item.price * item.quantity)}</p>
+                  <PriceTag
+                    size="compacto"
+                    className="mt-1"
+                    cents={item.price * item.quantity}
+                    oldCents={item.oldPrice ? item.oldPrice * item.quantity : undefined}
+                  />
                 </div>
               </li>
             ))}
           </ul>
-          <div className="mt-2 flex items-center justify-between border-t border-ink-100 pt-4 text-lg font-extrabold text-ink-900">
-            <span>Total</span><span>{formatPrice(subtotal)}</span>
+          <div className="border-t border-fio pt-3">
+            <CartTotals
+              items={items}
+              subtotal={subtotal}
+              savings={savings}
+              shipping="Combinado com o vendedor"
+              showSubtotal={false}
+            />
           </div>
-          <p className="mt-1 text-xs text-ink-400">Frete combinado com o vendedor.</p>
-          <Link href="/checkout" className="mt-4 block text-center text-sm font-semibold text-ink-500 underline underline-offset-4 hover:text-ink-800">
-            Prefiro o checkout completo
-          </Link>
+          <div className="mt-3 text-center">
+            <Link href="/checkout" className={textLinkStyles}>
+              Prefiro o checkout completo
+            </Link>
+          </div>
         </aside>
       </form>
     </div>
   );
 }
 
+/** Mesma opção marcável das formas de pagamento do /checkout: rádio à vista (e com foco visível), grafite quando escolhida. */
 function Choice({ name, checked, onChange, title, text }: { name: string; checked: boolean; onChange: () => void; title: string; text: string }) {
   return (
-    <label className={`cursor-pointer rounded-xl border p-3 transition ${checked ? "border-gold-500 bg-gold-50 ring-1 ring-gold-300" : "border-ink-200 hover:border-ink-300"}`}>
-      <input type="radio" name={name} checked={checked} onChange={onChange} className="sr-only" />
-      <span className="block text-sm font-bold text-ink-800">{title}</span>
-      <span className="mt-0.5 block text-xs text-ink-500">{text}</span>
+    <label className={`flex cursor-pointer items-start gap-3 rounded-control border p-3 text-sm transition-colors duration-(--duracao-toque) ${checked ? "border-grafite-900 bg-papel text-grafite-900" : "border-ink-200 hover:border-grafite-700"}`}>
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="mt-0.5 accent-grafite-900" />
+      <span>
+        <span className="block font-bold">{title}</span>
+        <span className="mt-0.5 block text-xs text-ink-500">{text}</span>
+      </span>
     </label>
   );
 }

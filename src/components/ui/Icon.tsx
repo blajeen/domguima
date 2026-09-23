@@ -95,6 +95,9 @@ const glyphs = {
   "seta-baixo": <path d="m6 9.5 6 6 6-6" />,
   filtro: <path d="M4 7h16M7 12h10M10 17h4" />,
   check: <path d="M5 12.5 9.5 17 19 7.5" />,
+  // Quantidade (carrinho).
+  mais: <path d="M12 5.5v13M5.5 12h13" />,
+  menos: <path d="M5.5 12h13" />,
 
   // Canais.
   whatsapp: (

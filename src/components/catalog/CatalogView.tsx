@@ -3,7 +3,7 @@ import { Breadcrumbs, type Crumb } from "@/components/ui/Breadcrumbs";
 import { ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { site } from "@/config/site";
-import type { FilterState } from "@/lib/catalog/filters";
+import type { FilterState, PriceRange } from "@/lib/catalog/filters";
 import type { Product, SortKey } from "@/lib/catalog/types";
 import {
   CatalogFiltersProvider,
@@ -19,6 +19,11 @@ interface CatalogViewProps {
   breadcrumbs: Crumb[];
   products: Product[];
   brands: string[];
+  /**
+   * Faixas do filtro de preço. Como as marcas, saem da listagem inteira e não
+   * do resultado já filtrado: senão as opções mudariam a cada clique.
+   */
+  priceRanges: PriceRange[];
   filters: FilterState;
   sort: SortKey;
   hideOfferFilter?: boolean;
@@ -38,6 +43,7 @@ export function CatalogView({
   breadcrumbs,
   products,
   brands,
+  priceRanges,
   filters,
   sort,
   hideOfferFilter = false,
@@ -55,16 +61,17 @@ export function CatalogView({
       <Breadcrumbs items={breadcrumbs} siteUrl={site.url} />
 
       <header className="mt-4">
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+        <h1 className="text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
           {title}
         </h1>
         {description && (
-          <p className="mt-1.5 max-w-2xl text-sm text-ink-500">{description}</p>
+          <p className="mt-1.5 max-w-2xl text-sm text-ink-600">{description}</p>
         )}
       </header>
 
       <CatalogFiltersProvider
         brands={brands}
+        priceRanges={priceRanges}
         state={filters}
         resultCount={products.length}
         hideOfferFilter={hideOfferFilter}
@@ -74,8 +81,8 @@ export function CatalogView({
 
           <div className="min-w-0 flex-1">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-ink-500">
-                <strong className="font-bold text-ink-900">
+              <p className="text-sm text-ink-600">
+                <strong className="font-bold tabular-nums text-grafite-900">
                   {products.length}
                 </strong>{" "}
                 {products.length === 1
@@ -93,13 +100,13 @@ export function CatalogView({
             ) : (
               <div className="rounded-card border border-fio bg-white px-6 py-14 text-center">
                 <Icon name="busca" size={36} className="mx-auto text-ink-400" />
-                <p className="mt-4 text-lg font-bold text-ink-900">
+                <p className="mt-4 text-lg font-bold text-grafite-900">
                   {emptyMessage ?? "Nenhum produto por aqui"}
                 </p>
-                <p className="mx-auto mt-1.5 max-w-md text-sm text-ink-500">
+                <p className="mx-auto mt-1.5 max-w-md text-sm text-ink-600">
                   {hasActiveFilters
                     ? "Tente remover algum filtro para ver mais opções."
-                    : "Em breve teremos novidades nesta seção."}
+                    : "Esta vitrine está sem produtos no momento."}
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <ButtonLink href="/ofertas">Ver ofertas</ButtonLink>

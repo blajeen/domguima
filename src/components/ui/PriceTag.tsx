@@ -11,7 +11,9 @@ const sizes: Record<
   PriceTagSize,
   { price: string; discount: string; old: string; lines: string }
 > = {
-  // Carrinho, barra fixa de compra.
+  // Carrinho (cada item e o total), resumos do checkout e barra fixa. É o
+  // menor tamanho: abaixo de 1,5rem o piso de 12 px do "R$" e dos centavos
+  // passa de meio corpo e o preço perde o desenho de cartaz.
   compacto: { price: "text-[1.5rem]", discount: "text-xs", old: "text-xs", lines: "text-xs" },
   // Card de produto.
   card: { price: "text-[2rem]", discount: "text-sm", old: "text-xs", lines: "text-xs" },

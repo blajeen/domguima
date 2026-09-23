@@ -38,13 +38,33 @@ function isCartItem(value: unknown): value is CartItem {
   );
 }
 
+/**
+ * Parcelamento salvo que não tem cara de parcelamento vira "não se sabe": o
+ * total do carrinho então não mostra condição, em vez de mostrar "R$ NaN".
+ */
+function withValidInstallment(item: CartItem): CartItem {
+  const parcela: unknown = item.cardInstallment;
+  if (parcela === undefined || parcela === null) return item;
+  const p = parcela as Record<string, unknown>;
+  const ok =
+    typeof p.count === "number" &&
+    Number.isInteger(p.count) &&
+    p.count >= 1 &&
+    typeof p.value === "number" &&
+    p.value > 0;
+  if (ok) return item;
+  const limpo = { ...item };
+  delete limpo.cardInstallment;
+  return limpo;
+}
+
 function read(): CartItem[] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return EMPTY;
-    const valid = parsed.filter(isCartItem);
+    const valid = parsed.filter(isCartItem).map(withValidInstallment);
     return valid.length > 0 ? valid : EMPTY;
   } catch {
     // Modo privado, cota cheia ou JSON corrompido: começa com carrinho vazio.

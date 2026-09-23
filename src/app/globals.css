@@ -124,12 +124,21 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --animate-fade-up: fade-up 0.35s ease-out both;
-  --animate-shimmer: shimmer 1.4s linear infinite;
+  /* Esqueleto de carregamento: pulso só de opacidade (fica no compositor). */
+  --animate-esqueleto: esqueleto 1.4s ease-in-out infinite;
+  /* Contador do carrinho: pulsa uma vez quando entra item (só transform). */
+  --animate-pulso: pulso 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 /* Vidro só onde o sistema pede menos transparência (Chrome/Android; o Safari
    ainda não repassa o ajuste). Ex.: `reduced-transparency:bg-grafite-900`. */
 @custom-variant reduced-transparency (@media (prefers-reduced-transparency: reduce));
+
+/* Só onde nenhum ponteiro é de toque. `hover: hover` sozinho vale também em
+   notebook com tela de toque (o ponteiro principal é o mouse): lá, esconder o
+   botão do card deixaria um toque cair num botão invisível. Navegador que não
+   entende a consulta a trata como falsa, e o botão fica à vista. */
+@custom-variant so-mouse (@media (hover: hover) and (not (any-pointer: coarse)));
 
 /*
  * VIDRO (CSS puro). Regras de uso, da especificação visual:
@@ -195,12 +204,19 @@
   }
 }
 
-@keyframes shimmer {
-  from {
-    background-position: -200% 0;
+@keyframes pulso {
+  0%,
+  100% {
+    transform: scale(1);
   }
-  to {
-    background-position: 200% 0;
+  45% {
+    transform: scale(1.3);
+  }
+}
+
+@keyframes esqueleto {
+  50% {
+    opacity: 0.55;
   }
 }
 
@@ -304,15 +320,12 @@
     scroll-snap-align: start;
   }
 
+  /* Papel-escuro chapado, o tom da loja, pulsando na opacidade. O brilho de
+     gradiente que corria antes animava background-position e repintava cada
+     bloco a cada quadro. */
   .skeleton {
-    background-image: linear-gradient(
-      90deg,
-      var(--color-ink-100) 25%,
-      var(--color-ink-50) 37%,
-      var(--color-ink-100) 63%
-    );
-    background-size: 200% 100%;
-    animation: var(--animate-shimmer);
+    background-color: var(--color-papel-escuro);
+    animation: var(--animate-esqueleto);
   }
 
   /* Corta o texto em N linhas sem quebrar a altura do card. */
