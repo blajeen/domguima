@@ -1,11 +1,8 @@
 import "server-only";
 
 import { connection } from "next/server";
-import { company, googleStats, shopeeStats, social } from "@/config/site";
-import { loadPublicStoreSettings } from "./database";
-import { getAllProducts } from "./queries";
-import type { Banner, Product } from "./types";
-import { formatPrice } from "@/lib/utils/format";
+import { getAllProducts, getCatalogCategories } from "./queries";
+import type { Banner, Category, Product } from "./types";
 
 type CommercialReason = "offer" | "new" | "restock" | "rotation";
 type Candidate = { product: Product; reason: CommercialReason; score: number };
@@ -16,71 +13,50 @@ type Candidate = { product: Product; reason: CommercialReason; score: number };
  * A pontuacao e interna: o visitante nunca ve termos como "estoque parado".
  * Produtos sem estoque, sem foto ou retirados da curadoria sao inelegiveis.
  * Datas desconhecidas nao geram alegacoes de novidade ou reposicao.
+ *
+ * Todo slide e um produto: nome, preco e foto do cadastro. A reputacao da
+ * loja (Google e Shopee) fica na linha logo abaixo do banner e na faixa de
+ * avaliacoes, e nao repete aqui.
  */
 export async function getSmartBanners(): Promise<Banner[]> {
-  const [products, settings] = await Promise.all([getAllProducts(), loadPublicStoreSettings()]);
-  const eligibleProducts = products.filter(
+  const [products, categories] = await Promise.all([getAllProducts(), getCatalogCategories()]);
+  // A home é pré-renderizada por padrão. `connection()` garante que o sorteio
+  // aconteça a cada visita, e não fique congelado no produto sorteado durante
+  // o build.
+  await connection();
+  return bannersDaHome(products, categories);
+}
+
+/**
+ * Os slides a partir do catálogo: os dois produtos de maior pontuação
+ * (categorias diferentes, quando dá) e, por último, um sorteado entre os
+ * outros elegíveis, para variar a cada visita.
+ */
+function bannersDaHome(products: Product[], categories: Category[]): Banner[] {
+  const nomes = new Map(categories.map((category) => [category.id, category.name]));
+  const eligible = products.filter(
     (product) => product.stock > 0 && Boolean(product.images[0]) && product.heroEnabled !== false,
   );
-  const candidates = eligibleProducts
-    .flatMap(scoreProduct)
-    .sort((a, b) => b.score - a.score);
+  const selected = selectDiverse(
+    eligible.flatMap(scoreProduct).sort((a, b) => b.score - a.score),
+    2,
+  );
 
-  const selected = selectDiverse(candidates, 2);
-  const commercial = selected.map((candidate, index) => toBanner(candidate, index));
-
-  // A home é pré-renderizada por padrão. `connection()` garante que a escolha
-  // abaixo aconteça a cada visita, e não fique congelada no produto sorteado
-  // durante o build. Os produtos ja usados nos banners comerciais ficam fora
-  // do sorteio para aumentar a variedade do carrossel.
-  await connection();
   const selectedIds = new Set(selected.map(({ product }) => product.id));
-  const randomPool = eligibleProducts.filter((product) => !selectedIds.has(product.id));
-  const randomProduct = pickRandom(randomPool.length > 0 ? randomPool : eligibleProducts);
-  const randomBanner = randomProduct ? toRandomBanner(randomProduct) : null;
+  const randomPool = eligible.filter((product) => !selectedIds.has(product.id));
+  const sorteado = pickRandom(randomPool.length > 0 ? randomPool : eligible);
+  // Com só um ou dois elegíveis, o sorteio cairia num produto que já tem slide.
+  const slides =
+    sorteado && !selectedIds.has(sorteado.id)
+      ? [...selected, { product: sorteado, reason: "rotation" as const, score: 0 }]
+      : selected;
 
-  const googleRating = Number(settings.googleRating.replace(",", ".")) || googleStats.ratingAverage;
-  const googleCount = Number(settings.googleRatingCount) || googleStats.ratingCount;
-  const experienceYears = completedYears(company.openedAt);
-  const reputation: Banner = {
-    id: "reputacao-verificada",
-    eyebrow: `Desde ${company.openedAt.slice(-4)} ao lado dos clientes`,
-    title: `${experienceYears} anos de experiência e confiança comprovada`,
-    subtitle: `A Dom Guima reúne ${googleCount.toLocaleString("pt-BR")} avaliações no Google e ${shopeeStats.ratingCount.toLocaleString("pt-BR")} na Shopee. Consulte os perfis oficiais.`,
-    ctaLabel: "Conferir avaliações",
-    href: settings.googleUrl || social.google,
-    theme: "deep",
-    categoryId: "reputacao",
-    reputation: {
-      googleRating,
-      googleCount,
-      shopeeRating: shopeeStats.ratingAverage,
-      shopeeCount: shopeeStats.ratingCount,
-      googleVerifiedAt: settings.googleVerifiedAt || googleStats.verifiedAt,
-      shopeeVerifiedAt: shopeeStats.verifiedAt,
-    },
-  };
-
-  return [...commercial, ...(randomBanner ? [randomBanner] : []), reputation];
+  return slides.map((candidate) => toBanner(candidate, nomes.get(candidate.product.categoryId)));
 }
 
 function pickRandom(products: Product[]): Product | undefined {
   if (products.length === 0) return undefined;
   return products[Math.floor(Math.random() * products.length)];
-}
-
-function toRandomBanner(product: Product): Banner {
-  return {
-    id: `produto-surpresa-${product.id}`,
-    eyebrow: "Produto surpresa Dom Guima",
-    title: product.name,
-    subtitle: `${formatPrice(product.price)} à vista. Descubra uma escolha aleatória do nosso catálogo a cada visita.`,
-    ctaLabel: "Conhecer produto",
-    href: `/produto/${product.slug}`,
-    theme: "deep",
-    categoryId: product.categoryId,
-    image: product.images[0],
-  };
 }
 
 function scoreProduct(product: Product): Candidate[] {
@@ -137,31 +113,32 @@ function selectDiverse(candidates: Candidate[], limit: number): Candidate[] {
   return selected;
 }
 
-function toBanner({ product, reason }: Candidate, index: number): Banner {
-  const content = commercialCopy(product, reason);
+/**
+ * O título é o nome do produto, e não uma frase de campanha ("Uma
+ * oportunidade que vale conhecer" escondia o produto). O desconto aparece no
+ * preço (riscado e −X%), então não se repete no texto.
+ */
+function toBanner({ product, reason }: Candidate, categoria?: string): Banner {
   return {
     id: `automatico-${reason}-${product.id}`,
-    ...content,
+    title: product.name,
+    detail: detalhe(reason, categoria),
+    ctaLabel: reason === "offer" ? "Ver oferta" : "Ver produto",
     href: `/produto/${product.slug}`,
-    theme: index === 0 ? "gold" : "ink",
-    categoryId: product.categoryId,
     image: product.images[0],
+    price: { price: product.price, oldPrice: product.oldPrice, cardInstallment: product.cardInstallment },
   };
 }
 
-function commercialCopy(product: Product, reason: CommercialReason): Pick<Banner, "eyebrow" | "title" | "subtitle" | "ctaLabel"> {
-  if (reason === "offer" && product.oldPrice) {
-    const discount = Math.round((1 - product.price / product.oldPrice) * 100);
-    return {
-      eyebrow: "Oportunidade selecionada",
-      title: `${discount}% de desconto em uma escolha do catálogo`,
-      subtitle: `${product.name} por ${formatPrice(product.price)}, enquanto houver estoque.`,
-      ctaLabel: "Conferir oferta",
-    };
-  }
-  if (reason === "new") return { eyebrow: "Novidade no catálogo", title: "Acabou de chegar à Dom Guima", subtitle: `${product.name}, disponível para atendimento e compra assistida.`, ctaLabel: "Conhecer novidade" };
-  if (reason === "restock") return { eyebrow: "Estoque atualizado", title: "De volta e pronto para o seu pedido", subtitle: `${product.name} está disponível novamente no catálogo.`, ctaLabel: "Ver produto" };
-  return { eyebrow: "Seleção inteligente da semana", title: "Uma oportunidade que vale conhecer", subtitle: `${product.name}, disponível para envio com atendimento direto da Dom Guima.`, ctaLabel: "Ver detalhes" };
+/**
+ * Só o que a data do painel confirma: publicado há até 45 dias é "novo no
+ * catálogo"; entrada de estoque há até 21 dias é "estoque reposto". Sem data,
+ * fica só a categoria.
+ */
+function detalhe(reason: CommercialReason, categoria?: string): string {
+  const fato = reason === "new" ? "novo no catálogo" : reason === "restock" ? "estoque reposto" : "";
+  if (!categoria) return fato ? fato[0].toUpperCase() + fato.slice(1) : "";
+  return fato ? `${categoria} · ${fato}` : categoria;
 }
 
 function daysSince(value?: string): number | null {
@@ -169,12 +146,4 @@ function daysSince(value?: string): number | null {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) return null;
   return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
-}
-
-function completedYears(openedAt: string): number {
-  const [day, month, year] = openedAt.split("/").map(Number);
-  const today = new Date();
-  let years = today.getFullYear() - year;
-  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) years -= 1;
-  return years;
 }

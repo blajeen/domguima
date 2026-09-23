@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CategoryStrip } from "@/components/home/CategoryStrip";
+import { FaixaDeOfertas } from "@/components/home/FaixaDeOfertas";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import {
   ExclusiveProductCarousel,
@@ -8,6 +9,7 @@ import {
 import { InstagramSection } from "@/components/home/InstagramSection";
 import { ReviewsSection } from "@/components/home/ReviewsSection";
 import { TrustBar } from "@/components/home/TrustBar";
+import { VitrineGrade } from "@/components/home/VitrineGrade";
 import { MidiaDoTopo } from "@/components/layout/MidiaDoTopo";
 import { ProductCarousel } from "@/components/product/ProductCarousel";
 import { site } from "@/config/site";
@@ -69,39 +71,47 @@ export default async function HomePage() {
 
   return (
     <>
-      <div className="site-shell grid gap-4 py-4 lg:grid-cols-3 lg:items-stretch">
-        {/* Enquanto o banner passa por baixo do header, o header vira vidro. */}
-        <MidiaDoTopo className="min-w-0 lg:col-span-2">
-          <HeroBanner banners={heroBanners} compact />
-        </MidiaDoTopo>
+      {/* O H1 fica fora do banner: os slides fora da tela ficam inert, e um H1
+          dentro do 1º sumiria do leitor de tela a cada giro. */}
+      <h1 className="sr-only">
+        {site.name}, {site.tagline}
+      </h1>
+      <div
+        className={`site-shell grid gap-4 py-4 ${heroBanners.length > 0 ? "lg:grid-cols-3 lg:items-stretch" : ""}`}
+      >
+        {heroBanners.length > 0 && (
+          // Enquanto o banner passa por baixo do header, o header vira vidro.
+          <MidiaDoTopo className="min-w-0 lg:col-span-2">
+            <HeroBanner banners={heroBanners} />
+          </MidiaDoTopo>
+        )}
         <ExclusiveProductCarousel products={exclusiveProducts} />
       </div>
 
-      <ReviewsSection />
-
+      {/* Cidade, CNPJ e as notas com data, numa linha, logo abaixo do topo. */}
       <TrustBar />
 
+      {/* O ritmo varia entre as seções: cartazes de preço grande (ofertas),
+          carrossel, lista de categorias, grade e carrossel de novo. Títulos
+          curtos e específicos, sem rótulo acima nem subtítulo. Nenhuma foto
+          daqui tem prioridade: a única da home é o 1º slide do banner. */}
       <div className="site-shell space-y-12 py-9 sm:space-y-14 sm:py-12">
-        {/* Títulos curtos e específicos, sem rótulo acima nem subtítulo. Sem
-            `priority`: a única imagem prioritária da home é o 1º slide do banner. */}
-        <ProductCarousel products={selection} title="Escolhas para começar" repetidos={repetidos} />
+        {mostraOfertas && <FaixaDeOfertas products={offers} repetidos={repetidos} />}
+
+        {/* Um produto de cada categoria (o de maior preço com estoque), e um
+            segundo das primeiras quando sobra lugar. */}
+        <ProductCarousel products={selection} title="Um pouco de cada categoria" repetidos={repetidos} />
 
         <CategoryStrip />
 
-        {mostraOfertas && (
-          <ProductCarousel products={offers} title="Ofertas" href="/ofertas" repetidos={repetidos} />
-        )}
-
-        <ProductCarousel
-          products={technology}
-          title="TVs, celulares e informática"
-          repetidos={repetidos}
-        />
+        <VitrineGrade products={technology} title="TVs, celulares e informática" repetidos={repetidos} />
 
         <ProductCarousel products={homeEssentials} title="Para a casa" repetidos={repetidos} />
 
         <InstagramSection />
       </div>
+
+      <ReviewsSection />
     </>
   );
 }

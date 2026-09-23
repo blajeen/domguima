@@ -1,4 +1,4 @@
-import { shopeeStats, site, social, whatsapp } from "@/config/site";
+import { company, shopeeStats, site, social, whatsapp } from "@/config/site";
 
 /**
  * Páginas institucionais.
@@ -29,25 +29,27 @@ export const institutionalPages: InstitutionalPage[] = [
   {
     slug: "sobre-nos",
     title: "Sobre a Dom Guima",
-    description:
-      "Conheça a Dom Guima: loja online de eletrônicos, eletrodomésticos, climatização e decoração, com atendimento próximo e envio para todo o Brasil.",
+    description: `Conheça a Dom Guima, de ${company.cityState}: eletrônicos, eletrodomésticos, climatização e decoração, com atendimento pelo WhatsApp e envio para todo o Brasil.`,
     intro: site.longDescription,
     sections: [
       {
         heading: "Como começamos",
         paragraphs: [
           `A Dom Guima nasceu vendendo online e foi crescendo pelo boca a boca de quem comprou e voltou. Nossa loja na Shopee está ativa desde ${formatOpened()}, e é lá que está registrada boa parte da nossa história com os clientes: ${shopeeStats.ratingCount.toLocaleString("pt-BR")} avaliações e nota média ${shopeeStats.ratingAverage.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`,
-          "Este site é o nosso canal próprio. A ideia é simples: reunir o catálogo num lugar organizado, com busca que funciona, preço claro e um atendimento que responde de verdade.",
+          "Este site é o nosso canal próprio: o catálogo num lugar organizado, com busca que funciona e preço claro. Dúvida, é só chamar no WhatsApp.",
         ],
       },
       {
         heading: "O que vendemos",
         paragraphs: [
-          "Trabalhamos com eletrônicos, eletrodomésticos, climatização, informática, acessórios para celular e itens de casa e decoração. Somos especialistas em promoções — a maior parte do que anunciamos está com desconto real em relação ao preço de tabela.",
+          "Trabalhamos com eletrônicos, eletrodomésticos, climatização, informática, acessórios para celular e itens de casa e decoração. Somos especialistas em promoções: a maior parte do que anunciamos está com desconto real em relação ao preço de tabela.",
         ],
       },
       {
-        heading: "Atendimento de gente para gente",
+        // Sem os nomes: quem atende sai do cadastro de vendedores do painel
+        // (loadPublicAttendants), e a lista fixa de config/site é só a
+        // reserva. Um nome escrito aqui ficaria velho sem ninguém ver.
+        heading: "Atendimento",
         paragraphs: [
           `Quem atende aqui conhece os produtos. Dúvida sobre voltagem, tamanho, prazo ou qual modelo serve melhor para o seu caso? Chame no ${WHATSAPP_LINE} antes de comprar. Nossa taxa de resposta na Shopee é de ${shopeeStats.responseRate}%, e mantemos o mesmo padrão por aqui.`,
         ],
@@ -70,14 +72,14 @@ export const institutionalPages: InstitutionalPage[] = [
     description:
       "Canais de atendimento da Dom Guima: WhatsApp, Instagram e loja na Shopee.",
     intro:
-      "A forma mais rápida de falar com a gente é pelo WhatsApp — é por lá que tiramos dúvidas, confirmamos frete e acompanhamos pedidos.",
+      "A forma mais rápida de falar com a gente é pelo WhatsApp: é por lá que tiramos dúvidas, confirmamos frete e acompanhamos pedidos.",
     sections: [
       {
         heading: "Canais oficiais",
         list: [
-          `${WHATSAPP_LINE} — atendimento e pedidos`,
-          `Instagram ${social.instagramHandle} — novidades e lançamentos`,
-          "Shopee — nossa loja oficial no marketplace",
+          `${WHATSAPP_LINE}: atendimento e pedidos`,
+          `Instagram ${social.instagramHandle}: novidades e lançamentos`,
+          "Shopee: nossa loja oficial no marketplace",
         ],
       },
       {
@@ -93,7 +95,9 @@ export const institutionalPages: InstitutionalPage[] = [
         heading: "Horário de atendimento",
         paragraphs: [
           // CONFIG: preencher `support.hours` em src/config/site.ts.
-          "Respondemos as mensagens ao longo do dia, de segunda a sábado. Se mandar fora do horário comercial, respondemos assim que possível — nenhuma mensagem fica sem resposta.",
+          // Sem "nenhuma mensagem fica sem resposta": promessa que não dá para
+          // conferir. O número verificável é a taxa de resposta da Shopee.
+          `Respondemos as mensagens ao longo do dia, de segunda a sábado. Se mandar fora do horário comercial, respondemos assim que possível. Na Shopee, a nossa taxa de resposta é de ${shopeeStats.responseRate}%.`,
         ],
       },
     ],
@@ -128,7 +132,7 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Produtos volumosos",
         paragraphs: [
-          "Itens grandes — televisores, geladeiras, climatizadores — podem ter regras de envio diferentes conforme a região. Se for o seu caso, confirmamos as condições antes de fechar o pedido.",
+          "Itens grandes, como televisores, geladeiras e climatizadores, podem ter regras de envio diferentes conforme a região. Se for o seu caso, confirmamos as condições antes de fechar o pedido.",
         ],
       },
     ],
@@ -161,7 +165,7 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Segurança",
         paragraphs: [
-          "Nunca pedimos dados completos de cartão por mensagem, e-mail ou telefone. Desconfie de qualquer contato que faça esse tipo de pedido em nome da Dom Guima — e confirme conosco pelos canais oficiais.",
+          "Nunca pedimos dados completos de cartão por mensagem, e-mail ou telefone. Desconfie de qualquer contato que faça esse tipo de pedido em nome da Dom Guima e confirme conosco pelos canais oficiais.",
         ],
       },
     ],
@@ -176,7 +180,7 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Direito de arrependimento (7 dias)",
         paragraphs: [
-          "Compras feitas pela internet têm 7 dias corridos de prazo para arrependimento, contados a partir do recebimento do produto. É o artigo 49 do Código de Defesa do Consumidor, e vale para qualquer motivo — inclusive se você simplesmente mudou de ideia.",
+          "Compras feitas pela internet têm 7 dias corridos de prazo para arrependimento, contados a partir do recebimento do produto. É o artigo 49 do Código de Defesa do Consumidor, e vale para qualquer motivo, inclusive se você simplesmente mudou de ideia.",
           "Nesse caso, o produto precisa ser devolvido nas mesmas condições em que chegou, com embalagem, acessórios e manuais.",
         ],
       },
@@ -184,7 +188,7 @@ export const institutionalPages: InstitutionalPage[] = [
         heading: "Produto com defeito",
         paragraphs: [
           "Produto com defeito de fabricação tem garantia legal de 90 dias para bens duráveis, conforme o CDC, somada à garantia oferecida pelo fabricante quando houver.",
-          "Se o produto chegou com defeito ou apresentou problema no uso normal, fale com a gente pelo WhatsApp com fotos ou vídeo do ocorrido. Encaminhamos a solução — troca, reparo ou devolução do valor.",
+          "Se o produto chegou com defeito ou apresentou problema no uso normal, fale com a gente pelo WhatsApp com fotos ou vídeo do ocorrido. Encaminhamos a solução: troca, reparo ou devolução do valor.",
         ],
       },
       {
@@ -249,7 +253,7 @@ export const institutionalPages: InstitutionalPage[] = [
         paragraphs: [
           "Quando você clica em um botão de WhatsApp, registramos o contato para que a loja saiba que a conversa existiu e com qual vendedor: guardamos a página de onde você saiu, a mensagem que o site preencheu e o nome, quando você mesmo o informa no pedido rápido. Nada disso gera cobrança nem envio automático de mensagens.",
           "Para isso gravamos no seu navegador o cookie domguima_visitante: um identificador aleatório, sem nome e sem telefone, que dura 1 ano e serve para não registrar o mesmo contato duas vezes, para dividir o atendimento entre os vendedores e para ligar um pedido feito pelo site às conversas abertas no mesmo navegador. Ele é nosso, não é compartilhado com terceiros e é apagado ao limpar os dados do site no navegador.",
-          "Também gravamos o cookie domguima_origem, com uma cópia no armazenamento local do navegador: ele guarda por onde você chegou à loja — o nome da campanha e do canal que vieram no link (os parâmetros utm), o endereço do site que trouxe você (só o domínio, sem o que você pesquisou), a primeira página que abriu, a data da visita e, se o link era de anúncio, apenas essa informação. Dura 90 dias e serve para a loja saber quais divulgações trazem atendimentos e pedidos; quando você chama no WhatsApp ou finaliza um pedido, essa origem é registrada junto com o contato. Se você chegou por um link de campanha, o nome dela aparece no fim da mensagem que o site preenche no WhatsApp, e você pode apagá-lo antes de enviar. Não usamos Google Analytics, Pixel do Facebook nem nenhuma outra ferramenta de terceiros, e nada disso é enviado a ferramentas de análise ou de publicidade. Para apagar, limpe os dados do site no navegador.",
+          "Também gravamos o cookie domguima_origem, com uma cópia no armazenamento local do navegador. Ele guarda por onde você chegou à loja: o nome da campanha e do canal que vieram no link (os parâmetros utm), o endereço do site que trouxe você (só o domínio, sem o que você pesquisou), a primeira página que abriu, a data da visita e, se o link era de anúncio, apenas essa informação. Dura 90 dias e serve para a loja saber quais divulgações trazem atendimentos e pedidos; quando você chama no WhatsApp ou finaliza um pedido, essa origem é registrada junto com o contato. Se você chegou por um link de campanha, o nome dela aparece no fim da mensagem que o site preenche no WhatsApp, e você pode apagá-lo antes de enviar. Não usamos Google Analytics, Pixel do Facebook nem nenhuma outra ferramenta de terceiros, e nada disso é enviado a ferramentas de análise ou de publicidade. Para apagar, limpe os dados do site no navegador.",
           "O pedido feito pelo site também abre um registro de atendimento, com o nome, o telefone, os itens e a observação do pedido, para a loja saber quem está cuidando dele. Se você pedir a eliminação dos seus dados, esse registro é apagado junto com o pedido.",
         ],
       },

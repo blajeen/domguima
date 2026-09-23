@@ -4,20 +4,22 @@ import { Icon } from "@/components/ui/Icon";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { instagramStats, social } from "@/config/site";
 import { getInstagramPosts } from "@/lib/services/instagram";
+import { formatDate } from "@/lib/utils/format";
 
 /**
  * Seção do Instagram. Se a Graph API estiver configurada, mostra os posts
- * reais; senão, mostra o convite para seguir — sem inventar publicação.
+ * reais; senão, mostra o convite para seguir, sem inventar publicação.
  */
 export async function InstagramSection() {
   const posts = await getInstagramPosts(6);
 
   return (
     <section aria-labelledby="instagram-titulo">
+      {/* Com o convite, o link do título repetiria o botão "Seguir" logo abaixo. */}
       <SectionHeader
         id="instagram-titulo"
-        title="Siga a Dom Guima"
-        href={social.instagram}
+        title="No Instagram"
+        href={posts.length > 0 ? social.instagram : undefined}
         linkLabel="Abrir perfil"
       />
 
@@ -29,7 +31,7 @@ export async function InstagramSection() {
               href={post.permalink}
               target="_blank"
               rel="noopener noreferrer"
-              className="group relative aspect-square overflow-hidden rounded-lg bg-ink-100"
+              className="group relative aspect-square overflow-hidden rounded-card bg-papel-escuro"
             >
               <Image
                 src={post.imageUrl}
@@ -38,52 +40,46 @@ export async function InstagramSection() {
                 sizes="(max-width: 640px) 33vw, 16vw"
                 className="object-cover"
               />
-              <span className="absolute inset-0 bg-ink-950/0 transition-colors group-hover:bg-ink-950/25" />
+              <span className="absolute inset-0 bg-grafite-950/0 transition-colors duration-(--duracao-toque) group-hover:bg-grafite-950/25" />
             </a>
           ))}
         </div>
       ) : (
         // Grafite chapado, sem gradiente nem sombra: é um bloco da página, não
         // algo que flutua.
-        <div className="overflow-hidden rounded-card bg-grafite-950">
-          <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:p-7 sm:text-left">
-            <div className="shrink-0">
-              <Image
-                src="/brand/logo-dom-guima.png"
-                alt=""
-                width={96}
-                height={96}
-                className="h-[72px] w-[72px] object-contain sm:h-[84px] sm:w-[84px]"
-              />
-            </div>
+        <div className="flex flex-col items-center gap-5 rounded-card bg-grafite-950 p-6 text-center sm:flex-row sm:p-7 sm:text-left">
+          <Image
+            src="/brand/logo-dom-guima.png"
+            alt=""
+            width={96}
+            height={96}
+            className="size-18 shrink-0 object-contain sm:size-21"
+          />
 
-            <div className="min-w-0 flex-1">
-              <p className="text-lg font-extrabold text-white sm:text-xl">
-                {social.instagramHandle}
-              </p>
-              <p className="mt-1 text-sm leading-relaxed text-ink-300">
-                Smart TVs, celulares e eletrodomésticos com preço de promoção.
-                É lá que mostramos os produtos que acabaram de chegar.
-              </p>
-              {/* Dado real: contagem lida do perfil público. */}
-              <p className="mt-3 text-sm text-ink-300">
-                <strong className="font-bold text-ouro-claro">
-                  {instagramStats.followers.toLocaleString("pt-BR")}
-                </strong>{" "}
-                seguidores
-              </p>
-            </div>
-
-            <a
-              href={social.instagram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonStyles({ variant: "claro", size: "lg", className: "shrink-0" })}
-            >
-              <Icon name="instagram" />
-              Seguir no Instagram
-            </a>
+          <div className="min-w-0 flex-1">
+            <p className="text-titulo font-bold text-papel">{social.instagramHandle}</p>
+            {/* A mesma descrição do canal na página de contato. */}
+            <p className="mt-1 text-sm leading-relaxed text-ink-300">
+              É onde a loja mostra as novidades e os lançamentos.
+            </p>
+            {/* Dado real: contagem lida do perfil público, com a data. */}
+            <p className="mt-3 text-sm text-ink-300">
+              <strong className="font-bold text-ouro-claro">
+                {instagramStats.followers.toLocaleString("pt-BR")}
+              </strong>{" "}
+              seguidores (consulta em {formatDate(instagramStats.verifiedAt)})
+            </p>
           </div>
+
+          <a
+            href={social.instagram}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonStyles({ variant: "claro", size: "lg", className: "shrink-0" })}
+          >
+            <Icon name="instagram" />
+            Seguir no Instagram
+          </a>
         </div>
       )}
     </section>

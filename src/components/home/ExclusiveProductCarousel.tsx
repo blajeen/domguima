@@ -20,20 +20,23 @@ export type ProdutoExclusivo = Pick<
 
 /**
  * Linha própria "Exclusivos Dom Guima", ao lado do banner da home: um produto
- * por vez, com as setas no cabeçalho. É um dos raros momentos de marca da loja
- * (letreiro em Bodoni e fio de ouro); o preço é o mesmo preço-assinatura do card.
+ * por vez, com as setas no cabeçalho. É um dos raros momentos de marca da loja:
+ * letreiro em Bodoni, o selo "DG" em contorno de ouro e o fio de ouro sob o
+ * cabeçalho. O preço é o mesmo preço-assinatura do card.
  */
 export function ExclusiveProductCarousel({ products }: { products: ProdutoExclusivo[] }) {
   const [index, setIndex] = useState(0);
 
   if (!products.length) {
     return (
-      <section className="flex min-h-[360px] flex-col justify-center rounded-card border-t border-ouro bg-grafite-900 p-7 text-papel">
-        {/* Um título só, sem rótulo acima dele. */}
-        <h2 className="text-balance font-brand text-titulo font-semibold text-ouro-claro">
-          Exclusivos Dom Guima
-        </h2>
-        <p className="mt-3 text-sm leading-relaxed text-ink-300">Os próximos produtos exclusivos aparecerão aqui.</p>
+      <section
+        aria-labelledby="exclusivos-titulo"
+        className="flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-card border border-fio bg-white"
+      >
+        <Cabecalho />
+        <p className="flex flex-1 items-center p-5 text-sm leading-relaxed text-ink-600">
+          Os próximos produtos exclusivos aparecerão aqui.
+        </p>
       </section>
     );
   }
@@ -47,15 +50,11 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
 
   return (
     <section
-      aria-label="Produtos exclusivos Dom Guima"
+      aria-labelledby="exclusivos-titulo"
       aria-roledescription="carrossel"
       className="relative flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-card border border-fio bg-white"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-ouro bg-grafite-900 py-1.5 pl-4 pr-1.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Image src="/brand/logo-dom-guima.png" alt="" width={32} height={32} className="size-8 shrink-0 object-contain" />
-          <h2 className="min-w-0 truncate font-brand text-lg font-semibold text-ouro-claro">Exclusivos Dom Guima</h2>
-        </div>
+      <Cabecalho>
         {/* Setas sobre o grafite chapado: sem vidro, porque não há nada atrás para desfocar. */}
         {products.length > 1 && (
           <div className="flex shrink-0">
@@ -63,7 +62,7 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
             <IconButton icon="seta-direita" label="Próximo produto exclusivo" variant="sobre-escuro" onClick={next} />
           </div>
         )}
-      </div>
+      </Cabecalho>
 
       <div
         key={product.id}
@@ -81,11 +80,14 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
           className="relative mx-4 mt-4 block min-h-32 flex-1 overflow-hidden rounded-card border border-fio bg-white"
         >
           {image && (
+            // O poço é largo e baixo, e a foto é contida nele: quem manda no
+            // tamanho exibido é a altura (cerca de 150 px, 190 px ao lado do
+            // banner). O `sizes` segue isso, e não a largura da tela.
             <Image
               src={image.src}
               alt=""
               fill
-              sizes="(max-width: 1023px) 90vw, 30vw"
+              sizes="(max-width: 1023px) 12rem, 15rem"
               className="object-contain p-3"
             />
           )}
@@ -113,5 +115,33 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Cabeçalho grafite da linha própria, com o fio de ouro embaixo: o selo "DG"
+ * em contorno de ouro (o emblema em vetor chapado, sem a folha de ouro da
+ * arte raster) e o título em Bodoni. As ações entram à direita, com o foco em
+ * ouro-claro, como no header: o ouro padrão fica em 3,2:1 no grafite.
+ */
+function Cabecalho({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-14 items-center justify-between gap-3 border-b border-ouro bg-grafite-900 py-1.5 pl-4 pr-1.5 [--cor-foco:var(--color-ouro-claro)]">
+      <div className="flex min-w-0 items-center gap-2.5">
+        {/* Decorativo: o título ao lado já diz "Dom Guima". */}
+        <span
+          aria-hidden
+          className="grid size-7 shrink-0 place-items-center rounded-pill border-[1.5px] border-ouro font-brand text-xs font-bold leading-none text-ouro-claro"
+        >
+          DG
+        </span>
+        {/* 1rem no celular: em 375 px o título inteiro cabe ao lado das
+            setas. Abaixo disso ele quebra em duas linhas, e não é cortado. */}
+        <h2 id="exclusivos-titulo" className="min-w-0 font-brand text-base font-semibold leading-tight text-ouro-claro sm:text-lg">
+          Exclusivos Dom Guima
+        </h2>
+      </div>
+      {children}
+    </div>
   );
 }

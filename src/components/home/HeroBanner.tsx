@@ -3,28 +3,45 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Rating } from "@/components/ui/Rating";
+import { ButtonLink } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
+import { PriceTag } from "@/components/ui/PriceTag";
 import type { Banner } from "@/lib/catalog/types";
-
-const THEMES: Record<Banner["theme"], string> = {
-  gold: "from-brand-800 via-brand-700 to-brand-500 text-white",
-  ink: "from-brand-950 via-brand-900 to-brand-800 text-white",
-  deep: "from-brand-950 via-brand-900 to-gold-900 text-white",
-};
+import { paymentLines } from "@/lib/utils/format";
 
 const AUTOPLAY_MS = 6000;
 
-/** Carrossel editorial com fotos reais resolvidas a partir do catálogo ativo. */
-export function HeroBanner({ banners, compact = false }: { banners: Banner[]; compact?: boolean }) {
+/**
+ * Banner da home: um produto do catálogo por slide, sobre grafite chapado.
+ * Nome do produto, a linha de fato (categoria, novidade), o preço-assinatura e
+ * um botão. A foto é a do cadastro, do jeito que está, num poço branco: sem
+ * gradiente, halo, mancha desfocada nem sombra desenhada atrás dela.
+ *
+ * Só a foto do 1º slide tem prioridade (a única da home). As setas e o
+ * contador ficam numa pílula grafite sólida no poço branco, fora da foto: sem
+ * foto atrás, vidro só pareceria cinza, e somaria uma 4ª superfície de vidro
+ * na tela (header e as duas setas das Ofertas logo abaixo).
+ */
+export function HeroBanner({ banners }: { banners: Banner[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  // Depois que o cliente troca o slide por conta própria, o banner para de
+  // girar sozinho: quem está lendo não perde o slide no meio.
+  const [assumiu, setAssumiu] = useState(false);
+  // Dedo na tela. O trilho só rola com o dedo quando o cliente arrasta para o
+  // lado; rolar a página com o polegar sobre o banner não mexe nele.
+  const tocando = useRef(false);
 
   const goTo = useCallback((target: number) => {
     const track = trackRef.current;
     if (!track) return;
     const slide = track.children[target] as HTMLElement | undefined;
-    if (slide) track.scrollTo({ left: slide.offsetLeft, behavior: "smooth" });
+    if (!slide) return;
+    // "instant", e não "auto": o `.scroll-row` pede rolagem suave no CSS, e o
+    // "auto" herdaria isso.
+    const reduzir = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    track.scrollTo({ left: slide.offsetLeft, behavior: reduzir ? "instant" : "smooth" });
   }, []);
 
   // O índice vem da posição real do scroll, então swipe e botões concordam.
@@ -34,6 +51,8 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
 
     let frame = 0;
     function onScroll() {
+      // Trilho rolando com o dedo na tela: é o cliente arrastando o banner.
+      if (tocando.current) setAssumiu(true);
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const width = track!.clientWidth;
@@ -49,7 +68,7 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
   }, []);
 
   useEffect(() => {
-    if (paused || banners.length < 2) return;
+    if (paused || assumiu || banners.length < 2) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const timer = setInterval(() => {
@@ -61,7 +80,7 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
     }, AUTOPLAY_MS);
 
     return () => clearInterval(timer);
-  }, [paused, banners.length, goTo]);
+  }, [paused, assumiu, banners.length, goTo]);
 
   // Não gasta timer com a aba em segundo plano.
   useEffect(() => {
@@ -72,11 +91,20 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
+  if (banners.length === 0) return null;
+
+  const trocar = (target: number) => {
+    setAssumiu(true);
+    goTo((target + banners.length) % banners.length);
+  };
+
   return (
     <section
       aria-label="Destaques"
       aria-roledescription="carrossel"
-      className={`relative min-w-0 ${compact ? "h-full overflow-hidden rounded-2xl shadow-card" : ""}`}
+      // Sobre grafite, o foco troca o ouro padrão pelo ouro-claro, como no
+      // header e no rodapé.
+      className="relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -84,173 +112,133 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
     >
       <div
         ref={trackRef}
-        className="scroll-row w-full"
+        className="scroll-row h-full w-full"
         style={{ gridAutoColumns: "100%" }}
+        // Só marca o dedo na tela. Quem decide se o cliente assumiu é a
+        // rolagem do trilho (acima): um toque que vira rolagem da página não
+        // para o giro.
+        onTouchStart={() => {
+          tocando.current = true;
+        }}
+        onTouchEnd={(event) => {
+          tocando.current = event.touches.length > 0;
+        }}
+        onTouchCancel={(event) => {
+          tocando.current = event.touches.length > 0;
+        }}
       >
         {banners.map((banner, i) => (
-          <div
-            key={banner.id}
-            role="group"
-            aria-roledescription="slide"
-            aria-label={`${i + 1} de ${banners.length}`}
-            className="w-full"
-          >
-            <div className={`relative overflow-hidden bg-gradient-to-br ${THEMES[banner.theme]}`}>
-              <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
-              <div className={compact
-                ? "grid min-h-[340px] items-center gap-4 px-5 py-7 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.72fr)] sm:px-7 lg:min-h-[360px] lg:px-8"
-                : "site-shell grid min-h-[380px] items-center gap-5 py-9 sm:min-h-[360px] sm:grid-cols-[minmax(0,1.05fr)_minmax(280px,.95fr)] sm:gap-10 sm:py-8 lg:min-h-[410px]"}
-              >
-                <div className="relative z-10">
-                  {banner.eyebrow && (
-                    <p className="mb-2 text-sm font-semibold opacity-80">
-                      {banner.eyebrow}
-                    </p>
-                  )}
-                  {i === 0 ? (
-                    <h1 className={`max-w-3xl font-extrabold leading-[1.04] tracking-tight ${compact ? "text-2xl sm:text-3xl lg:text-4xl" : "text-3xl sm:text-4xl lg:text-5xl xl:text-[3.5rem]"}`}>
-                      {banner.title}
-                    </h1>
-                  ) : (
-                    <h2 className={`max-w-3xl font-extrabold leading-[1.04] tracking-tight ${compact ? "text-2xl sm:text-3xl lg:text-4xl" : "text-3xl sm:text-4xl lg:text-5xl xl:text-[3.5rem]"}`}>
-                      {banner.title}
-                    </h2>
-                  )}
-                  <p className={`mt-3 max-w-xl text-sm leading-relaxed opacity-90 ${compact ? "" : "sm:text-base"}`}>
-                    {banner.subtitle}
-                  </p>
-                  <BannerCta banner={banner} active={i === index} compact={compact} />
-                </div>
-
-                {banner.reputation ? (
-                  <ReputationVisual data={banner.reputation} compact={compact} />
-                ) : banner.image ? (
-                  <div className={`relative mx-auto w-full ${compact ? "h-40 max-w-[300px] sm:h-56 lg:h-60" : "h-44 max-w-[420px] sm:h-72 lg:h-[330px] lg:max-w-[500px]"}`}>
-                    <div className="absolute inset-[12%] rounded-full bg-white/15 blur-3xl" />
-                    <div className="absolute inset-x-8 bottom-2 h-8 rounded-full bg-ink-950/20 blur-xl" />
-                    <Image
-                      src={banner.image.src}
-                      alt={banner.image.alt}
-                      fill
-                      preload={i === 0}
-                      sizes={compact ? "(max-width: 639px) 82vw, (max-width: 1023px) 38vw, 300px" : "(max-width: 639px) 86vw, (max-width: 1279px) 42vw, 500px"}
-                      className={`object-contain drop-shadow-2xl ${compact ? "p-2 sm:p-3" : "p-2 sm:p-4"}`}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          <Slide key={banner.id} banner={banner} position={i} total={banners.length} active={i === index} />
         ))}
       </div>
 
       {banners.length > 1 && (
-        <>
-          <NavButton
-            side="left"
-            label="Banner anterior"
-            compact={compact}
-            onClick={() => goTo((index - 1 + banners.length) % banners.length)}
+        // Uma pílula grafite só, com as setas e o contador, no poço branco e
+        // fora da foto. No celular o poço é a faixa de cima (13rem): a pílula
+        // fica no pé dela, à direita da foto. Do sm em diante o poço é a coluna
+        // da direita, e ela desce para o canto, no respiro sob a foto. Os
+        // botões são os de dentro da pílula da galeria: sem vidro próprio, com
+        // fio e foco em papel por dentro (o foco de fora cairia no branco).
+        <div className="absolute right-3 top-38 flex items-center rounded-pill bg-grafite-900 sm:top-auto sm:bottom-3">
+          <IconButton
+            icon="seta-esquerda"
+            label="Destaque anterior"
+            variant="dentro-do-vidro"
+            onClick={() => trocar(index - 1)}
           />
-          <NavButton
-            side="right"
-            label="Próximo banner"
-            compact={compact}
-            onClick={() => goTo((index + 1) % banners.length)}
+          <span aria-hidden className="min-w-10 text-center text-xs font-semibold tabular-nums text-papel">
+            {index + 1} / {banners.length}
+          </span>
+          <IconButton
+            icon="seta-direita"
+            label="Próximo destaque"
+            variant="dentro-do-vidro"
+            onClick={() => trocar(index + 1)}
           />
-
-          <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2">
-            {banners.map((banner, i) => (
-              <button
-                key={banner.id}
-                type="button"
-                onClick={() => goTo(i)}
-                aria-label={`Ir para o banner ${i + 1}: ${banner.title}`}
-                aria-current={i === index}
-                // A largura troca na hora (animar width refaz o layout a cada
-                // quadro); só a cor tem transição.
-                className={`h-2 rounded-full transition-colors duration-(--duracao-toque) ${
-                  i === index
-                    ? "w-7 bg-white"
-                    : "w-2 bg-white/50 hover:bg-white/80"
-                }`}
-              />
-            ))}
-          </div>
-        </>
+        </div>
       )}
     </section>
   );
 }
 
-function BannerCta({ banner, active, compact }: { banner: Banner; active: boolean; compact: boolean }) {
-  const className = `${compact ? "mt-4 rounded-lg px-5 py-2.5 text-xs" : "mt-6 rounded-xl px-6 py-3 text-sm"} inline-flex w-fit items-center gap-2 font-extrabold shadow-sm transition-[translate] duration-(--duracao-toque) active:translate-y-px ${banner.theme === "gold" ? "bg-white text-brand-900" : "bg-gold-300 text-brand-950"}`;
-  const content = banner.ctaLabel;
-  return banner.href.startsWith("http") ? (
-    <a href={banner.href} target="_blank" rel="noopener noreferrer" className={className} tabIndex={active ? 0 : -1}>{content}</a>
-  ) : (
-    <Link href={banner.href} className={className} tabIndex={active ? 0 : -1}>{content}</Link>
-  );
-}
-
-function ReputationVisual({ data, compact }: { data: NonNullable<Banner["reputation"]>; compact: boolean }) {
-  return (
-    <div className={`mx-auto grid w-full max-w-[500px] gap-3 border border-white/20 bg-white/95 text-ink-900 shadow-2xl ${compact ? "rounded-2xl p-3" : "rounded-[2rem] p-4 sm:p-6"}`}>
-      <p className="text-center text-sm font-semibold text-ink-500">Avaliações nos canais oficiais</p>
-      <div className="grid grid-cols-2 gap-3">
-        <MetricCard brand="Google" rating={data.googleRating} count={data.googleCount} accent="text-[#4285F4]" />
-        <MetricCard brand="Shopee" rating={data.shopeeRating} count={data.shopeeCount} accent="text-[#EE4D2D]" />
-      </div>
-      <p className="text-center text-xs text-ink-500">Google em {formatVerifiedDate(data.googleVerifiedAt)} · Shopee em {formatVerifiedDate(data.shopeeVerifiedAt)}</p>
-    </div>
-  );
-}
-
-function MetricCard({ brand, rating, count, accent }: { brand: string; rating: number; count: number; accent: string }) {
-  return (
-    <div className="rounded-2xl border border-ink-100 bg-ink-50 p-3 text-center sm:p-5">
-      <p className={`text-sm font-black ${accent}`}>{brand}</p>
-      <p className="mt-1 text-2xl font-black sm:text-3xl">{rating.toLocaleString("pt-BR", { minimumFractionDigits: brand === "Google" ? 1 : 2 })}</p>
-      {/* Estrelas proporcionais à nota real (4,88 não vira cinco cheias). */}
-      <Rating value={rating} showCount={false} className="justify-center" />
-      <p className="mt-1 text-xs font-semibold text-ink-500">{count.toLocaleString("pt-BR")} avaliações</p>
-    </div>
-  );
-}
-
-function formatVerifiedDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
-}
-
-function NavButton({
-  side,
-  label,
-  onClick,
-  compact = false,
+function Slide({
+  banner,
+  position,
+  total,
+  active,
 }: {
-  side: "left" | "right";
-  label: string;
-  onClick: () => void;
-  compact?: boolean;
+  banner: Banner;
+  position: number;
+  total: number;
+  active: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className={`absolute hidden items-center justify-center rounded-full bg-black/25 text-white backdrop-blur transition-colors hover:bg-black/45 lg:flex ${compact ? "bottom-2.5 h-8 w-8" : "top-1/2 h-11 w-11 -translate-y-1/2"} ${
-        side === "left" ? (compact ? "left-3" : "left-4") : (compact ? "right-3" : "right-4")
-      }`}
+    <div
+      role="group"
+      aria-roledescription="slide"
+      aria-label={`${position + 1} de ${total}`}
+      // Os slides fora da tela saem do Tab e do leitor de tela.
+      inert={!active}
+      className="grid h-full sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]"
     >
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden>
-        <path
-          d={side === "left" ? "M12.5 4L6.5 10l6 6" : "M7.5 4l6 6-6 6"}
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <div className="flex min-w-0 flex-col justify-center px-5 pb-6 pt-5 sm:px-7 sm:py-8 lg:px-8">
+        {/* h2 em todos: o H1 da home fica fixo na página (page.tsx), fora
+            dos slides que saem do leitor de tela. */}
+        <h2 className="line-clamp-3 text-balance text-titulo font-bold text-papel sm:text-titulo-lg">
+          {banner.title}
+        </h2>
+        {banner.detail && <p className="mt-2 text-sm text-ink-300">{banner.detail}</p>}
+        <PriceTag
+          className="mt-5"
+          size="destaque"
+          tone="papel"
+          cents={banner.price.price}
+          oldCents={banner.price.oldPrice}
+          lines={paymentLines(banner.price.price, banner.price.cardInstallment)}
         />
-      </svg>
-    </button>
+        <ButtonLink href={banner.href} variant="claro" className="mt-6 w-fit">
+          {banner.ctaLabel}
+        </ButtonLink>
+      </div>
+
+      {/* Poço branco da foto. A pílula das setas fica sobre ele, mas fora da
+          foto:
+          - no celular, faixa de 13rem em cima, com a foto num quadrado
+            encostado à esquerda (alinhado ao texto) e a pílula no canto
+            direito que sobra. Abaixo de ~390 px de tela não sobra lugar para
+            o quadrado inteiro: ele termina 9rem antes da borda direita (a
+            pílula ocupa 8rem mais a margem de 0,75rem) e a foto encolhe
+            junto, sem passar por baixo da pílula. O `sizes` segue esse
+            quadrado, e não a largura da tela: é a foto que decide o LCP no
+            celular;
+          - do sm em diante, coluna da direita com o quadrado limitado a 25rem
+            (em tela larga o banner não passa da dobra) e um respiro maior
+            embaixo, onde a pílula se apoia. No lg o banner divide a linha
+            com os Exclusivos, e a coluna da foto fica perto de 30vw até
+            chegar aos 25rem.
+          A foto repete o link do botão: fica fora do Tab e do leitor de tela. */}
+      <Link
+        href={banner.href}
+        tabIndex={-1}
+        aria-hidden
+        className="order-first flex h-52 items-center bg-white pl-2 sm:order-none sm:h-auto sm:justify-center sm:pl-0"
+      >
+        {banner.image && (
+          <span className="relative block aspect-square h-full max-sm:max-w-[calc(100%-9rem)] sm:h-auto sm:w-full sm:max-w-[25rem]">
+            <Image
+              src={banner.image.src}
+              alt=""
+              fill
+              loading={position === 0 ? "eager" : "lazy"}
+              // Os outros slides ficam fora da tela, mas perto: o navegador
+              // os baixa logo, e a prioridade baixa deixa a banda para a 1ª.
+              fetchPriority={position === 0 ? "high" : "low"}
+              sizes="(max-width: 639px) 12rem, (max-width: 1023px) 44vw, (max-width: 1439px) 30vw, 25rem"
+              className="object-contain p-3 sm:p-5 sm:pb-16"
+            />
+          </span>
+        )}
+      </Link>
+    </div>
   );
 }

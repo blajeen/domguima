@@ -5,7 +5,7 @@ import {
   type PaymentLines,
 } from "@/lib/utils/format";
 
-export type PriceTagSize = "compacto" | "card" | "produto";
+export type PriceTagSize = "compacto" | "card" | "destaque" | "produto";
 
 const sizes: Record<
   PriceTagSize,
@@ -17,6 +17,15 @@ const sizes: Record<
   compacto: { price: "text-[1.5rem]", discount: "text-xs", old: "text-xs", lines: "text-xs" },
   // Card de produto.
   card: { price: "text-[2rem]", discount: "text-sm", old: "text-xs", lines: "text-xs" },
+  // Banner e faixa de ofertas da home: maior que o card, para a vitrine ter
+  // um momento de preço de cartaz, e bem abaixo da página de produto, que
+  // continua sendo o maior preço do site.
+  destaque: {
+    price: "text-[2.5rem] sm:text-[2.75rem]",
+    discount: "text-base",
+    old: "text-xs",
+    lines: "text-xs sm:text-apoio",
+  },
   // Bloco de compra da página de produto.
   produto: {
     price: "text-[3.75rem] sm:text-[4.25rem]",

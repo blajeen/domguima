@@ -125,29 +125,22 @@ export interface Category {
   inMainMenu: boolean;
 }
 
+/** Slide do banner da home: um produto do catálogo, com o preço dele. */
 export interface Banner {
   id: string;
+  /** Nome do produto, como está no cadastro. */
   title: string;
-  subtitle: string;
+  /**
+   * Linha de fato abaixo do título: a categoria e, quando a data registrada
+   * pelo painel confirma, "novo no catálogo" ou "estoque reposto".
+   */
+  detail: string;
   ctaLabel: string;
   href: string;
-  /** Chave de tema para o gradiente — ver HeroBanner. */
-  theme: "gold" | "ink" | "deep";
-  /** Selo pequeno acima do título. Opcional. */
-  eyebrow?: string;
-  /** Categoria usada para escolher uma foto real do catálogo no banner. */
-  categoryId: string;
-  /** Foto resolvida pela home a partir do catálogo ativo. */
+  /** Foto principal do produto, do jeito que está no cadastro. */
   image?: ProductImage;
-  /** Cartao de prova social no lugar da foto de produto. */
-  reputation?: {
-    googleRating: number;
-    googleCount: number;
-    shopeeRating: number;
-    shopeeCount: number;
-    googleVerifiedAt: string;
-    shopeeVerifiedAt: string;
-  };
+  /** Preço do produto, para o preço-assinatura do banner. */
+  price: Pick<Product, "price" | "oldPrice" | "cardInstallment">;
 }
 
 export type SortKey =

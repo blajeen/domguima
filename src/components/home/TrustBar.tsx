@@ -1,53 +1,55 @@
 import { company } from "@/config/site";
+import { loadPublicStoreSettings } from "@/lib/catalog/database";
+import { reputacaoDaLoja, type CanalReputacao } from "@/lib/catalog/reputacao";
+import { formatDate, formatNota } from "@/lib/utils/format";
 
-type TrustIconName = "truck" | "message" | "experience" | "shield" | "store";
-
-export function TrustBar() {
-  const years = completedYears(company.openedAt);
-  const items: Array<{ icon: TrustIconName; title: string; text: string }> = [
-    { icon: "experience", title: `${years} anos de experiência`, text: `Empresa ativa desde março de ${company.openedAt.slice(-4)}.` },
-    { icon: "message", title: "Atendimento próximo", text: "Dúvidas e compra acompanhadas diretamente pelo WhatsApp." },
-    { icon: "truck", title: "Envio para todo o Brasil", text: "Pedidos despachados de Minas Gerais." },
-    { icon: "shield", title: "Dados protegidos", text: "Usados somente para processar seu pedido." },
-    { icon: "store", title: "Reputação verificável", text: "Confira as avaliações no Google e na Shopee." },
-  ];
+/**
+ * Faixa de confiança: uma linha de texto com dados que dá para conferir
+ * (cidade e CNPJ de config/site, notas do Google e da Shopee com a data da
+ * consulta). Sem ícone em quadrado nem selo genérico ("Atendimento próximo",
+ * "Dados protegidos"), que serviam para qualquer loja.
+ */
+export async function TrustBar() {
+  const [settings, { google, shopee }] = await Promise.all([loadPublicStoreSettings(), reputacaoDaLoja()]);
+  const cnpj = settings.cnpj || company.cnpj;
+  // A data de abertura é a do CNPJ de config/site. Se o painel trocar o CNPJ,
+  // a data deixa de valer para ele e sai da frase.
+  const mesmoCnpj = soDigitos(cnpj) === soDigitos(company.cnpj);
 
   return (
-    <section aria-label="Por que comprar na Dom Guima" className="border-b border-ink-100 bg-ink-50">
-      <div className="site-shell py-5">
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-5 lg:grid-cols-5 lg:gap-6">
-          {items.map((item) => (
-            <li key={item.title} className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold-100 text-gold-800">
-                <TrustIcon name={item.icon} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-bold leading-tight text-ink-900">{item.title}</p>
-                <p className="mt-0.5 text-xs leading-snug text-ink-500">{item.text}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <section aria-label="Dados da loja" className="border-y border-fio bg-white">
+      {/* Uma linha só, com "·" entre os dados, a partir do sm. No celular a
+          linha não cabe: cada dado vai numa linha, sem o ponto, que cairia no
+          começo das linhas quebradas. */}
+      <ul className="site-shell grid gap-1 py-3 text-apoio text-ink-600 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-3 sm:[&>li+li]:before:mr-3 sm:[&>li+li]:before:text-ink-400 sm:[&>li+li]:before:content-['·']">
+        <li>{company.cityState}</li>
+        <li>
+          CNPJ <span className="tabular-nums">{cnpj}</span>
+          {mesmoCnpj && `, aberto em ${mesAno(company.openedAt)}`}
+        </li>
+        <Nota canal={google} />
+        <Nota canal={shopee} />
+      </ul>
     </section>
   );
 }
 
-function TrustIcon({ name }: { name: TrustIconName }) {
-  const paths: Record<TrustIconName, string> = {
-    truck: "M3 6h11v9H3zM14 9h3l3 3v3h-6zM6 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm11 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
-    message: "M4 5.5h16v11H9l-4.5 3v-3H4z",
-    experience: "M12 3a9 9 0 1 0 9 9M12 7v5l3 2M18 4v4h4",
-    shield: "M12 3 19 6v5c0 4.5-2.8 7.7-7 10-4.2-2.3-7-5.5-7-10V6zM9 12l2 2 4-4",
-    store: "M4 9h16l-1.5-5h-13zM5 9v11h14V9M9 20v-6h6v6",
-  };
-  return <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden><path d={paths[name]} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+function Nota({ canal }: { canal: CanalReputacao }) {
+  return (
+    <li>
+      <strong className="font-semibold text-grafite-900">{formatNota(canal.nota)}</strong> {canal.preposicao}{" "}
+      {canal.canal} ({canal.avaliacoes.toLocaleString("pt-BR")} avaliações, consulta em{" "}
+      {formatDate(canal.consultadoEm)})
+    </li>
+  );
 }
 
-function completedYears(openedAt: string): number {
-  const [day, month, year] = openedAt.split("/").map(Number);
-  const today = new Date();
-  let years = today.getFullYear() - year;
-  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) years -= 1;
-  return years;
+function soDigitos(valor: string): string {
+  return valor.replace(/\D/g, "");
+}
+
+/** "18/03/2020" → "março de 2020". */
+function mesAno(data: string): string {
+  const [, mes, ano] = data.split("/").map(Number);
+  return new Date(ano, mes - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
