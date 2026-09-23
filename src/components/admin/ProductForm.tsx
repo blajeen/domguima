@@ -215,7 +215,8 @@ function PrecoNoSite({ priceCents, parcelamento, comVariacoes }: { priceCents: n
         : priceCents > 0 ? <>
           <p className="mt-2"><strong className="text-xl text-ink-900">{formatPrice(priceCents)}</strong> <span className="text-xs font-bold text-ink-600">{linhas.pix}</span></p>
           {linhas.cartao && <p className="mt-0.5 text-xs text-ink-700">{linhas.cartao}</p>}
-          <p className="mt-2 text-[11px] leading-relaxed text-ink-500">Calculado sozinho com a tabela da maquininha de Configurações.</p>
+          {/* Nova aba: o cadastro pode ter edição ainda não salva. */}
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-500">Calculado sozinho com a tabela da maquininha. <a href="/painel/configuracoes#parcelamento" target="_blank" className="font-bold text-blue-700 underline underline-offset-2">Mudar as taxas<span className="sr-only"> (abre em nova aba)</span></a></p>
         </> : <p className="mt-2 text-xs text-ink-500">Preencha o preço à vista para ver o parcelado.</p>}
     </div>
     {!comVariacoes && priceCents > 0 && <InstallmentSimulator cents={priceCents} taxas={parcelamento.taxas} titulo="Tabela de parcelas deste preço" />}

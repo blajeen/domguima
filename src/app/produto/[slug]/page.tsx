@@ -74,8 +74,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 /*
- * As duas faixas da página (galeria + compra, detalhes + envio) usam as mesmas
- * colunas. A coluna da galeria é limitada de propósito: solta, ela esticava
+ * Colunas da grade do produto (galeria e detalhes à esquerda, compra e envio à
+ * direita). A coluna da galeria é limitada de propósito: solta, ela esticava
  * até ~1000px em tela grande e ampliava a foto muito além do tamanho real,
  * borrando a imagem. Abaixo de lg a página vira uma coluna de até 42rem,
  * centralizada, para a foto não ocupar a altura inteira do tablet.
@@ -134,12 +134,21 @@ export default async function ProductPage({ params }: PageProps) {
 
       {/* A chave recomeça galeria e seletor ao trocar de produto sem sair da rota. */}
       <VariantImageProvider key={product.id} initialSrc={opcaoInicial?.image ?? null}>
-        <div className={`mt-4 sm:mt-5 ${colunas}`}>
-          <div className="min-w-0">
+        {/* Uma grade só. No computador, a galeria e logo abaixo dela os
+            detalhes (descrição, destaques, especificações) ficam na coluna da
+            esquerda; compra, reputação e envio ficam na da direita, ocupando
+            as duas linhas. Antes os detalhes eram uma segunda grade que só
+            começava depois da coluna de compra inteira, e sobrava um vão
+            grande embaixo da foto ("sobe esse layout ali pra perto da
+            imagem", dono). A 2ª linha é 1fr: quem ocupa duas linhas com uma
+            flexível não estica a 1ª, que fica com a altura da galeria. No
+            celular a ordem é a do DOM: galeria, compra e envio, detalhes. */}
+        <div className={`mt-4 sm:mt-5 ${colunas} lg:grid-rows-[auto_1fr]`}>
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
             <ProductGallery images={fotos} nomeTransicao={nomeFotoProduto(product.id)} />
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             {product.brand && <p className="text-apoio text-ink-600">{product.brand}</p>}
             <h1 className="mt-1 text-balance text-titulo font-semibold text-grafite-900 sm:text-titulo-lg">
               {product.name}
@@ -177,123 +186,62 @@ export default async function ProductPage({ params }: PageProps) {
             )}
 
             <ReputacaoDaLoja canais={[google, shopee]} />
+
+            <EnvioDoProduto product={product} shopee={shopee} />
+          </div>
+
+          {/* Descrição, destaques e ficha técnica, logo abaixo da galeria. */}
+          <div className="min-w-0 space-y-10 pt-4 lg:col-start-1 lg:row-start-2 lg:pt-2">
+            {product.description.trim() && (
+              <section aria-labelledby="descricao">
+                <h2 id="descricao" className={tituloDeSecao}>
+                  Descrição
+                </h2>
+                <p className="mt-3 max-w-prose whitespace-pre-line text-base leading-relaxed text-ink-600">
+                  {product.description}
+                </p>
+              </section>
+            )}
+
+            {destaques.length > 0 && (
+              <section aria-labelledby="destaques">
+                <h2 id="destaques" className={tituloDeSecao}>
+                  Destaques
+                </h2>
+                <ul className="mt-3 max-w-prose space-y-2.5">
+                  {destaques.map((destaque, i) => (
+                    <li key={i} className="flex gap-3 text-base leading-relaxed text-ink-600">
+                      {/* Traço de ouro no lugar de marcador ou ícone de check. */}
+                      <span aria-hidden className="mt-[0.8em] h-px w-3 shrink-0 bg-ouro" />
+                      {destaque}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {tabela.length > 0 && (
+              <section aria-labelledby="especificacoes">
+                <h2 id="especificacoes" className={tituloDeSecao}>
+                  Especificações
+                </h2>
+                {/* Linhas separadas por fio, sem zebrado. */}
+                <dl className="mt-3 max-w-2xl border-t border-fio">
+                  {tabela.map((spec, i) => (
+                    <div
+                      key={`${spec.label}-${i}`}
+                      className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-4 border-b border-fio py-3 text-sm sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]"
+                    >
+                      <dt className="text-ink-600">{spec.label}</dt>
+                      <dd className="text-grafite-900">{spec.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            )}
           </div>
         </div>
       </VariantImageProvider>
-
-      {/* Descrição, destaques, ficha técnica e envio */}
-      <div className={`mt-12 sm:mt-16 ${colunas}`}>
-        <div className="min-w-0 space-y-10">
-          {product.description.trim() && (
-            <section aria-labelledby="descricao">
-              <h2 id="descricao" className={tituloDeSecao}>
-                Descrição
-              </h2>
-              <p className="mt-3 max-w-prose whitespace-pre-line text-base leading-relaxed text-ink-600">
-                {product.description}
-              </p>
-            </section>
-          )}
-
-          {destaques.length > 0 && (
-            <section aria-labelledby="destaques">
-              <h2 id="destaques" className={tituloDeSecao}>
-                Destaques
-              </h2>
-              <ul className="mt-3 max-w-prose space-y-2.5">
-                {destaques.map((destaque, i) => (
-                  <li key={i} className="flex gap-3 text-base leading-relaxed text-ink-600">
-                    {/* Traço de ouro no lugar de marcador ou ícone de check. */}
-                    <span aria-hidden className="mt-[0.8em] h-px w-3 shrink-0 bg-ouro" />
-                    {destaque}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {tabela.length > 0 && (
-            <section aria-labelledby="especificacoes">
-              <h2 id="especificacoes" className={tituloDeSecao}>
-                Especificações
-              </h2>
-              {/* Linhas separadas por fio, sem zebrado. */}
-              <dl className="mt-3 max-w-2xl border-t border-fio">
-                {tabela.map((spec, i) => (
-                  <div
-                    key={`${spec.label}-${i}`}
-                    className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-4 border-b border-fio py-3 text-sm sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]"
-                  >
-                    <dt className="text-ink-600">{spec.label}</dt>
-                    <dd className="text-grafite-900">{spec.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          )}
-        </div>
-
-        <aside className="min-w-0 space-y-4">
-          <section aria-labelledby="envio" className="rounded-card border border-fio bg-white p-5">
-            <h2 id="envio" className="text-base font-bold text-grafite-900">
-              Informações de envio
-            </h2>
-            <ul className="mt-3 space-y-3 text-sm text-ink-600">
-              <li className="flex gap-3">
-                <Icon name="localizacao" className="text-ouro-texto" />
-                <span>
-                  Enviado de{" "}
-                  <strong className="font-semibold text-grafite-900">{product.shipping.origin}</strong>{" "}
-                  para todo o Brasil.
-                </span>
-              </li>
-              {/* Peso zerado é cadastro incompleto, não um pacote de 0 g. */}
-              {product.shipping.weight > 0 && (
-                <li className="flex gap-3">
-                  <Icon name="caixa" className="text-ouro-texto" />
-                  <span>Pacote de aproximadamente {formatWeight(product.shipping.weight)}.</span>
-                </li>
-              )}
-              <li className="flex gap-3">
-                <Icon name="conversa" className="text-ouro-texto" />
-                <span>
-                  O valor e o prazo do frete são confirmados com você antes de fechar o pedido.
-                </span>
-              </li>
-              <li className="flex gap-3">
-                <Icon name="troca" className="text-ouro-texto" />
-                <span>
-                  <Link
-                    href="/institucional/trocas-e-devolucoes"
-                    className="font-semibold text-grafite-900 underline decoration-ouro underline-offset-2 transition-colors duration-(--duracao-toque) hover:text-ouro-texto"
-                  >
-                    7 dias para arrependimento
-                  </Link>
-                  , conforme o Código de Defesa do Consumidor.
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          {/* Só aparece no item que veio mesmo do anúncio da Shopee. */}
-          {product.sourceUrl && (
-            <div className="rounded-card border border-fio bg-white p-5">
-              <p className="text-sm text-ink-600">
-                Este produto também está anunciado na nossa loja da Shopee, com{" "}
-                {shopee.avaliacoes.toLocaleString("pt-BR")} avaliações na loja.
-              </p>
-              <a
-                href={product.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonStyles({ variant: "secundario", fullWidth: true, className: "mt-3" })}
-              >
-                Ver anúncio na Shopee
-              </a>
-            </div>
-          )}
-        </aside>
-      </div>
 
       {related.length > 0 && (
         <div className="mt-16">
@@ -433,4 +381,74 @@ function productJsonLd(product: Product, url: string) {
         }
       : {}),
   };
+}
+
+/**
+ * Envio, troca e o anúncio na Shopee. Fica na coluna de compra, logo abaixo
+ * da reputação: é informação de quem está decidindo comprar, e no celular
+ * aparece antes da descrição.
+ */
+function EnvioDoProduto({ product, shopee }: { product: Product; shopee: CanalReputacao }) {
+  return (
+    <div className="mt-8 space-y-4">
+      <section aria-labelledby="envio" className="rounded-card border border-fio bg-white p-5">
+        <h2 id="envio" className="text-base font-bold text-grafite-900">
+          Informações de envio
+        </h2>
+        <ul className="mt-3 space-y-3 text-sm text-ink-600">
+          <li className="flex gap-3">
+            <Icon name="localizacao" className="text-ouro-texto" />
+            <span>
+              Enviado de{" "}
+              <strong className="font-semibold text-grafite-900">{product.shipping.origin}</strong>{" "}
+              para todo o Brasil.
+            </span>
+          </li>
+          {/* Peso zerado é cadastro incompleto, não um pacote de 0 g. */}
+          {product.shipping.weight > 0 && (
+            <li className="flex gap-3">
+              <Icon name="caixa" className="text-ouro-texto" />
+              <span>Pacote de aproximadamente {formatWeight(product.shipping.weight)}.</span>
+            </li>
+          )}
+          <li className="flex gap-3">
+            <Icon name="conversa" className="text-ouro-texto" />
+            <span>
+              O valor e o prazo do frete são confirmados com você antes de fechar o pedido.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <Icon name="troca" className="text-ouro-texto" />
+            <span>
+              <Link
+                href="/institucional/trocas-e-devolucoes"
+                className="font-semibold text-grafite-900 underline decoration-ouro underline-offset-2 transition-colors duration-(--duracao-toque) hover:text-ouro-texto"
+              >
+                7 dias para arrependimento
+              </Link>
+              , conforme o Código de Defesa do Consumidor.
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      {/* Só aparece no item que veio mesmo do anúncio da Shopee. */}
+      {product.sourceUrl && (
+        <div className="rounded-card border border-fio bg-white p-5">
+          <p className="text-sm text-ink-600">
+            Este produto também está anunciado na nossa loja da Shopee, com{" "}
+            {shopee.avaliacoes.toLocaleString("pt-BR")} avaliações na loja.
+          </p>
+          <a
+            href={product.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonStyles({ variant: "secundario", fullWidth: true, className: "mt-3" })}
+          >
+            Ver anúncio na Shopee
+          </a>
+        </div>
+      )}
+    </div>
+  );
 }

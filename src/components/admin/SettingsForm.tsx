@@ -59,7 +59,8 @@ function ParcelamentoFields({ inicial }: { inicial: ParcelamentoDaLoja }) {
   const chamada = tabela.ok && !erroDoAnuncio ? parcelamentoMaximo(exemplo, { taxas, anunciarAte }) : null;
   const ultima = tabela.ok && taxas.length >= 2 ? simularParcela(exemplo, taxas.length, taxas) : null;
 
-  return <fieldset className="rounded-xl border border-ink-200 p-4">
+  // id: o "Mudar as taxas" do cadastro de produto abre direto aqui.
+  return <fieldset id="parcelamento" className="scroll-mt-6 rounded-xl border border-ink-200 p-4">
     <legend className="px-1 text-sm font-black text-ink-900">Parcelamento no cartão (taxas da maquininha)</legend>
     <p className="text-xs leading-relaxed text-ink-500">Cadastre nos produtos só o preço à vista (Pix ou dinheiro). O site calcula sozinho a parcela de cada produto com estas taxas, repassando a taxa ao cliente, e mostra a tabela completa na página do produto e no checkout. Taxa 0 aparece como “sem juros”. Para parcelar em menos vezes, apague os últimos campos, do fim para o começo.</p>
     <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
