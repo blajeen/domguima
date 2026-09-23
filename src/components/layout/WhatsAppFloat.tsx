@@ -12,7 +12,7 @@ export async function WhatsAppFloat() {
         message={genericMessage}
         contacts={contactsFor(settings)}
         aria-label={`Falar com a Dom Guima no WhatsApp ${settings.whatsappDisplay || whatsapp.display}`}
-        className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-[#25D366]/30 transition-transform duration-200 hover:scale-105 active:scale-95"
+        className="group relative flex h-14 w-14 items-center justify-center rounded-pill bg-whatsapp text-white shadow-float transition-[background-color,translate] duration-150 ease-out hover:bg-whatsapp-escuro active:translate-y-px"
       >
         <WhatsAppIcon className="h-7 w-7" />
         <span className="pointer-events-none absolute right-full mr-3 hidden whitespace-nowrap rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 lg:block">

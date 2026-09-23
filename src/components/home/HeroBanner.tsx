@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Rating } from "@/components/ui/Rating";
 import type { Banner } from "@/lib/catalog/types";
 
 const THEMES: Record<Banner["theme"], string> = {
@@ -102,7 +103,7 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
               >
                 <div className="relative z-10">
                   {banner.eyebrow && (
-                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] opacity-80">
+                    <p className="mb-2 text-sm font-semibold opacity-80">
                       {banner.eyebrow}
                     </p>
                   )}
@@ -166,7 +167,9 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
                 onClick={() => goTo(i)}
                 aria-label={`Ir para o banner ${i + 1}: ${banner.title}`}
                 aria-current={i === index}
-                className={`h-2 rounded-full transition-all duration-300 ${
+                // A largura troca na hora (animar width refaz o layout a cada
+                // quadro); só a cor tem transição.
+                className={`h-2 rounded-full transition-colors duration-(--duracao-toque) ${
                   i === index
                     ? "w-7 bg-white"
                     : "w-2 bg-white/50 hover:bg-white/80"
@@ -181,8 +184,8 @@ export function HeroBanner({ banners, compact = false }: { banners: Banner[]; co
 }
 
 function BannerCta({ banner, active, compact }: { banner: Banner; active: boolean; compact: boolean }) {
-  const className = `${compact ? "mt-4 rounded-lg px-5 py-2.5 text-xs" : "mt-6 rounded-xl px-6 py-3 text-sm"} inline-flex w-fit items-center gap-2 font-extrabold uppercase tracking-wide shadow-sm transition-transform duration-200 hover:scale-[1.03] active:scale-95 ${banner.theme === "gold" ? "bg-white text-brand-900" : "bg-gold-300 text-brand-950"}`;
-  const content = <>{banner.ctaLabel}<span aria-hidden>→</span></>;
+  const className = `${compact ? "mt-4 rounded-lg px-5 py-2.5 text-xs" : "mt-6 rounded-xl px-6 py-3 text-sm"} inline-flex w-fit items-center gap-2 font-extrabold shadow-sm transition-[translate] duration-(--duracao-toque) active:translate-y-px ${banner.theme === "gold" ? "bg-white text-brand-900" : "bg-gold-300 text-brand-950"}`;
+  const content = banner.ctaLabel;
   return banner.href.startsWith("http") ? (
     <a href={banner.href} target="_blank" rel="noopener noreferrer" className={className} tabIndex={active ? 0 : -1}>{content}</a>
   ) : (
@@ -193,12 +196,12 @@ function BannerCta({ banner, active, compact }: { banner: Banner; active: boolea
 function ReputationVisual({ data, compact }: { data: NonNullable<Banner["reputation"]>; compact: boolean }) {
   return (
     <div className={`mx-auto grid w-full max-w-[500px] gap-3 border border-white/20 bg-white/95 text-ink-900 shadow-2xl ${compact ? "rounded-2xl p-3" : "rounded-[2rem] p-4 sm:p-6"}`}>
-      <p className="text-center text-[11px] font-black uppercase tracking-[0.18em] text-ink-400">Avaliações nos canais oficiais</p>
+      <p className="text-center text-sm font-semibold text-ink-500">Avaliações nos canais oficiais</p>
       <div className="grid grid-cols-2 gap-3">
         <MetricCard brand="Google" rating={data.googleRating} count={data.googleCount} accent="text-[#4285F4]" />
         <MetricCard brand="Shopee" rating={data.shopeeRating} count={data.shopeeCount} accent="text-[#EE4D2D]" />
       </div>
-      <p className="text-center text-[10px] text-ink-400">Google em {formatVerifiedDate(data.googleVerifiedAt)} · Shopee em {formatVerifiedDate(data.shopeeVerifiedAt)}</p>
+      <p className="text-center text-xs text-ink-500">Google em {formatVerifiedDate(data.googleVerifiedAt)} · Shopee em {formatVerifiedDate(data.shopeeVerifiedAt)}</p>
     </div>
   );
 }
@@ -208,8 +211,9 @@ function MetricCard({ brand, rating, count, accent }: { brand: string; rating: n
     <div className="rounded-2xl border border-ink-100 bg-ink-50 p-3 text-center sm:p-5">
       <p className={`text-sm font-black ${accent}`}>{brand}</p>
       <p className="mt-1 text-2xl font-black sm:text-3xl">{rating.toLocaleString("pt-BR", { minimumFractionDigits: brand === "Google" ? 1 : 2 })}</p>
-      <p className="text-xs tracking-wider text-gold-500" aria-label={`${rating} de 5 estrelas`}>★★★★★</p>
-      <p className="mt-1 text-[10px] font-semibold text-ink-500 sm:text-xs">{count.toLocaleString("pt-BR")} avaliações</p>
+      {/* Estrelas proporcionais à nota real (4,88 não vira cinco cheias). */}
+      <Rating value={rating} showCount={false} className="justify-center" />
+      <p className="mt-1 text-xs font-semibold text-ink-500">{count.toLocaleString("pt-BR")} avaliações</p>
     </div>
   );
 }

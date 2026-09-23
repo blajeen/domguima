@@ -53,39 +53,19 @@ export default async function HomePage() {
       <TrustBar />
 
       <div className="site-shell space-y-12 py-9 sm:space-y-14 sm:py-12">
-        <ProductCarousel
-          products={selection}
-          eyebrow="Seleção Dom Guima"
-          title="Escolhas para começar"
-          description="Uma seleção variada do nosso catálogo para você conhecer a loja."
-          priority
-        />
+        {/* Títulos curtos e específicos, sem rótulo acima nem subtítulo. Sem
+            `priority`: a única imagem prioritária da home é o 1º slide do banner. */}
+        <ProductCarousel products={selection} title="Escolhas para começar" />
 
         <CategoryStrip />
 
         {offers.length >= 4 && (
-          <ProductCarousel
-            products={offers}
-            eyebrow="Preços reduzidos"
-            title="Ofertas verificadas"
-            description="Produtos com preço anterior informado e desconto real."
-            href="/ofertas"
-          />
+          <ProductCarousel products={offers} title="Ofertas" href="/ofertas" />
         )}
 
-        <ProductCarousel
-          products={technology}
-          eyebrow="Conecte seu mundo"
-          title="Tecnologia para todos os momentos"
-          description="Celulares, áudio, informática, games e acessórios."
-        />
+        <ProductCarousel products={technology} title="TVs, celulares e informática" />
 
-        <ProductCarousel
-          products={homeEssentials}
-          eyebrow="Praticidade no dia a dia"
-          title="Casa confortável e bem equipada"
-          description="Climatização, eletrodomésticos, ferramentas, beleza e decoração."
-        />
+        <ProductCarousel products={homeEssentials} title="Para a casa" />
 
         <InstagramSection />
       </div>

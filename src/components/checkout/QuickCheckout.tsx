@@ -9,6 +9,8 @@ import { contactsFor, quickCartMessage, whatsappLink } from "@/lib/services/what
 import { useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 
 type DeliveryChoice = "local" | "combinar";
 
@@ -161,19 +163,16 @@ export function QuickCheckout() {
 
           {error && <p role="alert" className="mt-3 text-sm font-semibold text-promo">{error}</p>}
 
-          <button
-            type="submit"
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-6 py-3.5 text-base font-extrabold text-white transition hover:bg-[#20bd5a]"
-          >
+          <Button type="submit" variant="whatsapp" size="lg" fullWidth className="mt-5">
+            <Icon name="whatsapp" />
             Enviar pedido ao vendedor
-            <span aria-hidden>→</span>
-          </button>
+          </Button>
           <p className="mt-3 text-center text-xs leading-relaxed text-ink-400">
             O WhatsApp abrirá com os produtos e valores já preenchidos. Nenhuma cobrança é feita pelo site.
           </p>
         </div>
 
-        <aside className="h-fit rounded-card border border-ink-100 bg-white p-5 shadow-card lg:sticky lg:top-44">
+        <aside className="h-fit rounded-card border border-ink-100 bg-white p-5 shadow-card lg:sticky lg:top-[calc(var(--header-h)+1.5rem)]">
           <h2 className="text-base font-extrabold text-ink-900">Seu carrinho</h2>
           <ul className="mt-3 divide-y divide-ink-100">
             {items.map((item) => (
@@ -181,7 +180,7 @@ export function QuickCheckout() {
                 <Image src={item.image} alt="" width={52} height={52} className="size-13 rounded-lg border border-ink-100 object-contain" />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2-safe text-xs font-semibold text-ink-700">{item.quantity}x {item.name}</p>
-                  {item.variant && <p className="text-[11px] text-ink-400">{item.variant}</p>}
+                  {item.variant && <p className="text-xs text-ink-500">{item.variant}</p>}
                   <p className="mt-1 text-xs font-extrabold text-ink-900">{formatPrice(item.price * item.quantity)}</p>
                 </div>
               </li>

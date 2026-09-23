@@ -1,25 +1,33 @@
-type Variant = "promo" | "best" | "gold" | "neutral" | "success";
+export type BadgeVariant = "oferta" | "destaque" | "exclusivo" | "neutro";
 
-const styles: Record<Variant, string> = {
-  promo: "bg-promo text-white",
-  best: "bg-ink-900 text-gold-300",
-  gold: "bg-gold-400 text-ink-900",
-  neutral: "bg-ink-100 text-ink-600",
-  success: "bg-success-light text-success",
+// Caixa alta com espaçamento largo só nos selos de venda (desconto, mais
+// vendido, exclusivo). O `neutro` mostra um dado comum, como a marca do
+// produto, e fica em caixa normal como o resto do texto da loja.
+const selo = "font-bold uppercase tracking-[0.06em]";
+
+const styles: Record<BadgeVariant, string> = {
+  // Desconto real (−X%). Branco no vermelho-oferta: 5,3:1.
+  oferta: `${selo} bg-oferta text-white`,
+  // "Mais vendido": ouro-claro sobre grafite.
+  destaque: `${selo} bg-grafite-900 text-ouro-claro`,
+  // Linha própria "Exclusivos Dom Guima": fio de ouro, texto ouro legível.
+  exclusivo: `${selo} bg-white text-ouro-texto ring-1 ring-inset ring-ouro`,
+  neutro: "font-semibold bg-papel-escuro text-grafite-700",
 };
 
+/** Selo pequeno de canto reto. */
 export function Badge({
-  variant = "neutral",
+  variant = "neutro",
   children,
   className = "",
 }: {
-  variant?: Variant;
+  variant?: BadgeVariant;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${styles[variant]} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-card px-1.5 py-1 text-xs leading-none ${styles[variant]} ${className}`}
     >
       {children}
     </span>

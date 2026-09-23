@@ -8,7 +8,9 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { Icon } from "@/components/ui/Icon";
 import { PRICE_RANGES, type FilterState } from "@/lib/catalog/filters";
 
 /**
@@ -193,10 +195,8 @@ function FilterBody() {
 export function FilterSidebar() {
   return (
     <aside aria-label="Filtros" className="hidden w-56 shrink-0 lg:block xl:w-64">
-      <div className="sticky top-44 rounded-card border border-ink-100 bg-white p-5 shadow-card">
-        <p className="mb-4 text-sm font-extrabold uppercase tracking-wider text-ink-900">
-          Filtrar
-        </p>
+      <div className="sticky top-[calc(var(--header-h)+1.5rem)] rounded-card border border-ink-100 bg-white p-5 shadow-card">
+        <p className="mb-4 text-base font-bold text-ink-900">Filtrar</p>
         <FilterBody />
       </div>
     </aside>
@@ -213,17 +213,10 @@ export function FilterTrigger() {
       onClick={() => setOpen(true)}
       className="flex shrink-0 items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700 lg:hidden"
     >
-      <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden>
-        <path
-          d="M3 5h14M6 10h8M8.5 15h3"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
+      <Icon name="filtro" size={16} />
       Filtrar
       {activeCount > 0 && (
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-400 px-1 text-[11px] font-extrabold text-ink-900">
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-400 px-1 text-xs font-extrabold text-ink-900">
           {activeCount}
         </span>
       )}
@@ -243,13 +236,9 @@ export function FilterDrawer() {
         title="Filtrar"
         side="left"
         footer={
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-extrabold text-white"
-          >
+          <Button onClick={() => setOpen(false)} fullWidth>
             Ver {resultCount} {resultCount === 1 ? "produto" : "produtos"}
-          </button>
+          </Button>
         }
       >
         <div className="p-4">
@@ -263,7 +252,7 @@ export function FilterDrawer() {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset>
-      <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-ink-400">
+      <legend className="mb-2 text-sm font-semibold text-ink-500">
         {title}
       </legend>
       <div className="space-y-1.5">{children}</div>

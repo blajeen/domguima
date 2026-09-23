@@ -1,3 +1,4 @@
+import type { IconName } from "@/components/ui/Icon";
 import type { Category } from "./types";
 
 /**
@@ -96,6 +97,31 @@ export const categories: Category[] = [
     inMainMenu: true,
   },
 ];
+
+/**
+ * Ícone da categoria NA LOJA. O campo `icon` (emoji) continua no banco e no
+ * painel, onde o lojista o escolhe; a loja não renderiza emoji, porque ele muda
+ * de desenho em cada sistema. Vale o slug e, como reserva, o id (as categorias
+ * do banco podem ter slug diferente do desta lista).
+ */
+const CATEGORY_ICONS: Record<string, IconName> = {
+  "smart-tvs": "tv",
+  "celulares-e-acessorios": "celular",
+  celulares: "celular",
+  eletrodomesticos: "eletrodomestico",
+  climatizacao: "climatizacao",
+  eletronicos: "eletronicos",
+  informatica: "informatica",
+  ferramentas: "ferramentas",
+  "casa-e-decoracao": "casa",
+  "casa-decoracao": "casa",
+  beleza: "beleza",
+};
+
+/** Categoria nova, criada no painel sem ícone mapeado aqui, cai na caixa. */
+export function categoryIcon(category: Pick<Category, "slug" | "id">): IconName {
+  return CATEGORY_ICONS[category.slug] ?? CATEGORY_ICONS[category.id] ?? "caixa";
+}
 
 export const categoryById = new Map(categories.map((c) => [c.id, c]));
 export const categoryBySlug = new Map(categories.map((c) => [c.slug, c]));

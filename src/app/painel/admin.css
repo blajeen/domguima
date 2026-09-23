@@ -6,7 +6,12 @@ body:has(.admin-app) {
   background: #f4f5f7;
 }
 
+/* A loja usa a Libre Franklin em --font-sans; aqui o token volta a ser a Inter,
+   então tanto o texto herdado quanto a classe `font-sans` ficam como antes. */
 .admin-app {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   min-height: 100vh;
   color: #191c22;
 }

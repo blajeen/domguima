@@ -25,7 +25,7 @@ export default async function OffersPage({
 
   return (
     <CatalogView
-      title="🔥 Ofertas Dom Guima"
+      title="Ofertas Dom Guima"
       description="Produtos selecionados com preços especiais. Aproveite enquanto durar o estoque."
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Ofertas" }]}
       products={products}

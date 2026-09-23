@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { buttonStyles, ButtonLink } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { whatsapp } from "@/config/site";
 import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
@@ -16,8 +17,8 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
   const siteOrder = params.tipo === "site";
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success-light text-3xl">
-        ✓
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success-light text-success">
+        <Icon name="check" size={32} />
       </div>
       <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
         {siteOrder ? "Solicitação recebida!" : "Pedido enviado!"}
@@ -25,7 +26,7 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
       <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-600">
         {siteOrder
           ? `Recebemos sua solicitação${params.numero ? ` ${params.numero}` : ""} pelo site. O dono da Dom Guima vai conferir os dados e entrar em contato para confirmar o pedido.`
-          : "Abrimos uma conversa no WhatsApp com o resumo do seu pedido. Se a janela não abriu, é só clicar no botão abaixo — o resumo continua lá."}
+          : "Abrimos uma conversa no WhatsApp com o resumo do seu pedido. Se a janela não abriu, é só clicar no botão abaixo: o resumo continua lá."}
       </p>
       <p className="mt-4 text-sm text-ink-500">
         {siteOrder
@@ -37,16 +38,14 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
         <WhatsAppChooser
           message={genericMessage}
           contacts={contactsFor(settings)}
-          className="rounded-xl bg-[#25D366] px-6 py-3 text-sm font-extrabold text-white transition-transform hover:scale-[1.02]"
+          className={buttonStyles({ variant: "whatsapp", size: "lg" })}
         >
+          <Icon name="whatsapp" />
           {siteOrder ? "Falar com a Dom Guima" : `Abrir WhatsApp ${settings.whatsappDisplay || whatsapp.display}`}
         </WhatsAppChooser>
-        <Link
-          href="/"
-          className="rounded-xl border border-ink-200 px-6 py-3 text-sm font-semibold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
-        >
+        <ButtonLink href="/" variant="secundario" size="lg">
           Continuar comprando
-        </Link>
+        </ButtonLink>
       </div>
     </div>
   );

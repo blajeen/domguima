@@ -31,7 +31,10 @@ export function Logo({
         alt=""
         width={44}
         height={44}
-        priority
+        // Sem preload: na home a única imagem prioritária é o 1º slide do
+        // banner. `eager` só evita o atraso do lazy, já que o emblema está
+        // sempre no topo.
+        loading="eager"
         className={`${compact ? "h-9 w-9 sm:h-10 sm:w-10" : "h-9 w-9 sm:h-11 sm:w-11"} object-contain`}
       />
       <span className="flex flex-col leading-none">
@@ -43,7 +46,7 @@ export function Logo({
           DOM<span className="text-gold-400">GUIMA</span>
         </span>
         <span
-          className={`mt-0.5 hidden font-medium uppercase tracking-[0.18em] sm:block ${compact ? "text-[9px]" : "text-[10px]"} ${
+          className={`mt-0.5 hidden text-xs font-medium sm:block ${
             variant === "dark" ? "text-ink-300" : "text-ink-400"
           }`}
         >

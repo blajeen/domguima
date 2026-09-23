@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Icon } from "@/components/ui/Icon";
 import type { Category } from "@/lib/catalog/types";
 
 /**
@@ -14,12 +15,14 @@ export function CategoryMenu({ categories }: { categories: Category[] }) {
     <nav aria-label="Categorias" className="hidden border-b border-brand-100 bg-brand-50 lg:block">
       <div className="site-shell">
         <ul className="flex min-w-0 items-center gap-1 py-1">
+          {/* Ofertas e Mais vendidos se destacam pelo texto, sem ícone de
+              fogo ou estrela: o vermelho-oferta já diz o que é. */}
           <li>
             <Link
               href="/ofertas"
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold text-promo transition-colors hover:bg-promo/5"
+              className="block whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold text-oferta transition-colors hover:bg-oferta/5"
             >
-              <span aria-hidden>🔥</span> Ofertas
+              Ofertas
             </Link>
           </li>
           {alwaysVisible.map((category) => (
@@ -45,9 +48,9 @@ export function CategoryMenu({ categories }: { categories: Category[] }) {
           <li>
             <Link
               href="/mais-vendidos"
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold text-brand-900 transition-colors hover:bg-brand-100"
+              className="block whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-bold text-brand-900 transition-colors hover:bg-brand-100"
             >
-              <span aria-hidden>⭐</span> Mais vendidos
+              Mais vendidos
             </Link>
           </li>
           {moreCategories.length > 0 && (
@@ -55,9 +58,7 @@ export function CategoryMenu({ categories }: { categories: Category[] }) {
               <details className="group">
                 <summary className="flex cursor-pointer list-none items-center gap-1 rounded-lg px-3 py-1.5 text-[13px] font-bold text-brand-900 transition-colors hover:bg-brand-100 [&::-webkit-details-marker]:hidden">
                   Mais
-                  <svg viewBox="0 0 16 16" fill="none" className="size-3.5 transition-transform group-open:rotate-180" aria-hidden>
-                    <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <Icon name="seta-baixo" size={14} className="transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="absolute right-0 top-[calc(100%+0.4rem)] z-50 w-64 overflow-hidden rounded-xl border border-brand-100 bg-white p-2 shadow-xl">
                   {moreCategories.map((category, index) => (

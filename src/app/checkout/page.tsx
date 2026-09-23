@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { site } from "@/config/site";
 import { ORDER_PAYMENT_METHOD_LABELS, type OrderPaymentMethod } from "@/lib/admin/types";
 import {
@@ -349,13 +351,14 @@ export default function CheckoutPage() {
 
           <Card title="Entrega e pagamento" step={3}>
             <div className="rounded-lg border border-ink-100 bg-ink-50/60 p-4">
-              <p className="text-sm font-semibold text-ink-900">
-                🚚 Frete a combinar
+              <p className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+                <Icon name="caminhao" size={18} className="text-ink-500" />
+                Frete a combinar
               </p>
               <p className="mt-1 text-sm leading-relaxed text-ink-600">
                 O cálculo automático de frete ainda não está ativo. Assim que
-                recebermos o pedido, confirmamos o valor e o prazo pelo WhatsApp
-                — antes de qualquer cobrança.
+                recebermos o pedido, confirmamos o valor e o prazo pelo WhatsApp,
+                antes de qualquer cobrança.
               </p>
             </div>
 
@@ -370,7 +373,7 @@ export default function CheckoutPage() {
                 {paymentOptions(isUberlandia(form.city)).map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors ${form.paymentMethod === option.value ? "border-brand-700 bg-blue-50 text-blue-950" : "border-ink-200 hover:border-brand-300"}`}
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors ${form.paymentMethod === option.value ? "border-grafite-900 bg-papel text-grafite-900" : "border-ink-200 hover:border-grafite-700"}`}
                   >
                     <input
                       type="radio"
@@ -378,7 +381,7 @@ export default function CheckoutPage() {
                       value={option.value}
                       checked={form.paymentMethod === option.value}
                       onChange={() => update("paymentMethod", option.value)}
-                      className="mt-0.5 accent-brand-700"
+                      className="mt-0.5 accent-grafite-900"
                     />
                     <span>
                       <span className="block font-bold">{option.label}</span>
@@ -411,7 +414,7 @@ export default function CheckoutPage() {
           </Card>
         </div>
 
-        <aside className="lg:sticky lg:top-44 lg:h-fit">
+        <aside className="lg:sticky lg:top-[calc(var(--header-h)+1.5rem)] lg:h-fit">
           <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card">
             <h2 className="mb-4 text-base font-extrabold text-ink-900">
               Resumo
@@ -465,13 +468,15 @@ export default function CheckoutPage() {
             </div>
 
             {siteError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{siteError}</p>}
-            <button
+            <Button
               type="submit"
               disabled={sitePending}
-              className="mt-3 w-full rounded-xl bg-brand-700 px-6 py-3.5 text-base font-extrabold text-white transition-colors hover:bg-brand-600 disabled:cursor-wait disabled:opacity-60"
+              size="lg"
+              fullWidth
+              className="mt-3"
             >
               {sitePending ? "Enviando pedido..." : "Enviar pedido"}
-            </button>
+            </Button>
 
             <p className="mt-3 text-center text-xs leading-relaxed text-ink-400">
               Nenhum pagamento é cobrado nesta etapa. A confirmação será feita pelo WhatsApp.

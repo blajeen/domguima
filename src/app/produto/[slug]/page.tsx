@@ -7,6 +7,7 @@ import { VariantImageProvider } from "@/components/product/VariantImageContext";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { Icon } from "@/components/ui/Icon";
 import { Rating } from "@/components/ui/Rating";
 import { googleStats, shopeeStats, site, social } from "@/config/site";
 import { getAllProducts, getCatalogCategories, getProductBySlug, getRelatedProducts } from "@/lib/catalog/queries";
@@ -101,9 +102,9 @@ export default async function ProductPage({ params }: PageProps) {
 
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            {discount > 0 && <Badge variant="promo">-{discount}% OFF</Badge>}
-            {product.isBestSeller && <Badge variant="best">Mais vendido</Badge>}
-            {product.brand && <Badge variant="neutral">{product.brand}</Badge>}
+            {discount > 0 && <Badge variant="oferta">−{discount}%</Badge>}
+            {product.isBestSeller && <Badge variant="destaque">Mais vendido</Badge>}
+            {product.brand && <Badge variant="neutro">{product.brand}</Badge>}
           </div>
 
           <h1 className="text-xl font-extrabold leading-snug tracking-tight text-ink-900 sm:text-2xl">
@@ -131,9 +132,7 @@ export default async function ProductPage({ params }: PageProps) {
           <ProductPurchase product={product} productUrl={productUrl} />
 
           <section aria-label="Avaliações da loja" className="mt-4">
-            <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-ink-400">
-              Reputação da loja
-            </p>
+            <p className="mb-2 text-sm font-semibold text-ink-500">Reputação da loja</p>
             <div className="grid grid-cols-2 gap-2">
               <StoreRatingLink
                 href={googleStats.profileUrl}
@@ -148,7 +147,7 @@ export default async function ProductPage({ params }: PageProps) {
                 count={shopeeStats.ratingCount}
               />
             </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-ink-400">
+            <p className="mt-2 text-xs leading-relaxed text-ink-500">
               Avaliações dos canais da loja; não são avaliações específicas deste produto.
             </p>
           </section>
@@ -219,28 +218,28 @@ export default async function ProductPage({ params }: PageProps) {
             </h2>
             <ul className="space-y-3 text-sm text-ink-600">
               <li className="flex gap-3">
-                <span aria-hidden>📍</span>
+                <Icon name="localizacao" className="text-ouro-texto" />
                 <span>
                   Enviado de <strong>{product.shipping.origin}</strong> para todo
                   o Brasil.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span aria-hidden>📦</span>
+                <Icon name="caixa" className="text-ouro-texto" />
                 <span>
                   Pacote de aproximadamente{" "}
                   {formatWeight(product.shipping.weight)}.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span aria-hidden>💬</span>
+                <Icon name="conversa" className="text-ouro-texto" />
                 <span>
                   O valor e o prazo do frete são confirmados com você antes de
                   fechar o pedido.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span aria-hidden>↩️</span>
+                <Icon name="troca" className="text-ouro-texto" />
                 <span>
                   <Link
                     href="/institucional/trocas-e-devolucoes"
@@ -309,11 +308,11 @@ function StoreRatingLink({
       rel="noopener noreferrer"
       className="rounded-xl border border-ink-100 bg-white px-3 py-2.5 shadow-card transition-colors hover:border-gold-300 hover:bg-gold-50"
     >
-      <span className="block text-sm font-extrabold text-ink-900">
-        <span className="mr-1 text-gold-500" aria-hidden>★</span>
+      <span className="flex items-center gap-1 text-sm font-extrabold text-ink-900">
+        <Icon name="estrela" size={16} className="fill-current text-ouro" />
         {rating} no {label}
       </span>
-      <span className="mt-0.5 block text-[10px] text-ink-500">
+      <span className="mt-0.5 block text-xs text-ink-500">
         {count.toLocaleString("pt-BR")} avaliações
       </span>
     </a>

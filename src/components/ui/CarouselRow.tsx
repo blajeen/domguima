@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IconButton } from "./IconButton";
 
 /**
  * Carrossel horizontal sem dependência externa: usa scroll nativo com
@@ -87,26 +88,30 @@ function Arrow({
   onClick: () => void;
   label: string;
 }) {
+  // O invólucro só centraliza e não recebe clique: com a seta escondida, o
+  // clique passa para o card de baixo. Só o botão visível volta a receber
+  // (pointer-events é herdado). A opacidade fica no próprio botão, porque um
+  // ancestral translúcido cortaria o fundo que o vidro desfoca; e troca sem
+  // fade, porque o vidro não anima.
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      tabIndex={visible ? 0 : -1}
-      aria-hidden={!visible}
-      className={`absolute top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-ink-100 bg-white/95 text-ink-700 shadow-card backdrop-blur transition-all hover:border-gold-300 hover:text-gold-700 lg:flex ${
+    <div
+      className={`pointer-events-none absolute top-1/2 z-10 hidden -translate-y-1/2 lg:flex ${
         side === "left" ? "-left-4" : "-right-4"
-      } ${visible ? "opacity-0 group-hover/carousel:opacity-100 focus-visible:opacity-100" : "pointer-events-none opacity-0"}`}
+      }`}
     >
-      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden>
-        <path
-          d={side === "left" ? "M12.5 4L6.5 10l6 6" : "M7.5 4l6 6-6 6"}
-          stroke="currentColor"
-          strokeWidth="1.9"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
+      <IconButton
+        icon={side === "left" ? "seta-esquerda" : "seta-direita"}
+        label={label}
+        variant="vidro"
+        onClick={onClick}
+        tabIndex={visible ? 0 : -1}
+        aria-hidden={!visible}
+        className={
+          visible
+            ? "pointer-events-auto opacity-0 group-hover/carousel:opacity-100 focus-visible:opacity-100"
+            : "opacity-0"
+        }
+      />
+    </div>
   );
 }

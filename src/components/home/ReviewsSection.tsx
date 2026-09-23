@@ -16,19 +16,15 @@ export async function ReviewsSection() {
       className="border-b border-ink-100 bg-white"
     >
       <div className="site-shell grid gap-4 py-5 lg:grid-cols-[minmax(240px,.8fr)_1fr_1fr] lg:items-stretch">
+        {/* Só o título: sem rótulo em caixa alta acima nem subtítulo. Que os
+            dados são públicos, cada card já diz (data da consulta e link). */}
         <div className="flex flex-col justify-center">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-gold-700">
-            Compra com confiança
-          </p>
           <h2
             id="reputacao-titulo"
-            className="mt-1 text-xl font-extrabold tracking-tight text-ink-900"
+            className="text-balance text-titulo font-bold text-grafite-900"
           >
-            Reputação que você pode conferir
+            Avaliações da loja
           </h2>
-          <p className="mt-1 text-sm leading-relaxed text-ink-500">
-            Veja os dados públicos diretamente nos canais oficiais da loja.
-          </p>
         </div>
 
         <ReputationCard
@@ -78,7 +74,7 @@ function ReputationCard({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`Conferir ${count.toLocaleString("pt-BR")} avaliações da Dom Guima no ${brand}`}
-      className={`group flex items-center gap-4 rounded-card border border-ink-100 bg-ink-50/55 px-4 py-4 transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-card ${accent}`}
+      className={`group flex items-center gap-4 rounded-card border border-ink-100 bg-ink-50/55 px-4 py-4 transition-[background-color,border-color] duration-150 hover:bg-white ${accent}`}
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
         {icon}
@@ -95,15 +91,9 @@ function ReputationCard({
         <span className="mt-0.5 block text-sm font-semibold text-ink-700">
           {count.toLocaleString("pt-BR")} avaliações no {brand}
         </span>
-        <span className="mt-1 block text-[10px] text-ink-400">
+        <span className="mt-1 block text-xs text-ink-500">
           Consulta pública em {formatDate(verifiedAt)}
         </span>
-      </span>
-      <span
-        className="shrink-0 text-lg text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gold-700"
-        aria-hidden
-      >
-        →
       </span>
     </a>
   );

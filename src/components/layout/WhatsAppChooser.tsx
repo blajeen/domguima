@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { IconButton } from "@/components/ui/IconButton";
 import type { WhatsappContact } from "@/config/site";
 import { whatsappLink } from "@/lib/services/whatsapp";
 
@@ -79,16 +80,7 @@ function ContactDialog({
             <h2 className="text-base font-extrabold text-ink-900">Falar no WhatsApp</h2>
             <p className="mt-0.5 text-sm text-ink-500">Com quem você quer falar?</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="-mr-1 -mt-1 rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700"
-          >
-            <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden>
-              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
+          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2 -mt-2" />
         </div>
 
         <ul className="mt-4 space-y-2">
@@ -99,9 +91,9 @@ function ContactDialog({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={onClose}
-                className="flex items-center gap-3 rounded-xl border border-ink-100 px-4 py-3 transition-colors hover:border-[#25D366] hover:bg-[#25D366]/10"
+                className="flex items-center gap-3 rounded-xl border border-ink-100 px-4 py-3 transition-colors hover:border-whatsapp hover:bg-whatsapp/10"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp text-white">
                   <WhatsAppIcon className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -110,7 +102,6 @@ function ContactDialog({
                     {contact.role} · {contact.display}
                   </span>
                 </span>
-                <span aria-hidden className="text-ink-400">→</span>
               </a>
             </li>
           ))}

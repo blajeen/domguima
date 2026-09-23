@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CatalogView } from "@/components/catalog/CatalogView";
 import { ProductCarousel } from "@/components/product/ProductCarousel";
+import { chipStyles } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { categoryIcon } from "@/lib/catalog/categories";
 import { parseFilterState, parseSort, toProductFilters } from "@/lib/catalog/filters";
 import { getBestSellers, getBrands, getCatalogCategories, queryProducts, searchProducts } from "@/lib/catalog/queries";
 
@@ -64,11 +67,9 @@ async function SearchSuggestions() {
           <Link
             key={category.id}
             href={`/categoria/${category.slug}`}
-            className="rounded-full border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50 hover:text-gold-800"
+            className={chipStyles}
           >
-            <span aria-hidden className="mr-1">
-              {category.icon}
-            </span>
+            <Icon name={categoryIcon(category)} size={18} className="text-ink-500" />
             {category.name}
           </Link>
         ))}
@@ -86,9 +87,7 @@ async function EmptyQuery() {
   const categories = await getCatalogCategories();
   return (
     <div className="mx-auto max-w-3xl px-4 py-20 text-center">
-      <p className="text-5xl" aria-hidden>
-        🔍
-      </p>
+      <Icon name="busca" size={40} className="mx-auto text-ink-400" />
       <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink-900">
         O que você está procurando?
       </h1>
@@ -100,11 +99,9 @@ async function EmptyQuery() {
           <Link
             key={category.id}
             href={`/categoria/${category.slug}`}
-            className="rounded-full border border-ink-200 bg-white px-4 py-2 text-sm font-medium text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
+            className={chipStyles}
           >
-            <span aria-hidden className="mr-1">
-              {category.icon}
-            </span>
+            <Icon name={categoryIcon(category)} size={18} className="text-ink-500" />
             {category.name}
           </Link>
         ))}

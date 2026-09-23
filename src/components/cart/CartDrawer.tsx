@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { Icon } from "@/components/ui/Icon";
 import { lineKey, useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
 
@@ -37,30 +39,19 @@ export function CartDrawer() {
               </p>
             </dl>
 
-            <Link
-              href="/checkout/rapido"
-              onClick={closeCart}
-              className="block rounded-lg bg-[#25D366] px-4 py-3 text-center text-sm font-extrabold text-white transition-colors hover:bg-[#20bd5a]"
-            >
+            {/* O pedido rápido termina no WhatsApp do vendedor: por isso o verde. */}
+            <ButtonLink href="/checkout/rapido" onClick={closeCart} variant="whatsapp" fullWidth>
               Finalizar rápido com vendedor
-            </Link>
-            <p className="text-center text-xs text-ink-400">Só seu nome. Ideal para Uberlândia.</p>
+            </ButtonLink>
+            <p className="text-center text-xs text-ink-500">Só seu nome. Ideal para Uberlândia.</p>
 
-            <Link
-              href="/checkout"
-              onClick={closeCart}
-              className="block rounded-lg border border-ink-200 px-4 py-2.5 text-center text-sm font-bold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
-            >
+            <ButtonLink href="/checkout" onClick={closeCart} variant="secundario" fullWidth>
               Checkout completo
-            </Link>
+            </ButtonLink>
 
-            <button
-              type="button"
-              onClick={closeCart}
-              className="w-full py-1 text-center text-sm font-medium text-ink-500 transition-colors hover:text-ink-800"
-            >
+            <Button onClick={closeCart} variant="fantasma" size="sm" fullWidth>
               Continuar comprando
-            </button>
+            </Button>
           </div>
         ) : undefined
       }
@@ -177,22 +168,18 @@ function QtyButton({
 function EmptyCart({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-ink-50 text-3xl">
-        🛒
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-papel text-ink-500">
+        <Icon name="carrinho" size={28} />
       </div>
       <p className="text-base font-bold text-ink-900">
         Seu carrinho está vazio
       </p>
       <p className="mt-1 max-w-xs text-sm text-ink-500">
-        Dá uma olhada nas ofertas — tem bastante coisa boa com desconto.
+        Dá uma olhada nas ofertas. Tem bastante coisa com desconto.
       </p>
-      <Link
-        href="/ofertas"
-        onClick={onClose}
-        className="mt-5 rounded-lg bg-brand-700 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-600"
-      >
+      <ButtonLink href="/ofertas" onClick={onClose} className="mt-5">
         Ver ofertas
-      </Link>
+      </ButtonLink>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { IconButton } from "./IconButton";
 
 interface DrawerProps {
   open: boolean;
@@ -102,21 +103,7 @@ export function Drawer({
       >
         <header className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-3.5">
           <h2 className="text-base font-bold text-ink-900">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="-mr-1 rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700"
-          >
-            <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden>
-              <path
-                d="M5 5l10 10M15 5L5 15"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2" />
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">

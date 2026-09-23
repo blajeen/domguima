@@ -1,13 +1,21 @@
 @import "tailwindcss";
 
 /*
- * IDENTIDADE DOM GUIMA
- * Paleta tirada da própria logo: dourado sobre grafite escuro.
- * O corpo da loja é claro (varejo converte melhor com fundo claro);
- * o dourado e o grafite ficam para header, rodapé, selos e CTAs.
+ * IDENTIDADE DOM GUIMA — "ouro chapado"
+ * Grafite e um ouro só, chapado (sem gradiente), sobre papel claro e quente.
+ * O corpo da loja continua claro (varejo converte melhor com fundo claro).
+ *
+ * Duas camadas convivem aqui:
+ * - Tokens da LOJA (grafite, papel, ouro, oferta, raios card/control/pill,
+ *   shadow-float, fontes sans/brand/price). É o sistema visual novo.
+ * - Tokens antigos (brand, gold, ink, promo, shadow-card...). O painel
+ *   (/painel) depende deles, então ficam como estão: mudar o valor deles
+ *   mudaria o painel. A loja vai deixando de usá-los bloco a bloco.
+ * O raio `card` pôde mudar porque o painel não usa `rounded-card` (usa
+ * rounded-2xl). A fonte do painel continua a Inter, fixada em painel/admin.css.
  */
 @theme {
-  /* Azul-safira: mais luminoso que o azul-marinho de marketplaces. */
+  /* Azul-safira: legado. O painel ainda usa; a loja não usa como ação. */
   --color-brand-50: #f1f5fc;
   --color-brand-100: #e2eafb;
   --color-brand-200: #c8d7f3;
@@ -20,7 +28,7 @@
   --color-brand-900: #24365c;
   --color-brand-950: #17233f;
 
-  /* Dourado envelhecido da logo: destaque, nÃ£o cor dominante de varejo. */
+  /* Dourado envelhecido da logo: destaque, não cor dominante de varejo. */
   --color-gold-50: #fcf8ef;
   --color-gold-100: #f5ead2;
   --color-gold-200: #ead3a3;
@@ -32,7 +40,7 @@
   --color-gold-800: #573a1d;
   --color-gold-900: #432e19;
 
-  /* Grafite da logo */
+  /* Neutros de texto (escala ink), usados pela loja e pelo painel. */
   --color-ink-50: #f5f6f8;
   --color-ink-100: #e7e9ee;
   --color-ink-200: #cfd3dc;
@@ -45,24 +53,135 @@
   --color-ink-900: #101216;
   --color-ink-950: #0a0b0e;
 
-  /* Semânticos de varejo */
+  /* Semânticos de varejo (legado: a loja nova usa `oferta`). */
   --color-promo: #d92d20;
   --color-promo-dark: #a81d13;
   --color-success: #067647;
   --color-success-light: #ecfdf3;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
+  /* ---- Loja: cores com papel fixo ---- */
+  /* Grafite: header, rodapé, botão principal e texto de preço. */
+  --color-grafite-950: #121316;
+  --color-grafite-900: #1c1d21;
+  --color-grafite-800: #2a2b30;
+  --color-grafite-700: #3b3c42;
+  /* Fundo da página e faixas de contraste. */
+  --color-papel: #f4f2ed;
+  --color-papel-escuro: #ebe8e1;
+  /* Fio de 1 px que separa blocos (no lugar de sombra). */
+  --color-fio: #ddd9d0;
+  /* Ouro chapado. `ouro` só em fio, selo e detalhe não textual; como texto
+     sobre fundo claro use `ouro-texto` (contraste AA); sobre grafite, `ouro-claro`. */
+  --color-ouro: #b0842f;
+  --color-ouro-texto: #85611d;
+  --color-ouro-claro: #e1bd72;
+  /* Só desconto (−X%) e urgência real, como "última unidade". */
+  --color-oferta: #c8321e;
+  /* Verde do WhatsApp que a loja já usa. Só em ação de WhatsApp. Texto sobre
+     ele é grafite: branco sobre este verde fica em 2:1 e não passa no AA. */
+  --color-whatsapp: #25d366;
+  --color-whatsapp-escuro: #20bd5a;
 
-  --radius-card: 0.875rem;
+  /* ---- Tipografia ---- */
+  /* Interface e texto da loja. O painel troca pela Inter no admin.css. */
+  --font-sans: var(--font-libre-franklin), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Marca: só o letreiro "Dom Guima" e raros momentos de marca. */
+  --font-brand: var(--font-bodoni-moda), "Bodoni 72", Didot, Georgia, serif;
+  /* Preço: só números de preço e percentuais, condensado e pesado. */
+  --font-price: var(--font-archivo), "Arial Narrow", "Roboto Condensed",
+    sans-serif;
 
+  /* Passos da escala que o Tailwind não tem (0.8125, 1.375 e 1.75 rem). */
+  --text-apoio: 0.8125rem;
+  --text-apoio--line-height: 1.4;
+  --text-titulo: 1.375rem;
+  --text-titulo--line-height: 1.2;
+  --text-titulo-lg: 1.75rem;
+  --text-titulo-lg--line-height: 1.15;
+
+  /* ---- Forma ---- */
+  /* Quase reto: cards, poços de foto, selos e faixas da loja. */
+  --radius-card: 2px;
+  /* Tocável: botões, inputs e selects. */
+  --radius-control: 6px;
+  /* Chips sobre foto, FAB do WhatsApp, contador do carrinho. */
+  --radius-pill: 9999px;
+
+  /* ---- Elevação ---- */
+  /* Legado (painel e telas da loja ainda não migradas). */
   --shadow-card: 0 1px 2px rgb(16 18 22 / 0.06), 0 1px 3px rgb(16 18 22 / 0.04);
   --shadow-card-hover: 0 10px 30px -8px rgb(16 18 22 / 0.16),
     0 4px 10px -4px rgb(16 18 22 / 0.08);
   --shadow-drawer: -20px 0 50px -20px rgb(16 18 22 / 0.35);
+  /* Loja: sombra só no que flutua (gaveta, diálogo, dropdown, FAB, barra fixa).
+     O resto se separa por fio de 1 px e contraste de fundo. */
+  --shadow-float: 0 18px 40px -18px rgb(18 19 22 / 0.45),
+    0 2px 6px -2px rgb(18 19 22 / 0.12);
+
+  /* ---- Movimento ---- */
+  /* Substitui o ease-out padrão do Tailwind (só a loja usa `ease-out`). */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --animate-fade-up: fade-up 0.35s ease-out both;
   --animate-shimmer: shimmer 1.4s linear infinite;
+}
+
+/* Vidro só onde o sistema pede menos transparência (Chrome/Android; o Safari
+   ainda não repassa o ajuste). Ex.: `reduced-transparency:bg-grafite-900`. */
+@custom-variant reduced-transparency (@media (prefers-reduced-transparency: reduce));
+
+/*
+ * VIDRO (CSS puro). Regras de uso, da especificação visual:
+ * - no máximo 3 superfícies de vidro por tela, nunca em lista/grade, nunca
+ *   vidro sobre vidro, e o blur nunca é animado;
+ * - sem suporte a backdrop-filter, o fundo já é quase opaco e legível sozinho;
+ * - "reduzir transparência" deixa sólido.
+ * A tinta mínima do vidro escuro é .62 (e não .5): com uma foto branca atrás,
+ * é o que mantém texto papel em 4,5:1.
+ * O fio de luz vai em --tw-inset-shadow para somar com `shadow-float`
+ * (os dois montam a mesma composição de box-shadow do Tailwind).
+ */
+@utility glass-dark {
+  background-color: rgb(22 23 27 / 0.92);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: rgb(22 23 27 / 0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(170%);
+    backdrop-filter: blur(18px) saturate(170%);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: rgb(22 23 27);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@utility glass-light {
+  background-color: rgb(255 255 255 / 0.96);
+  --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: rgb(255 255 255 / 0.88);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: rgb(255 255 255);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 @keyframes fade-up {
@@ -86,13 +205,38 @@
 }
 
 @layer base {
+  :root {
+    /* Durações da loja: toque (hover/pressão), entrada (aparecer) e gaveta.
+       Uso: `duration-(--duracao-entrada)`. Anime só transform e opacity. */
+    --duracao-toque: 150ms;
+    --duracao-entrada: 220ms;
+    --duracao-gaveta: 320ms;
+
+    /* Altura do header fixo, para os elementos sticky não ficarem por baixo
+       dele. Valores do header atual (celular, sm e lg): quem mudar a altura do
+       header atualiza aqui. */
+    --header-h: 7.0625rem;
+  }
+
+  @media (width >= 40rem) {
+    :root {
+      --header-h: 7.3125rem;
+    }
+  }
+
+  @media (width >= 64rem) {
+    :root {
+      --header-h: 8.125rem;
+    }
+  }
+
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background-color: #f6f4ee;
+    background-color: var(--color-papel);
     color: var(--color-ink-800);
     font-family: var(--font-sans);
     /* Evita "pulo" de layout quando um drawer trava o scroll. */

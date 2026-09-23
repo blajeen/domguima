@@ -86,9 +86,7 @@ export async function Footer() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-ink-800 pt-4">
-          <span className="text-xs font-semibold uppercase tracking-wider text-ink-500">
-            Também estamos em
-          </span>
+          <span className="text-sm font-semibold text-ink-300">Também estamos em</span>
           <SocialPill href={settings.shopeeUrl || social.shopee}>Shopee</SocialPill>
           <SocialPill href={settings.instagramUrl || social.instagram}>Instagram</SocialPill>
           <SocialPill href={settings.googleUrl || social.google}>Google</SocialPill>
@@ -121,7 +119,7 @@ export async function Footer() {
               href="/painel/login"
               aria-label="Acesso administrativo"
               title="Acesso administrativo"
-              className="inline-flex size-5 items-center justify-center rounded text-ink-500 opacity-35 transition-all hover:bg-ink-800 hover:text-gold-300 hover:opacity-100 focus-visible:opacity-100"
+              className="inline-flex size-5 items-center justify-center rounded text-ink-500 opacity-35 transition-[opacity,background-color,color] hover:bg-ink-800 hover:text-gold-300 hover:opacity-100 focus-visible:opacity-100"
             >
               <svg
                 viewBox="0 0 20 20"
@@ -154,7 +152,7 @@ function FooterColumn({
 }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-white">
+      <h3 className="mb-2 text-sm font-bold text-white">
         {title}
       </h3>
       <ul className="space-y-1.5">{children}</ul>

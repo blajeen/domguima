@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { buttonStyles, chipStyles } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { site, whatsapp } from "@/config/site";
 import {
   getInstitutionalPage,
@@ -90,33 +92,30 @@ export default async function InstitutionalPage({ params }: PageProps) {
         </div>
       </article>
 
-      <div className="mt-12 rounded-card border border-ink-100 bg-white p-6 text-center shadow-card">
+      {/* Mesmo bloco e mesmo botão verde do /conta: ação de WhatsApp é verde. */}
+      <div className="mt-12 rounded-card border border-fio bg-white p-6 text-center">
         <p className="text-base font-bold text-ink-900">Ficou alguma dúvida?</p>
         <p className="mt-1 text-sm text-ink-600">
-          Fale com a gente — respondemos rápido.
+          Fale com a gente. Respondemos rápido.
         </p>
         <WhatsAppChooser
           message={genericMessage}
           contacts={contactsFor()}
-          className="mt-4 inline-block rounded-xl bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
+          className={buttonStyles({ variant: "whatsapp", size: "lg", className: "mt-4" })}
         >
-          WhatsApp {whatsapp.display}
+          <Icon name="whatsapp" />
+          Falar com a Dom Guima · {whatsapp.display}
         </WhatsAppChooser>
       </div>
 
       <nav aria-label="Outras páginas" className="mt-10">
-        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-ink-400">
-          Veja também
-        </p>
+        <p className="mb-3 text-sm font-semibold text-ink-500">Veja também</p>
         <ul className="flex flex-wrap gap-2">
           {institutionalPages
             .filter((other) => other.slug !== page.slug)
             .map((other) => (
               <li key={other.slug}>
-                <Link
-                  href={`/institucional/${other.slug}`}
-                  className="block rounded-full border border-ink-200 px-4 py-2 text-sm font-medium text-ink-600 transition-colors hover:border-gold-400 hover:bg-gold-50 hover:text-gold-800"
-                >
+                <Link href={`/institucional/${other.slug}`} className={chipStyles}>
                   {other.title}
                 </Link>
               </li>

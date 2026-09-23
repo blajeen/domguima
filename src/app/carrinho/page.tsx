@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { ButtonLink } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { site } from "@/config/site";
 import { lineKey, useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
@@ -39,30 +41,21 @@ export default function CartPage() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="mt-8 rounded-card border border-ink-100 bg-white px-6 py-16 text-center shadow-card">
-          <p className="text-5xl" aria-hidden>
-            🛒
-          </p>
+        <div className="mt-8 rounded-card border border-fio bg-white px-6 py-16 text-center">
+          <Icon name="carrinho" size={40} className="mx-auto text-ink-400" />
           <p className="mt-4 text-xl font-bold text-ink-900">
             Seu carrinho está vazio
           </p>
           <p className="mx-auto mt-1.5 max-w-md text-sm text-ink-500">
-            Dá uma olhada nas ofertas do dia — tem bastante coisa boa com
-            desconto.
+            Dá uma olhada nas ofertas. Tem bastante coisa com desconto.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <Link
-              href="/ofertas"
-              className="rounded-lg bg-brand-700 px-6 py-3 text-sm font-extrabold text-white transition-colors hover:bg-brand-600"
-            >
+            <ButtonLink href="/ofertas" size="lg">
               Ver ofertas
-            </Link>
-            <Link
-              href="/mais-vendidos"
-              className="rounded-lg border border-ink-200 px-6 py-3 text-sm font-semibold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
-            >
+            </ButtonLink>
+            <ButtonLink href="/mais-vendidos" variant="secundario" size="lg">
               Mais vendidos
-            </Link>
+            </ButtonLink>
           </div>
         </div>
       ) : (
@@ -144,7 +137,7 @@ export default function CartPage() {
             })}
           </ul>
 
-          <aside className="lg:sticky lg:top-44 lg:h-fit">
+          <aside className="lg:sticky lg:top-[calc(var(--header-h)+1.5rem)] lg:h-fit">
             <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card">
               <h2 className="mb-4 text-base font-extrabold text-ink-900">
                 Resumo do pedido
@@ -170,27 +163,19 @@ export default function CartPage() {
                 </div>
               </dl>
 
-              <Link
-                href="/checkout/rapido"
-                className="mt-5 block rounded-xl bg-[#25D366] px-6 py-3.5 text-center text-base font-extrabold text-white transition-colors hover:bg-[#20bd5a]"
-              >
+              {/* O pedido rápido termina no WhatsApp do vendedor: por isso o verde. */}
+              <ButtonLink href="/checkout/rapido" variant="whatsapp" size="lg" fullWidth className="mt-5">
                 Finalizar rápido com vendedor
-              </Link>
-              <p className="mt-2 text-center text-xs leading-relaxed text-ink-400">Só seu nome. Ideal para entrega em Uberlândia.</p>
+              </ButtonLink>
+              <p className="mt-2 text-center text-xs leading-relaxed text-ink-500">Só seu nome. Ideal para entrega em Uberlândia.</p>
 
-              <Link
-                href="/checkout"
-                className="mt-3 block rounded-xl border border-ink-200 px-6 py-3 text-center text-sm font-bold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
-              >
+              <ButtonLink href="/checkout" variant="secundario" fullWidth className="mt-3">
                 Checkout completo
-              </Link>
+              </ButtonLink>
 
-              <Link
-                href="/"
-                className="mt-3 block text-center text-sm font-medium text-ink-500 transition-colors hover:text-ink-800"
-              >
+              <ButtonLink href="/" variant="fantasma" size="sm" fullWidth className="mt-2">
                 Continuar comprando
-              </Link>
+              </ButtonLink>
             </div>
           </aside>
         </div>

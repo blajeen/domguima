@@ -7,15 +7,11 @@ import { ProductCard } from "./ProductCard";
 export function ProductCarousel({
   products,
   title,
-  eyebrow,
-  description,
   href,
   priority = false,
 }: {
   products: Product[];
   title: string;
-  eyebrow?: string;
-  description?: string;
   href?: string;
   priority?: boolean;
 }) {
@@ -23,12 +19,7 @@ export function ProductCarousel({
 
   return (
     <section>
-      <SectionHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-        href={href}
-      />
+      <SectionHeader title={title} href={href} />
       <CarouselRow ariaLabel={title} className="product-carousel-row">
         {products.map((product, i) => (
           <ProductCard

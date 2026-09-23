@@ -111,7 +111,7 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
             }`}
           />
           {!zooming && (
-            <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-ink-900/70 px-3 py-1 text-[11px] font-medium text-white">
+            <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-ink-900/70 px-3 py-1 text-xs font-medium text-white">
               Passe o mouse para ampliar
             </span>
           )}
@@ -149,7 +149,9 @@ export function ProductGallery({ images }: { images: ProductImage[] }) {
                   onClick={() => select(i)}
                   aria-label={`Ir para a imagem ${i + 1}`}
                   aria-current={i === active}
-                  className={`h-1.5 rounded-full transition-all ${
+                  // A largura troca na hora (animar width refaz o layout a
+                  // cada quadro); só a cor tem transição.
+                  className={`h-1.5 rounded-full transition-colors duration-(--duracao-toque) ${
                     i === active ? "w-6 bg-ink-800" : "w-1.5 bg-ink-300"
                   }`}
                 />

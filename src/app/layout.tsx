@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Archivo, Bodoni_Moda, Libre_Franklin } from "next/font/google";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
@@ -9,10 +9,35 @@ import { CartProvider } from "@/lib/store/cart";
 import { JsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/utils/seo";
 import "./globals.css";
 
-const inter = Inter({
+// Interface e texto da loja. O painel continua na Inter (painel/layout.tsx).
+const libreFranklin = Libre_Franklin({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-libre-franklin",
   display: "swap",
+});
+
+// Só o letreiro da marca e raros momentos de marca. Sem preload: o arquivo só
+// é baixado quando algum texto usa `font-brand`, e não disputa com a foto
+// principal da página.
+const bodoniModa = Bodoni_Moda({
+  subsets: ["latin"],
+  axes: ["opsz"],
+  variable: "--font-bodoni-moda",
+  display: "swap",
+  preload: false,
+});
+
+// Números de preço. O eixo de largura (wdth) dá o condensado do preço de
+// cartaz. Sem preload por enquanto: nenhuma tela usa o PriceTag ainda, e um
+// preload de ~90 KB que não é usado disputaria banda com a foto principal.
+// Religar o preload no bloco em que o PriceTag entrar no card e na página de
+// produto, medindo o LCP antes e depois.
+const archivo = Archivo({
+  subsets: ["latin"],
+  axes: ["wdth"],
+  variable: "--font-archivo",
+  display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -71,7 +96,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={inter.variable}>
+    <html
+      lang="pt-BR"
+      className={`${libreFranklin.variable} ${bodoniModa.variable} ${archivo.variable}`}
+    >
       <body className="antialiased">
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />

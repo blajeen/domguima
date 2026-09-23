@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Icon } from "@/components/ui/Icon";
 import { social, whatsapp } from "@/config/site";
 import { getCatalogCategories } from "@/lib/catalog/queries";
 import { loadPublicStoreSettings } from "@/lib/catalog/database";
@@ -17,9 +18,9 @@ export async function Header() {
     <header data-storefront-chrome className="sticky top-0 z-50 shadow-sm">
       {/* Faixa de avisos — só no desktop, para não roubar altura no celular. */}
       <div className="hidden bg-brand-950 text-brand-100 lg:block">
-        <div className="site-shell flex items-center justify-between gap-4 py-1 text-[11px]">
+        <div className="site-shell flex items-center justify-between gap-4 py-1 text-xs">
           <p className="flex items-center gap-1.5">
-            <span aria-hidden>🚚</span> Enviamos para todo o Brasil
+            <Icon name="caminhao" size={14} /> Enviamos para todo o Brasil
           </p>
           <div className="flex items-center gap-4">
             <a
@@ -65,15 +66,7 @@ export async function Header() {
                 aria-label="Minha conta"
                 className="hidden items-center gap-2 rounded-lg px-2.5 py-2 text-white transition-colors hover:bg-white/10 sm:flex"
               >
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden>
-                  <circle cx="12" cy="8.5" r="3.6" stroke="currentColor" strokeWidth="1.7" />
-                  <path
-                    d="M4.8 20c.6-3.7 3.6-5.8 7.2-5.8s6.6 2.1 7.2 5.8"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                <Icon name="usuario" />
                 <span className="hidden whitespace-nowrap text-sm font-semibold lg:inline">Minha conta</span>
               </Link>
               <CartButton />

@@ -6,6 +6,8 @@ import { commerce } from "@/config/site";
 import type { Product } from "@/lib/catalog/types";
 import { contactsFor, productMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { useCart } from "@/lib/store/cart";
 import { useVariantImage } from "./VariantImageContext";
 import {
@@ -159,7 +161,7 @@ export function ProductPurchase({
                   }`}
                 >
                   {item.label}
-                  <span className="mt-0.5 block text-[11px] font-medium">
+                  <span className="mt-0.5 block text-xs font-medium">
                     {esgotada ? "Sem estoque" : formatPrice(item.price)}
                   </span>
                 </button>
@@ -230,33 +232,39 @@ export function ProductPurchase({
       )}
 
       {/* Ações */}
+      {/* Ações. Só as cores e a forma seguem o sistema novo (grafite como ação,
+          sem azul); a hierarquia dos três botões é revista no bloco da página
+          de produto. */}
       <div className="space-y-2.5">
-        <button
-          type="button"
-          onClick={buyNow}
-          disabled={outOfStock}
-          className="w-full rounded-xl bg-brand-700 px-6 py-3.5 text-base font-extrabold text-white transition-all hover:bg-brand-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-ink-100 disabled:text-ink-400"
-        >
+        <Button onClick={buyNow} disabled={outOfStock} size="lg" fullWidth>
           {outOfStock ? "Indisponível" : "Comprar agora"}
-        </button>
+        </Button>
 
         <button
           type="button"
           onClick={added ? openCart : add}
           disabled={outOfStock}
-          className={`w-full rounded-xl border-2 px-6 py-3 text-base font-bold transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:border-ink-100 disabled:text-ink-400 ${
+          className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-control border px-6 py-3 text-base font-semibold transition-[background-color,border-color,color,translate] duration-(--duracao-toque) ease-out active:translate-y-px disabled:cursor-not-allowed disabled:border-fio disabled:text-ink-400 ${
             added
               ? "border-success bg-success-light text-success"
-              : "border-brand-700 text-brand-800 hover:bg-brand-700 hover:text-white"
+              : "border-grafite-900 text-grafite-900 hover:bg-grafite-900/5"
           }`}
         >
-          {added ? "Adicionado ✓ Ver carrinho" : "Adicionar ao carrinho"}
+          {added ? (
+            <>
+              <Icon name="check" />
+              No carrinho
+              <span className="sr-only">: abrir o carrinho</span>
+            </>
+          ) : (
+            "Adicionar ao carrinho"
+          )}
         </button>
 
         <WhatsAppChooser
           message={productMessage(product, productUrl)}
           contacts={contactsFor()}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#25D366] px-6 py-3 text-base font-bold text-[#128C7E] transition-colors hover:bg-[#25D366]/10"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-control border-2 border-whatsapp px-6 py-3 text-base font-bold text-[#128C7E] transition-colors duration-(--duracao-toque) hover:bg-whatsapp/10"
         >
           Comprar pelo WhatsApp
         </WhatsAppChooser>

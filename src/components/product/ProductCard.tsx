@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { Icon } from "@/components/ui/Icon";
 import { Rating } from "@/components/ui/Rating";
 import type { Product } from "@/lib/catalog/types";
 import { useCart } from "@/lib/store/cart";
@@ -53,7 +54,9 @@ export function ProductCard({
 
   return (
     <article
-      className={`group relative flex flex-col overflow-hidden rounded-card border border-ink-100 bg-white shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-ink-200 hover:shadow-card-hover ${
+      // Sem sombra: o card se separa pelo fio, e o hover só escurece a borda
+      // (nada de subir nem de animar sombra na grade).
+      className={`group relative flex flex-col overflow-hidden rounded-card border border-fio bg-white transition-colors duration-(--duracao-toque) hover:border-grafite-900 ${
         fixedWidth
           ? "w-[46vw] max-w-[232px] sm:w-[224px] lg:w-full lg:max-w-none"
           : "w-full"
@@ -72,23 +75,26 @@ export function ProductCard({
               preload={priority}
               loading={priority ? undefined : "lazy"}
               sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 232px"
-              className={`object-contain p-3 transition-transform duration-300 group-hover:scale-[1.04] ${
+              className={`object-contain p-3 ${
                 outOfStock ? "opacity-45 grayscale" : ""
               }`}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 bg-ink-50 p-5 text-center"><Image src="/brand/logo-dom-guima.png" alt="" width={48} height={48} className="size-12 object-contain opacity-30" /><span className="text-[11px] font-semibold text-ink-400">Foto em preparação</span></div>
+            <div className="flex h-full flex-col items-center justify-center gap-2 bg-ink-50 p-5 text-center"><Image src="/brand/logo-dom-guima.png" alt="" width={48} height={48} className="size-12 object-contain opacity-30" /><span className="text-xs font-semibold text-ink-500">Foto em preparação</span></div>
           )}
 
-          <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
-            {discount > 0 && <Badge variant="promo">-{discount}%</Badge>}
-            {product.isBestSeller && !outOfStock && (
-              <Badge variant="best">Mais vendido</Badge>
+          {/* No máximo um selo por card: desconto primeiro, depois mais vendido. */}
+          <div className="absolute left-2 top-2">
+            {discount > 0 ? (
+              <Badge variant="oferta">−{discount}%</Badge>
+            ) : (
+              product.isBestSeller &&
+              !outOfStock && <Badge variant="destaque">Mais vendido</Badge>
             )}
           </div>
 
           {outOfStock && (
-            <div className="absolute inset-x-0 bottom-0 bg-ink-900/85 py-1.5 text-center text-xs font-bold uppercase tracking-wide text-white">
+            <div className="absolute inset-x-0 bottom-0 bg-ink-900/85 py-1.5 text-center text-xs font-semibold text-white">
               Indisponível
             </div>
           )}
@@ -96,11 +102,9 @@ export function ProductCard({
 
         <div className="flex flex-1 flex-col gap-1.5 border-t border-ink-50 p-3">
           {product.brand && (
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-400">
-              {product.brand}
-            </p>
+            <p className="text-xs font-medium text-ink-500">{product.brand}</p>
           )}
-          <h3 className="line-clamp-2-safe min-h-[2.5rem] text-[13px] font-medium leading-tight text-ink-700 transition-colors group-hover:text-brand-700 sm:text-sm">
+          <h3 className="line-clamp-2-safe min-h-[2.5rem] text-[13px] font-medium leading-tight text-ink-700 transition-colors duration-(--duracao-toque) group-hover:text-grafite-900 sm:text-sm">
             {product.name}
           </h3>
 
@@ -119,7 +123,7 @@ export function ProductCard({
               <p className="text-lg font-extrabold leading-tight tracking-tight text-ink-900">
                 {formatPrice(product.price)}
               </p>
-              <span className="text-[10px] font-medium text-ink-400">à vista</span>
+              <span className="text-xs font-medium text-ink-500">à vista</span>
             </div>
             {installment && (
               <p className="mt-0.5 text-xs text-ink-500">
@@ -144,21 +148,26 @@ export function ProductCard({
               ? `Escolher opções de ${product.name}`
               : `Adicionar ${product.name} ao carrinho`
           }
-          className={`w-full rounded-lg px-3 py-2 text-sm font-bold transition-all duration-200 ${
+          className={`flex w-full items-center justify-center gap-1.5 rounded-control px-3 py-2 text-sm font-bold transition-[background-color,color,translate] duration-(--duracao-toque) ease-out ${
             outOfStock
               ? "cursor-not-allowed bg-ink-100 text-ink-400"
               : justAdded
                 ? "bg-success text-white"
-                : "bg-brand-700 text-white hover:bg-brand-600 active:scale-[0.98]"
+                : "bg-grafite-900 text-papel hover:bg-grafite-800 active:translate-y-px"
           }`}
         >
-          {outOfStock
-            ? "Indisponível"
-            : justAdded
-              ? "Adicionado ✓"
-              : product.variants?.length
-                ? "Escolher opções"
-                : "Adicionar"}
+          {outOfStock ? (
+            "Indisponível"
+          ) : justAdded ? (
+            <>
+              No carrinho
+              <Icon name="check" size={16} />
+            </>
+          ) : product.variants?.length ? (
+            "Escolher opções"
+          ) : (
+            "Adicionar"
+          )}
         </button>
       </div>
     </article>

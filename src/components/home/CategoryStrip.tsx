@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Icon } from "@/components/ui/Icon";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { categoryIcon } from "@/lib/catalog/categories";
 import {
   getAllProducts,
   getCatalogCategories,
@@ -44,38 +46,36 @@ export async function CategoryStrip() {
 
   return (
     <section>
-      <SectionHeader
-        eyebrow="Navegue por"
-        title="Categorias"
-        description="Encontre rápido o que você veio procurar."
-      />
+      <SectionHeader title="Categorias" />
       <div className="grid grid-cols-3 gap-2 sm:gap-4 xl:grid-cols-5 2xl:grid-cols-6">
         {withProducts.map(({ category, count, cover }) => (
           <Link
             key={category.id}
             href={`/categoria/${category.slug}`}
-            className="group overflow-hidden rounded-card border border-ink-100 bg-white shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-gold-300 hover:shadow-card-hover"
+            className="group overflow-hidden rounded-card border border-fio bg-white transition-colors duration-(--duracao-toque) hover:border-grafite-900"
           >
-            <span className="relative block aspect-[4/3] overflow-hidden bg-gradient-to-br from-white to-gold-50">
+            <span className="relative block aspect-[4/3] overflow-hidden bg-white">
               {cover?.images[0] ? (
                 <Image
                   src={cover.images[0].src}
                   alt=""
                   fill
                   sizes="(max-width: 639px) 46vw, (max-width: 1279px) 30vw, 19vw"
-                  className="object-contain p-2 transition-transform duration-300 group-hover:scale-105 sm:p-4"
+                  className="object-contain p-2 sm:p-4"
                 />
               ) : (
-                <span className="flex h-full items-center justify-center text-4xl" aria-hidden>
-                  {category.icon}
+                <span className="flex h-full items-center justify-center text-ink-400">
+                  <Icon name={categoryIcon(category)} size={40} />
                 </span>
               )}
             </span>
             <span className="flex min-h-[66px] items-center justify-between gap-1 border-t border-ink-50 px-2 py-2.5 text-left sm:min-h-[72px] sm:gap-2 sm:px-4 sm:py-3">
-              <span className="text-[11px] font-extrabold leading-tight text-ink-800 group-hover:text-gold-800 sm:text-sm">
+              {/* Hifenização: nas três colunas do celular, "Eletrodomésticos"
+                  não cabe inteiro ao lado do contador. */}
+              <span className="min-w-0 hyphens-auto break-words text-xs font-extrabold leading-tight text-ink-800 group-hover:text-gold-800 sm:text-sm">
                 {category.name}
               </span>
-              <span className="shrink-0 rounded-full bg-ink-50 px-1.5 py-1 text-[9px] font-semibold text-ink-500 sm:px-2 sm:text-[10px]">
+              <span className="shrink-0 rounded-full bg-ink-50 px-1.5 py-1 text-xs font-semibold leading-none text-ink-500 sm:px-2">
                 {count}
               </span>
             </span>

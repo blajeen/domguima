@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Icon } from "@/components/ui/Icon";
 import type { Suggestion } from "@/lib/catalog/queries";
 import { formatPrice } from "@/lib/utils/format";
 
@@ -150,9 +151,9 @@ export function SearchBar({
           <button
             type="submit"
             aria-label="Buscar"
-            className={`m-1 flex shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white transition-colors hover:bg-brand-600 ${compact ? "px-3.5" : "px-4 sm:px-5"}`}
+            className={`m-1 flex shrink-0 items-center justify-center rounded-control bg-grafite-900 text-papel transition-colors duration-(--duracao-toque) hover:bg-grafite-800 ${compact ? "px-3.5" : "px-4 sm:px-5"}`}
           >
-            <SearchIcon className="h-5 w-5" />
+            <Icon name="busca" />
           </button>
         </div>
       </form>
@@ -198,7 +199,7 @@ export function SearchBar({
                     />
                   ) : (
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-ink-50 text-ink-400">
-                      <SearchIcon className="h-4 w-4" />
+                      <Icon name="busca" size={16} />
                     </span>
                   )}
                   <span className="min-w-0 flex-1">
@@ -234,19 +235,5 @@ export function SearchBar({
         </div>
       )}
     </div>
-  );
-}
-
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden className={className}>
-      <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.9" />
-      <path
-        d="M13.5 13.5L17 17"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

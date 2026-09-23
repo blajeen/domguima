@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { ProductGrid } from "@/components/product/ProductGrid";
 import { Breadcrumbs, type Crumb } from "@/components/ui/Breadcrumbs";
+import { ButtonLink } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { site } from "@/config/site";
 import type { FilterState } from "@/lib/catalog/filters";
 import type { Product, SortKey } from "@/lib/catalog/types";
@@ -90,10 +91,8 @@ export function CatalogView({
             {products.length > 0 ? (
               <ProductGrid products={products} />
             ) : (
-              <div className="rounded-card border border-ink-100 bg-white px-6 py-14 text-center shadow-card">
-                <p className="text-4xl" aria-hidden>
-                  🔍
-                </p>
+              <div className="rounded-card border border-fio bg-white px-6 py-14 text-center">
+                <Icon name="busca" size={36} className="mx-auto text-ink-400" />
                 <p className="mt-4 text-lg font-bold text-ink-900">
                   {emptyMessage ?? "Nenhum produto por aqui"}
                 </p>
@@ -103,18 +102,10 @@ export function CatalogView({
                     : "Em breve teremos novidades nesta seção."}
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
-                  <Link
-                    href="/ofertas"
-                    className="rounded-lg bg-brand-700 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-600"
-                  >
-                    Ver ofertas
-                  </Link>
-                  <Link
-                    href="/"
-                    className="rounded-lg border border-ink-200 px-5 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:border-gold-400 hover:bg-gold-50"
-                  >
+                  <ButtonLink href="/ofertas">Ver ofertas</ButtonLink>
+                  <ButtonLink href="/" variant="secundario">
                     Voltar à home
-                  </Link>
+                  </ButtonLink>
                 </div>
                 {emptySlot}
               </div>

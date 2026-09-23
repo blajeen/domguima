@@ -28,7 +28,7 @@ export default async function BestSellersPage({
 
   return (
     <CatalogView
-      title="⭐ Mais vendidos"
+      title="Mais vendidos"
       description="Os produtos preferidos de quem já comprou com a gente."
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Mais vendidos" }]}
       products={products}

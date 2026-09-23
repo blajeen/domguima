@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { buttonStyles } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { social } from "@/config/site";
+import { categoryIcon } from "@/lib/catalog/categories";
 import type { Category } from "@/lib/catalog/types";
 import { contactsFor, genericMessage } from "@/lib/services/whatsapp";
 import { WhatsAppChooser } from "./WhatsAppChooser";
@@ -29,14 +32,7 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
         aria-label="Abrir menu"
         className="-ml-1 rounded-lg p-2 text-white transition-colors hover:bg-white/10 lg:hidden"
       >
-        <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" aria-hidden>
-          <path
-            d="M4 7h16M4 12h16M4 17h16"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-          />
-        </svg>
+        <Icon name="menu" size={24} />
       </button>
 
       <Drawer open={open} onClose={() => setOpen(false)} title="Menu" side="left">
@@ -45,36 +41,31 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
           aria-label="Navegação principal"
           onClick={closeOnLinkClick}
         >
-          <Item href="/ofertas" icon="🔥" highlight>
+          {/* Destaque pelo texto, sem ícone de fogo ou estrela. */}
+          <Item href="/ofertas" highlight>
             Ofertas
           </Item>
-          <Item href="/mais-vendidos" icon="⭐">
-            Mais vendidos
-          </Item>
+          <Item href="/mais-vendidos">Mais vendidos</Item>
 
-          <p className="px-3 pb-1 pt-4 text-xs font-bold uppercase tracking-wider text-ink-400">
-            Categorias
-          </p>
+          <p className="px-3 pb-1 pt-4 text-sm font-semibold text-ink-500">Categorias</p>
           {categories.map((category) => (
             <Item
               key={category.id}
               href={`/categoria/${category.slug}`}
-              icon={category.icon}
+              icon={categoryIcon(category)}
             >
               {category.name}
             </Item>
           ))}
 
-          <p className="px-3 pb-1 pt-4 text-xs font-bold uppercase tracking-wider text-ink-400">
-            Atendimento
-          </p>
-          <Item href="/institucional/contato" icon="💬">
+          <p className="px-3 pb-1 pt-4 text-sm font-semibold text-ink-500">Atendimento</p>
+          <Item href="/institucional/contato" icon="conversa">
             Fale com a gente
           </Item>
-          <Item href="/institucional/frete-e-entrega" icon="🚚">
+          <Item href="/institucional/frete-e-entrega" icon="caminhao">
             Frete e entrega
           </Item>
-          <Item href="/institucional/trocas-e-devolucoes" icon="↩️">
+          <Item href="/institucional/trocas-e-devolucoes" icon="troca">
             Trocas e devoluções
           </Item>
 
@@ -82,24 +73,27 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
             <WhatsAppChooser
               message={genericMessage}
               contacts={contactsFor()}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-bold text-white"
+              className={buttonStyles({ variant: "whatsapp", fullWidth: true })}
             >
+              <Icon name="whatsapp" />
               Falar no WhatsApp
             </WhatsAppChooser>
             <a
               href={social.instagram}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-lg border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700"
+              className={buttonStyles({ variant: "secundario", fullWidth: true })}
             >
+              <Icon name="instagram" />
               Instagram
             </a>
             <a
               href={social.shopee}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-lg border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700"
+              className={buttonStyles({ variant: "secundario", fullWidth: true })}
             >
+              <Icon name="shopee" />
               Nossa loja na Shopee
             </a>
           </div>
@@ -116,7 +110,8 @@ function Item({
   highlight = false,
 }: {
   href: string;
-  icon: string;
+  /** Sem ícone o item fica só no texto (Ofertas, Mais vendidos). */
+  icon?: IconName;
   children: React.ReactNode;
   highlight?: boolean;
 }) {
@@ -124,12 +119,10 @@ function Item({
     <Link
       href={href}
       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors hover:bg-ink-50 ${
-        highlight ? "font-bold text-promo" : "font-medium text-ink-700"
+        highlight ? "font-bold text-oferta" : "font-medium text-ink-700"
       }`}
     >
-      <span aria-hidden className="w-5 text-center">
-        {icon}
-      </span>
+      {icon && <Icon name={icon} className="text-ink-500" />}
       {children}
     </Link>
   );
