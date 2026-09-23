@@ -29,7 +29,10 @@ export async function Footer() {
       data-storefront-chrome
       className="mt-10 bg-grafite-950 text-ink-300 [--cor-foco:var(--color-ouro-claro)]"
     >
-      <div className="site-shell py-10 sm:py-12">
+      {/* Embaixo, 6rem: o botão flutuante de WhatsApp ocupa os últimos 5rem da
+          tela, e sem essa folga ficava em cima da última linha do rodapé (o
+          acesso ao painel, no canto direito). */}
+      <div className="site-shell pb-24 pt-10 sm:pt-12">
         <div className="grid grid-cols-2 gap-x-6 gap-y-8 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] lg:gap-10">
           <div className="col-span-2 lg:col-span-1">
             <Logo />

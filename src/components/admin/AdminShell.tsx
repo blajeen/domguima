@@ -19,33 +19,48 @@ const nav = [
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 
-export function AdminShell({ children, ownerName }: { children: ReactNode; ownerName: string }) {
+export function AdminShell({ children, ownerName, ownerUsername }: { children: ReactNode; ownerName: string; ownerUsername: string }) {
+  const inicial = (ownerName.trim().charAt(0) || ownerUsername.charAt(0) || "?").toUpperCase();
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
-      <aside className="admin-no-print border-b border-ink-800 bg-ink-950 text-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
-        <div className="flex items-center justify-between gap-4 px-5 py-4 lg:block lg:px-6 lg:py-7">
+      {/* Coluna em flex: no computador o menu rola por dentro e o bloco de quem
+          está logado fica no fluxo, embaixo. Antes ele era absoluto e cobria os
+          últimos itens do menu em telas mais baixas. No celular, quem está
+          logado aparece logo abaixo do topo (order), antes do menu. */}
+      <aside className="admin-no-print flex flex-col border-b border-ink-800 bg-ink-950 text-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+        <div className="flex items-center justify-between gap-4 px-5 py-4 lg:block lg:shrink-0 lg:px-6 lg:pb-4 lg:pt-6">
           <Link href="/painel" className="block">
             <span className="text-xl font-black tracking-tight text-gold-300">DOM GUIMA</span>
             <span className="block text-[10px] uppercase tracking-[0.28em] text-ink-400">Painel da loja</span>
           </Link>
-          <Link href="/" target="_blank" className="rounded-lg border border-ink-700 px-3 py-2 text-xs font-bold text-ink-200 hover:border-gold-400 hover:text-gold-300 lg:mt-5 lg:block lg:text-center">
+          <Link href="/" target="_blank" className="rounded-lg border border-ink-700 px-3 py-2 text-xs font-bold text-ink-200 hover:border-gold-400 hover:text-gold-300 lg:mt-4 lg:block lg:text-center">
             Ver loja ↗
           </Link>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:px-4" aria-label="Painel">
+        <div className="order-1 flex items-center gap-3 border-y border-ink-800 px-5 py-3 lg:order-3 lg:shrink-0 lg:flex-wrap lg:border-b-0 lg:px-6 lg:py-4">
+          <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gold-300/15 text-sm font-black text-gold-300">
+            {inicial}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">Olá, {ownerName}</p>
+            <p className="truncate text-xs text-ink-400">
+              logado como <span className="font-semibold text-ink-200">{ownerUsername}</span>
+            </p>
+          </div>
+          <form action={logoutAction} className="shrink-0 lg:basis-full">
+            <button className="rounded-lg border border-ink-700 px-3 py-2 text-xs font-bold text-ink-200 hover:border-gold-400 hover:text-gold-300 lg:w-full">
+              Sair<span className="hidden lg:inline"> do painel</span>
+            </button>
+          </form>
+        </div>
+        <nav className="order-2 flex gap-1 overflow-x-auto px-3 py-3 lg:block lg:min-h-0 lg:flex-1 lg:space-y-0.5 lg:overflow-y-auto lg:px-4 lg:py-2 lg:[scrollbar-color:var(--color-ink-500)_transparent] lg:[scrollbar-width:thin]" aria-label="Painel">
           {nav.map((item) => (
-            <Link key={item.href} href={item.href} className="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-ink-300 transition-colors hover:bg-white/10 hover:text-white">
+            <Link key={item.href} href={item.href} className="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-ink-300 transition-colors hover:bg-white/10 hover:text-white lg:py-2">
               <span className="flex h-6 min-w-6 items-center justify-center rounded-md bg-white/5 text-[10px] font-black text-gold-300">{item.icon}</span>
               {item.label}
             </Link>
           ))}
         </nav>
-        <div className="hidden border-t border-ink-800 px-6 py-5 lg:absolute lg:bottom-0 lg:block lg:w-full">
-          <p className="truncate text-sm font-semibold">{ownerName}</p>
-          <form action={logoutAction} className="mt-2">
-            <button className="text-xs text-ink-400 hover:text-white">Sair do painel</button>
-          </form>
-        </div>
       </aside>
       {/* `div`, não `main`: o layout raiz já emite <main id="conteudo">, e dois
           landmarks `main` aninhados confundem leitores de tela. */}
