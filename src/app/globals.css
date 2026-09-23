@@ -278,7 +278,37 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+    /* O `*` acima não alcança os pseudo-elementos da View Transition. */
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+      animation-duration: 0s !important;
+      animation-delay: 0s !important;
+    }
   }
+
+  /* Barra de compra fixa à vista (página de produto, abaixo de lg): o fim da
+     página ganha a altura dela, para o rodapé não ficar escondido por baixo,
+     e a rolagem até o foco (Tab) para acima dela, para o link ou botão
+     focado não ficar coberto. */
+  @media (width < 64rem) {
+    html[data-barra-compra] {
+      scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+    }
+    html[data-barra-compra] body {
+      padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/*
+ * Foto do card que "voa" até a galeria do produto (<ViewTransition> com
+ * share="morph" nos dois lados). Só esse par anima: o resto da página troca
+ * na hora. Duração de gaveta: é um movimento grande, atravessa a tela.
+ */
+::view-transition-group(.morph) {
+  animation-duration: var(--duracao-gaveta);
+  animation-timing-function: var(--ease-out);
 }
 
 @layer utilities {

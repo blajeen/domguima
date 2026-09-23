@@ -39,6 +39,16 @@ export default async function HomePage() {
     shown,
   );
   const offers = await getOffers(12);
+  // As ofertas não passam pelo `shown`: um produto pode estar nelas e em outra
+  // vitrine. Esse fica sem a transição da foto nas duas (nome repetido na tela
+  // cancela a transição).
+  const mostraOfertas = offers.length >= 4;
+  const repetidos = idsRepetidos([
+    selection,
+    mostraOfertas ? offers : [],
+    technology,
+    homeEssentials,
+  ]);
   const heroBanners = await getSmartBanners();
   // O carrossel é client: só vai para o navegador o que ele mostra.
   const exclusiveProducts = (await getExclusiveProducts()).map(
@@ -72,20 +82,37 @@ export default async function HomePage() {
       <div className="site-shell space-y-12 py-9 sm:space-y-14 sm:py-12">
         {/* Títulos curtos e específicos, sem rótulo acima nem subtítulo. Sem
             `priority`: a única imagem prioritária da home é o 1º slide do banner. */}
-        <ProductCarousel products={selection} title="Escolhas para começar" />
+        <ProductCarousel products={selection} title="Escolhas para começar" repetidos={repetidos} />
 
         <CategoryStrip />
 
-        {offers.length >= 4 && (
-          <ProductCarousel products={offers} title="Ofertas" href="/ofertas" />
+        {mostraOfertas && (
+          <ProductCarousel products={offers} title="Ofertas" href="/ofertas" repetidos={repetidos} />
         )}
 
-        <ProductCarousel products={technology} title="TVs, celulares e informática" />
+        <ProductCarousel
+          products={technology}
+          title="TVs, celulares e informática"
+          repetidos={repetidos}
+        />
 
-        <ProductCarousel products={homeEssentials} title="Para a casa" />
+        <ProductCarousel products={homeEssentials} title="Para a casa" repetidos={repetidos} />
 
         <InstagramSection />
       </div>
     </>
   );
+}
+
+/** Ids que aparecem em mais de uma das listas. */
+function idsRepetidos(listas: { id: string }[][]): Set<string> {
+  const vistos = new Set<string>();
+  const repetidos = new Set<string>();
+  for (const lista of listas) {
+    for (const id of new Set(lista.map((item) => item.id))) {
+      if (vistos.has(id)) repetidos.add(id);
+      vistos.add(id);
+    }
+  }
+  return repetidos;
 }

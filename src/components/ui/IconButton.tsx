@@ -1,7 +1,7 @@
 import type { ComponentPropsWithoutRef } from "react";
 import { Icon, type IconName } from "./Icon";
 
-export type IconButtonVariant = "fantasma" | "contorno" | "sobre-escuro" | "vidro";
+export type IconButtonVariant = "fantasma" | "contorno" | "sobre-escuro" | "vidro" | "dentro-do-vidro";
 export type IconButtonSize = "sm" | "md" | "lg";
 
 // Toque: muda a cor e desce 1 px na pressão, na duração de toque da loja.
@@ -22,6 +22,12 @@ const variants: Record<IconButtonVariant, string> = {
   // acendem um fio em volta; mexer no fundo desfaria o vidro.
   vidro:
     "glass-dark rounded-pill text-papel hover:ring-1 hover:ring-papel/40 active:ring-1 active:ring-papel/70",
+  // Dentro de uma superfície de vidro que já existe (a pílula da galeria no
+  // celular): sem vidro próprio, que seria vidro sobre vidro, mas com a forma
+  // e o fio da variante `vidro`, por dentro para não vazar da pílula. O foco
+  // também fica por dentro e em papel: o ouro do foco padrão some no vidro.
+  "dentro-do-vidro":
+    "rounded-pill text-papel hover:ring-1 hover:ring-inset hover:ring-papel/40 active:ring-1 active:ring-inset active:ring-papel/70 focus-visible:-outline-offset-2 focus-visible:outline-papel",
 };
 
 // O padrão (md) tem 44 px: alvo de toque confortável para o polegar.

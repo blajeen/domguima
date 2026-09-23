@@ -1,15 +1,14 @@
 import { Rating } from "@/components/ui/Rating";
-import { googleStats, shopeeStats, social } from "@/config/site";
-import { loadPublicStoreSettings } from "@/lib/catalog/database";
+import { reputacaoDaLoja } from "@/lib/catalog/reputacao";
+import { formatDate } from "@/lib/utils/format";
 
 /**
  * Prova social sem API. Os números são um retrato público datado e cada canal
  * leva ao perfil oficial para que o visitante possa conferir tudo na origem.
  */
 export async function ReviewsSection() {
-  const settings = await loadPublicStoreSettings();
-  const googleRating = Number(settings.googleRating.replace(",", ".")) || googleStats.ratingAverage;
-  const googleCount = Number(settings.googleRatingCount) || googleStats.ratingCount;
+  // Mesma leitura da página de produto (painel primeiro, config/site depois).
+  const { google, shopee } = await reputacaoDaLoja();
   return (
     <section
       aria-labelledby="reputacao-titulo"
@@ -28,22 +27,22 @@ export async function ReviewsSection() {
         </div>
 
         <ReputationCard
-          href={settings.googleUrl || googleStats.profileUrl}
+          href={google.href}
           brand="Google"
           icon={<GoogleMark />}
-          rating={googleRating}
-          count={googleCount}
-          verifiedAt={settings.googleVerifiedAt || googleStats.verifiedAt}
+          rating={google.nota}
+          count={google.avaliacoes}
+          verifiedAt={google.consultadoEm}
           accent="group-hover:border-[#4285F4]/50"
         />
 
         <ReputationCard
-          href={settings.shopeeUrl || social.shopee}
+          href={shopee.href}
           brand="Shopee"
           icon={<ShopeeMark />}
-          rating={shopeeStats.ratingAverage}
-          count={shopeeStats.ratingCount}
-          verifiedAt={shopeeStats.verifiedAt}
+          rating={shopee.nota}
+          count={shopee.avaliacoes}
+          verifiedAt={shopee.consultadoEm}
           accent="group-hover:border-[#EE4D2D]/50"
         />
       </div>
@@ -97,10 +96,6 @@ function ReputationCard({
       </span>
     </a>
   );
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
 }
 
 function GoogleMark() {

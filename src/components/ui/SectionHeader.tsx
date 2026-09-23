@@ -11,12 +11,18 @@ export function SectionHeader({
   href,
   linkLabel = "Ver todos",
   id,
+  compacto = false,
 }: {
   title: string;
   href?: string;
   linkLabel?: string;
   /** Para a seção apontar o título com aria-labelledby. */
   id?: string;
+  /**
+   * Fica em 1,375rem em toda largura, o tamanho das outras seções da página
+   * de produto: lá o H1 é o nome do produto e nenhuma seção passa dele.
+   */
+  compacto?: boolean;
 }) {
   // A margem negativa devolve a sobra da área de toque de 44 px: a linha do
   // título não cresce por causa do link.
@@ -26,7 +32,7 @@ export function SectionHeader({
     <div className="mb-4 flex items-baseline justify-between gap-4 sm:mb-5">
       <h2
         id={id}
-        className="min-w-0 text-balance text-titulo font-bold text-grafite-900 sm:text-titulo-lg"
+        className={`min-w-0 text-balance text-titulo font-bold text-grafite-900 ${compacto ? "" : "sm:text-titulo-lg"}`}
       >
         {title}
       </h2>

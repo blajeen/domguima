@@ -1,9 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ViewTransition } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { PriceTag } from "@/components/ui/PriceTag";
 import { Rating } from "@/components/ui/Rating";
+import { nomeFotoProduto } from "@/lib/catalog/apresentacao";
 import type { Product } from "@/lib/catalog/types";
 import type { CartProductInput } from "@/lib/store/cart-types";
 import { discountPercent, paymentLines } from "@/lib/utils/format";
@@ -15,6 +17,12 @@ interface ProductCardProps {
   eager?: boolean;
   /** Largura fixa quando dentro de carrossel. */
   fixedWidth?: boolean;
+  /**
+   * A foto "voa" até a galeria ao abrir o produto (View Transition). Só onde
+   * o produto aparece uma vez na tela: dois elementos com o mesmo nome fazem o
+   * navegador cancelar a transição.
+   */
+  transicaoFoto?: boolean;
 }
 
 /**
@@ -25,7 +33,12 @@ interface ProductCardProps {
  * hover a borda escurece e o botão aparece; nada sobe nem cresce. A foto é a
  * do cadastro, do jeito que está: aqui só muda a moldura em volta dela.
  */
-export function ProductCard({ product, eager = false, fixedWidth = false }: ProductCardProps) {
+export function ProductCard({
+  product,
+  eager = false,
+  fixedWidth = false,
+  transicaoFoto = false,
+}: ProductCardProps) {
   const href = `/produto/${product.slug}`;
   const image = product.images[0];
   const outOfStock = product.stock <= 0;
@@ -34,6 +47,16 @@ export function ProductCard({ product, eager = false, fixedWidth = false }: Prod
   const needsChoice = Boolean(product.variantOptions?.length || product.variants?.length);
   const discount = discountPercent(product.price, product.oldPrice);
   const selo = seloDoCard(product, discount, outOfStock);
+  const foto = image ? (
+    <Image
+      src={image.src}
+      alt={image.alt}
+      fill
+      loading={eager ? "eager" : "lazy"}
+      sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 232px"
+      className={`object-contain p-3 ${outOfStock ? "opacity-45 grayscale" : ""}`}
+    />
+  ) : null;
 
   return (
     <article
@@ -46,15 +69,16 @@ export function ProductCard({ product, eager = false, fixedWidth = false }: Prod
       {/* O contorno de foco fica por dentro: o card corta o que passa da borda. */}
       <Link href={href} className="flex flex-1 flex-col focus-visible:-outline-offset-2">
         <div className="relative aspect-square border-b border-fio bg-white">
-          {image ? (
-            <Image
-              src={image.src}
-              alt={image.alt}
-              fill
-              loading={eager ? "eager" : "lazy"}
-              sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 232px"
-              className={`object-contain p-3 ${outOfStock ? "opacity-45 grayscale" : ""}`}
-            />
+          {foto ? (
+            transicaoFoto ? (
+              // default="none": a foto só anima no par com a galeria, nunca
+              // sozinha em outra navegação.
+              <ViewTransition name={nomeFotoProduto(product.id)} share="morph" default="none">
+                {foto}
+              </ViewTransition>
+            ) : (
+              foto
+            )
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-5 text-center">
               <Image

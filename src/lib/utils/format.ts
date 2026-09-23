@@ -152,6 +152,17 @@ export function normalize(text: string): string {
     .trim();
 }
 
+/** "20/08/2026" a partir de "2026-08-20" (datas de consulta de config/site e do painel). */
+export function formatDate(value: string): string {
+  // Meio-dia local: a data não volta um dia por causa do fuso.
+  return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
+}
+
+/** Nota de avaliação com a precisão da fonte: 5 → "5,0", 4.88 → "4,88". */
+export function formatNota(nota: number): string {
+  return nota.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
 /** "05/2022" a partir de "2022-05". */
 export function formatMonthYear(value: string): string {
   const [year, month] = value.split("-");

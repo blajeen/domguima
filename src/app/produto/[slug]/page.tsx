@@ -7,12 +7,21 @@ import { VariantImageProvider } from "@/components/product/VariantImageContext";
 import { ProductPurchase } from "@/components/product/ProductPurchase";
 import { Badge } from "@/components/ui/Badge";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { buttonStyles } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Rating } from "@/components/ui/Rating";
-import { googleStats, shopeeStats, site, social } from "@/config/site";
+import { site } from "@/config/site";
+import {
+  dividirFicha,
+  fotosDaGaleria,
+  nomeFotoProduto,
+  numerosDoProduto,
+  type NumeroDoProduto,
+} from "@/lib/catalog/apresentacao";
 import { getAllProducts, getCatalogCategories, getProductBySlug, getRelatedProducts } from "@/lib/catalog/queries";
-import type { Product } from "@/lib/catalog/types";
-import { discountPercent, formatWeight } from "@/lib/utils/format";
+import { reputacaoDaLoja, type CanalReputacao } from "@/lib/catalog/reputacao";
+import type { Product, Specification } from "@/lib/catalog/types";
+import { formatDate, formatNota, formatWeight } from "@/lib/utils/format";
 import { absoluteUrl, JsonLd } from "@/lib/utils/seo";
 
 interface PageProps {
@@ -62,6 +71,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+/*
+ * As duas faixas da página (galeria + compra, detalhes + envio) usam as mesmas
+ * colunas. A coluna da galeria é limitada de propósito: solta, ela esticava
+ * até ~1000px em tela grande e ampliava a foto muito além do tamanho real,
+ * borrando a imagem. Abaixo de lg a página vira uma coluna de até 42rem,
+ * centralizada, para a foto não ocupar a altura inteira do tablet.
+ */
+const largura = "mx-auto max-w-2xl lg:max-w-[1040px] xl:max-w-[1120px]";
+const colunas = `${largura} grid gap-8 lg:grid-cols-[minmax(0,540px)_minmax(0,440px)] lg:gap-10 xl:grid-cols-[minmax(0,600px)_minmax(0,460px)] xl:gap-14`;
+
+// Todos os títulos de seção da página no mesmo tamanho (inclusive o dos
+// relacionados, ver `compacto` no SectionHeader) e abaixo do H1 do produto.
+const tituloDeSecao = "text-balance text-titulo font-bold text-grafite-900";
+
 export default async function ProductPage({ params }: PageProps) {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
@@ -69,173 +92,165 @@ export default async function ProductPage({ params }: PageProps) {
 
   const category = (await getCatalogCategories()).find((item) => item.id === product.categoryId);
   const related = await getRelatedProducts(product);
+  const { google, shopee } = await reputacaoDaLoja();
   const productUrl = absoluteUrl(`/produto/${product.slug}`);
-  const discount = discountPercent(product.price, product.oldPrice);
   // A pagina abre na mesma opcao que o seletor comeca marcada: a primeira com
   // estoque. Calcular aqui evita a galeria trocar de foto depois de montar.
   const opcaoInicial = product.variantOptions?.find((item) => item.stock > 0) ?? product.variantOptions?.[0];
 
+  const fotos = fotosDaGaleria(product.images);
+  const numeros = numerosDoProduto(product);
+  const { destaques, ficha } = dividirFicha(product.specifications);
+  const tabela = fichaComMedidas(ficha, product);
+  // Nota só com avaliação de verdade: nada de "Ainda sem avaliações" em destaque.
+  const temAvaliacao = product.rating !== undefined && product.reviewCount !== 0;
+  // No máximo um selo, como no card. O desconto já está no preço (−X%).
+  const selo = product.isBestSeller ? (
+    <Badge variant="destaque">Mais vendido</Badge>
+  ) : product.isExclusive ? (
+    <Badge variant="exclusivo">Só na Dom Guima</Badge>
+  ) : null;
+
   return (
-    <div className="site-shell py-6">
+    <div className="site-shell py-4 sm:py-6">
       <JsonLd data={productJsonLd(product, productUrl)} />
 
-      <Breadcrumbs
-        items={[
-          { label: "Início", href: "/" },
-          ...(category
-            ? [{ label: category.name, href: `/categoria/${category.slug}` }]
-            : []),
-          { label: product.name },
-        ]}
-        siteUrl={site.url}
-      />
-
-      <VariantImageProvider initialSrc={opcaoInicial?.image ?? null}>
-      {/* A coluna da galeria e limitada de proposito. Solta, ela esticava ate
-          ~1000px em tela grande e ampliava a foto muito alem do tamanho real,
-          borrando a imagem — era a queixa de "fica tao grande que perde
-          qualidade". O par fica centralizado em vez de espalhado. */}
-      <div className="mt-5 grid gap-8 lg:mx-auto lg:max-w-[1040px] lg:grid-cols-[minmax(0,540px)_minmax(0,440px)] lg:gap-10 xl:max-w-[1120px] xl:grid-cols-[minmax(0,600px)_minmax(0,460px)] xl:gap-14">
-        <div>
-          <ProductGallery images={product.images} />
-        </div>
-
-        <div>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            {discount > 0 && <Badge variant="oferta">−{discount}%</Badge>}
-            {product.isBestSeller && <Badge variant="destaque">Mais vendido</Badge>}
-            {product.brand && <Badge variant="neutro">{product.brand}</Badge>}
-          </div>
-
-          <h1 className="text-xl font-extrabold leading-snug tracking-tight text-ink-900 sm:text-2xl">
-            {product.name}
-          </h1>
-
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-500">
-            {product.rating !== undefined ? (
-              <Rating
-                value={product.rating}
-                reviewCount={product.reviewCount}
-                size="md"
-              />
-            ) : (
-              <span className="text-ink-400">Ainda sem avaliações</span>
-            )}
-            {product.soldCount !== undefined && (
-              <span>{product.soldCount} vendidos</span>
-            )}
-            <span className="text-ink-400">SKU {product.sku}</span>
-          </div>
-
-          <hr className="my-5 border-ink-100" />
-
-          <ProductPurchase product={product} productUrl={productUrl} />
-
-          <section aria-label="Avaliações da loja" className="mt-4">
-            <p className="mb-2 text-sm font-semibold text-ink-500">Reputação da loja</p>
-            <div className="grid grid-cols-2 gap-2">
-              <StoreRatingLink
-                href={googleStats.profileUrl}
-                label="Google"
-                rating="5,0"
-                count={googleStats.ratingCount}
-              />
-              <StoreRatingLink
-                href={social.shopee}
-                label="Shopee"
-                rating="4,88"
-                count={shopeeStats.ratingCount}
-              />
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-ink-500">
-              Avaliações dos canais da loja; não são avaliações específicas deste produto.
-            </p>
-          </section>
-        </div>
+      {/* A trilha alinha com o bloco do produto, não com a borda da tela. */}
+      <div className={largura}>
+        <Breadcrumbs
+          items={[
+            { label: "Início", href: "/" },
+            ...(category
+              ? [{ label: category.name, href: `/categoria/${category.slug}` }]
+              : []),
+            { label: product.name },
+          ]}
+          siteUrl={site.url}
+        />
       </div>
+
+      {/* A chave recomeça galeria e seletor ao trocar de produto sem sair da rota. */}
+      <VariantImageProvider key={product.id} initialSrc={opcaoInicial?.image ?? null}>
+        <div className={`mt-4 sm:mt-5 ${colunas}`}>
+          <div className="min-w-0">
+            <ProductGallery images={fotos} nomeTransicao={nomeFotoProduto(product.id)} />
+          </div>
+
+          <div className="min-w-0">
+            {product.brand && <p className="text-apoio text-ink-600">{product.brand}</p>}
+            <h1 className="mt-1 text-balance text-titulo font-semibold text-grafite-900 sm:text-titulo-lg">
+              {product.name}
+            </h1>
+
+            {/* O selo vai na linha de dados, não acima do título: selo em
+                caixa alta em cima do H1 é cara de template. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-500">
+              {selo}
+              {temAvaliacao && product.rating !== undefined && (
+                <Rating value={product.rating} reviewCount={product.reviewCount} size="md" />
+              )}
+              {product.soldCount !== undefined && product.soldCount > 0 && (
+                <span className="tabular-nums">{product.soldCount} vendidos</span>
+              )}
+              <span>SKU {product.sku}</span>
+            </div>
+
+            {numeros.length > 0 && <NumerosDoProduto numeros={numeros} />}
+
+            <div className="mt-5">
+              <ProductPurchase product={product} productUrl={productUrl} />
+            </div>
+
+            {/* Observação real do lojista — nunca texto genérico de marketing. */}
+            {product.sellerNote && (
+              <p className="mt-5 flex gap-2.5 text-sm font-medium text-grafite-900">
+                <Icon name="info" className="text-ouro-texto" />
+                {product.sellerNote}
+              </p>
+            )}
+
+            <ReputacaoDaLoja canais={[google, shopee]} />
+          </div>
+        </div>
       </VariantImageProvider>
 
-      {/* Descrição, especificações e envio */}
-      <div className="mt-12 grid gap-8 lg:mx-auto lg:max-w-[1040px] lg:grid-cols-[minmax(0,540px)_minmax(0,440px)] lg:gap-10 xl:max-w-[1120px] xl:grid-cols-[minmax(0,600px)_minmax(0,460px)] xl:gap-14">
-        <div className="space-y-10">
-          <section aria-labelledby="descricao">
-            <h2
-              id="descricao"
-              className="mb-3 text-lg font-extrabold tracking-tight text-ink-900"
-            >
-              Descrição
-            </h2>
-            <p className="max-w-2xl text-[15px] leading-relaxed text-ink-600">
-              {product.description}
-            </p>
-          </section>
+      {/* Descrição, destaques, ficha técnica e envio */}
+      <div className={`mt-12 sm:mt-16 ${colunas}`}>
+        <div className="min-w-0 space-y-10">
+          {product.description.trim() && (
+            <section aria-labelledby="descricao">
+              <h2 id="descricao" className={tituloDeSecao}>
+                Descrição
+              </h2>
+              <p className="mt-3 max-w-prose whitespace-pre-line text-base leading-relaxed text-ink-600">
+                {product.description}
+              </p>
+            </section>
+          )}
 
-          <section aria-labelledby="especificacoes">
-            <h2
-              id="especificacoes"
-              className="mb-3 text-lg font-extrabold tracking-tight text-ink-900"
-            >
-              Especificações
-            </h2>
-            <dl className="max-w-2xl overflow-hidden rounded-card border border-ink-100 bg-white">
-              {product.specifications.map((spec, i) => (
-                <div
-                  key={spec.label}
-                  className={`flex gap-4 px-4 py-3 text-sm ${
-                    i % 2 === 0 ? "bg-white" : "bg-ink-50/60"
-                  }`}
-                >
-                  <dt className="w-40 shrink-0 font-semibold text-ink-500">
-                    {spec.label}
-                  </dt>
-                  <dd className="text-ink-800">{spec.value}</dd>
-                </div>
-              ))}
-              <div className="flex gap-4 bg-ink-50/60 px-4 py-3 text-sm">
-                <dt className="w-40 shrink-0 font-semibold text-ink-500">
-                  Dimensões
-                </dt>
-                <dd className="text-ink-800">
-                  {product.shipping.dimensions.length} ×{" "}
-                  {product.shipping.dimensions.width} ×{" "}
-                  {product.shipping.dimensions.height} cm
-                </dd>
-              </div>
-              <div className="flex gap-4 bg-white px-4 py-3 text-sm">
-                <dt className="w-40 shrink-0 font-semibold text-ink-500">Peso</dt>
-                <dd className="text-ink-800">
-                  {formatWeight(product.shipping.weight)}
-                </dd>
-              </div>
-            </dl>
-          </section>
+          {destaques.length > 0 && (
+            <section aria-labelledby="destaques">
+              <h2 id="destaques" className={tituloDeSecao}>
+                Destaques
+              </h2>
+              <ul className="mt-3 max-w-prose space-y-2.5">
+                {destaques.map((destaque, i) => (
+                  <li key={i} className="flex gap-3 text-base leading-relaxed text-ink-600">
+                    {/* Traço de ouro no lugar de marcador ou ícone de check. */}
+                    <span aria-hidden className="mt-[0.8em] h-px w-3 shrink-0 bg-ouro" />
+                    {destaque}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {tabela.length > 0 && (
+            <section aria-labelledby="especificacoes">
+              <h2 id="especificacoes" className={tituloDeSecao}>
+                Especificações
+              </h2>
+              {/* Linhas separadas por fio, sem zebrado. */}
+              <dl className="mt-3 max-w-2xl border-t border-fio">
+                {tabela.map((spec, i) => (
+                  <div
+                    key={`${spec.label}-${i}`}
+                    className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-4 border-b border-fio py-3 text-sm sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]"
+                  >
+                    <dt className="text-ink-600">{spec.label}</dt>
+                    <dd className="text-grafite-900">{spec.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
         </div>
 
-        <aside className="space-y-4">
-          <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card">
-            <h2 className="mb-3 text-base font-extrabold text-ink-900">
+        <aside className="min-w-0 space-y-4">
+          <section aria-labelledby="envio" className="rounded-card border border-fio bg-white p-5">
+            <h2 id="envio" className="text-base font-bold text-grafite-900">
               Informações de envio
             </h2>
-            <ul className="space-y-3 text-sm text-ink-600">
+            <ul className="mt-3 space-y-3 text-sm text-ink-600">
               <li className="flex gap-3">
                 <Icon name="localizacao" className="text-ouro-texto" />
                 <span>
-                  Enviado de <strong>{product.shipping.origin}</strong> para todo
-                  o Brasil.
+                  Enviado de{" "}
+                  <strong className="font-semibold text-grafite-900">{product.shipping.origin}</strong>{" "}
+                  para todo o Brasil.
                 </span>
               </li>
-              <li className="flex gap-3">
-                <Icon name="caixa" className="text-ouro-texto" />
-                <span>
-                  Pacote de aproximadamente{" "}
-                  {formatWeight(product.shipping.weight)}.
-                </span>
-              </li>
+              {/* Peso zerado é cadastro incompleto, não um pacote de 0 g. */}
+              {product.shipping.weight > 0 && (
+                <li className="flex gap-3">
+                  <Icon name="caixa" className="text-ouro-texto" />
+                  <span>Pacote de aproximadamente {formatWeight(product.shipping.weight)}.</span>
+                </li>
+              )}
               <li className="flex gap-3">
                 <Icon name="conversa" className="text-ouro-texto" />
                 <span>
-                  O valor e o prazo do frete são confirmados com você antes de
-                  fechar o pedido.
+                  O valor e o prazo do frete são confirmados com você antes de fechar o pedido.
                 </span>
               </li>
               <li className="flex gap-3">
@@ -243,7 +258,7 @@ export default async function ProductPage({ params }: PageProps) {
                 <span>
                   <Link
                     href="/institucional/trocas-e-devolucoes"
-                    className="font-semibold text-gold-800 underline-offset-2 hover:underline"
+                    className="font-semibold text-grafite-900 underline decoration-ouro underline-offset-2 transition-colors duration-(--duracao-toque) hover:text-ouro-texto"
                   >
                     7 dias para arrependimento
                   </Link>
@@ -251,28 +266,20 @@ export default async function ProductPage({ params }: PageProps) {
                 </span>
               </li>
             </ul>
-          </div>
-
-          {/* Observação real do lojista — nunca texto genérico de marketing. */}
-          {product.sellerNote && (
-            <div className="rounded-card border border-gold-200 bg-gold-50 p-4 text-sm font-medium text-gold-900">
-              {product.sellerNote}
-            </div>
-          )}
+          </section>
 
           {/* Só aparece no item que veio mesmo do anúncio da Shopee. */}
           {product.sourceUrl && (
-            <div className="rounded-card border border-ink-100 bg-white p-5 shadow-card">
+            <div className="rounded-card border border-fio bg-white p-5">
               <p className="text-sm text-ink-600">
                 Este produto também está anunciado na nossa loja da Shopee, com{" "}
-                {shopeeStats.ratingCount.toLocaleString("pt-BR")} avaliações na
-                loja.
+                {shopee.avaliacoes.toLocaleString("pt-BR")} avaliações na loja.
               </p>
               <a
                 href={product.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 block rounded-lg border border-ink-200 px-4 py-2.5 text-center text-sm font-bold text-ink-700 transition-colors hover:border-[#EE4D2D] hover:text-[#EE4D2D]"
+                className={buttonStyles({ variant: "secundario", fullWidth: true, className: "mt-3" })}
               >
                 Ver anúncio na Shopee
               </a>
@@ -283,40 +290,101 @@ export default async function ProductPage({ params }: PageProps) {
 
       {related.length > 0 && (
         <div className="mt-16">
-          <ProductCarousel products={related} title="Produtos relacionados" />
+          {/* Sem a transição da foto aqui: a foto grande desta página "voaria"
+              para um card lá embaixo quando este produto aparece nos
+              relacionados do próximo. */}
+          <ProductCarousel
+            products={related}
+            title="Produtos relacionados"
+            transicaoFoto={false}
+            tituloCompacto
+          />
         </div>
       )}
     </div>
   );
 }
 
-function StoreRatingLink({
-  href,
-  label,
-  rating,
-  count,
-}: {
-  href: string;
-  label: string;
-  rating: string;
-  count: number;
-}) {
+/**
+ * "Números do produto": até três pares da ficha em linha, número em Archivo
+ * condensado e rótulo pequeno embaixo. Sem dado, a página não mostra a faixa.
+ */
+function NumerosDoProduto({ numeros }: { numeros: NumeroDoProduto[] }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="rounded-xl border border-ink-100 bg-white px-3 py-2.5 shadow-card transition-colors hover:border-gold-300 hover:bg-gold-50"
-    >
-      <span className="flex items-center gap-1 text-sm font-extrabold text-ink-900">
-        <Icon name="estrela" size={16} className="fill-current text-ouro" />
-        {rating} no {label}
-      </span>
-      <span className="mt-0.5 block text-xs text-ink-500">
-        {count.toLocaleString("pt-BR")} avaliações
-      </span>
-    </a>
+    <dl className="mt-4 flex divide-x divide-fio border-y border-fio">
+      {numeros.map((numero) => (
+        // Coluna invertida: o <dt> vem antes no HTML (como a lista pede) e
+        // aparece embaixo do número.
+        <div
+          key={numero.rotulo}
+          className="flex min-w-0 flex-1 flex-col-reverse items-center px-2 py-2.5 text-center"
+        >
+          <dt className="mt-1 text-xs text-ink-600">{numero.rotulo}</dt>
+          <dd className="font-price text-lg font-extrabold leading-none tabular-nums text-grafite-900 font-stretch-condensed sm:text-xl">
+            {numero.valor}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
+}
+
+/**
+ * Notas da loja no Google e na Shopee: o número exato, a quantidade e o dia da
+ * consulta. Sem estrelas, que aqui só enfeitariam um número que já está escrito.
+ */
+function ReputacaoDaLoja({ canais }: { canais: CanalReputacao[] }) {
+  return (
+    <section aria-labelledby="reputacao" className="mt-6">
+      <h2 id="reputacao" className="text-sm font-semibold text-grafite-900">
+        Reputação da loja
+      </h2>
+      <ul className="mt-2 grid grid-cols-2 gap-2">
+        {canais.map((canal) => (
+          <li key={canal.canal}>
+            <a
+              href={canal.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-full flex-col rounded-card border border-fio bg-white px-3 py-2.5 transition-colors duration-(--duracao-toque) hover:border-grafite-900"
+            >
+              <span className="text-sm text-grafite-900">
+                <strong className="text-base font-bold tabular-nums">{formatNota(canal.nota)}</strong>{" "}
+                {canal.preposicao} {canal.canal}
+              </span>
+              <span className="text-xs tabular-nums text-ink-600">
+                {canal.avaliacoes.toLocaleString("pt-BR")} avaliações
+              </span>
+              <span className="mt-1 text-xs text-ink-500">
+                Consulta pública em {formatDate(canal.consultadoEm)}
+              </span>
+              <span className="sr-only"> (abre em nova aba)</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs leading-relaxed text-ink-500">
+        Avaliações dos canais da loja; não são avaliações específicas deste produto.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * A ficha do cadastro mais as medidas do pacote. Medida zerada é cadastro
+ * incompleto: a linha some em vez de mostrar "0 × 0 × 0 cm" ou "0 g".
+ */
+function fichaComMedidas(ficha: Specification[], product: Product): Specification[] {
+  const { length, width, height } = product.shipping.dimensions;
+  return [
+    ...ficha,
+    ...(length > 0 || width > 0 || height > 0
+      ? [{ label: "Dimensões", value: `${length} × ${width} × ${height} cm` }]
+      : []),
+    ...(product.shipping.weight > 0
+      ? [{ label: "Peso", value: formatWeight(product.shipping.weight) }]
+      : []),
+  ];
 }
 
 /**

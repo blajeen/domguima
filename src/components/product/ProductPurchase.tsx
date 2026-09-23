@@ -1,25 +1,28 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { commerce } from "@/config/site";
+import { useEffect, useRef, useState } from "react";
+import { WhatsAppChooser, WhatsAppIcon } from "@/components/layout/WhatsAppChooser";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { PriceTag } from "@/components/ui/PriceTag";
+import { linhasDoPreco } from "@/lib/catalog/apresentacao";
 import type { Product } from "@/lib/catalog/types";
 import { productMessage } from "@/lib/services/whatsapp";
-import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
-import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { useAttendants } from "@/lib/store/attendants";
 import { useCart } from "@/lib/store/cart";
+import { formatPrice } from "@/lib/utils/format";
+import { CONFIRMACAO_MS } from "./AddToCartButton";
+import { BarraCompraFixa } from "./BarraCompraFixa";
 import { useVariantImage } from "./VariantImageContext";
-import {
-  bestInstallment,
-  discountPercent,
-  formatPrice,
-  pixPrice,
-} from "@/lib/utils/format";
 
 /**
- * Bloco de compra: variação, quantidade e as três formas de seguir —
- * carrinho, compra direta e WhatsApp (canal que a loja já usa hoje).
+ * Bloco de compra: preço, variação, quantidade e um caminho principal. Antes
+ * eram três botões do mesmo peso; agora "Comprar agora" (grafite) manda, o
+ * carrinho vem em contorno e o WhatsApp vira o contato com quem atende, com o
+ * nome dessas pessoas quando o cliente escolhe com quem fala. No celular, a
+ * barra fixa repete preço e botão quando
+ * este bloco sai da tela.
  */
 export function ProductPurchase({
   product,
@@ -30,7 +33,10 @@ export function ProductPurchase({
 }) {
   const router = useRouter();
   const { addItem, openCart } = useCart();
+  const { contacts, mode } = useAttendants();
   const { escolher: mostrarFotoDaVariacao } = useVariantImage();
+  const acoesRef = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Opcoes com estoque proprio tem prioridade sobre o rotulo antigo, que
   // continua servindo para produto sem variacao de verdade.
@@ -48,28 +54,33 @@ export function ProductPurchase({
   );
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  // Conta as adições para o aviso do leitor de tela ganhar um nó novo a cada
+  // clique (mesma solução do AddToCartButton).
+  const [adicoes, setAdicoes] = useState(0);
 
   const opcao = opcoes.find((item) => item.id === variantId);
   const preco = opcao ? opcao.price : product.price;
   const estoque = opcao ? opcao.stock : product.stock;
-
   const outOfStock = estoque <= 0;
-  const discount = discountPercent(preco, opcao ? undefined : product.oldPrice);
-  // Parcelamento real informado pelo lojista (com taxa) tem prioridade sobre
-  // o cálculo "sem juros" — este site nunca promete uma condição melhor do
-  // que a real.
-  const installment = product.cardInstallment ?? bestInstallment(preco);
-  const pix = pixPrice(preco);
-  // Quando o lojista já informou o preço à vista/Pix diretamente (produtos da
-  // lista de vendas), `price` JÁ É esse valor — não inflamos com um desconto
-  // extra de Pix inventado por cima.
-  const showPixDiscount = commerce.pixDiscountPercent > 0 && !product.cardInstallment;
+  const linhas = linhasDoPreco(product, opcao);
+  // O preço "de" é do preço-base do produto (o mesmo que o card mostra com o
+  // −X%). Vale para a opção com esse preço, como o parcelamento em
+  // `linhasDoPreco`; opção com preço próprio fica sem desconto.
+  const precoAnterior = !opcao || opcao.price === product.price ? product.oldPrice : undefined;
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   function add() {
     if (outOfStock) return;
     addItem(product, quantity, variant, variantId);
     setAdded(true);
-    setTimeout(() => setAdded(false), 1600);
+    setAdicoes((n) => n + 1);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setAdded(false), CONFIRMACAO_MS);
   }
 
   function buyNow() {
@@ -80,68 +91,25 @@ export function ProductPurchase({
 
   return (
     <div className="space-y-5">
-      {/* Preço */}
       <div>
-        {product.oldPrice && !opcao && (
-          <p className="flex items-center gap-2">
-            <span className="text-sm text-ink-400 line-through">
-              {formatPrice(product.oldPrice)}
-            </span>
-            {discount > 0 && (
-              <span className="rounded-md bg-promo px-2 py-0.5 text-xs font-extrabold text-white">
-                -{discount}%
-              </span>
-            )}
-          </p>
-        )}
-        <p className="mt-1 text-4xl font-extrabold tracking-tight text-ink-900">
-          {formatPrice(preco)}
-        </p>
-        {installment && (
-          <p className="mt-1.5 text-sm text-ink-600">
-            em até{" "}
-            <strong className="font-bold">
-              {installment.count}x de {formatPrice(installment.value)}
-            </strong>{" "}
-            {product.cardInstallment ? "no cartão (com taxa)" : "sem juros"}
-          </p>
-        )}
-        {showPixDiscount && (
-          <p className="mt-1 text-sm font-semibold text-success">
-            {formatPrice(pix)} à vista no Pix ({commerce.pixDiscountPercent}% de
-            desconto)
-          </p>
-        )}
-        {product.cardInstallment && (
-          <p className="mt-1 text-sm font-semibold text-success">
-            {formatPrice(preco)} à vista no Pix ou dinheiro
-          </p>
-        )}
+        <PriceTag
+          size="produto"
+          cents={preco}
+          oldCents={precoAnterior}
+          lines={linhas}
+        />
+        <Disponibilidade estoque={estoque} />
       </div>
 
-      {/* Disponibilidade */}
-      <p className="flex items-center gap-2 text-sm">
-        {outOfStock ? (
-          <span className="font-semibold text-promo">
-            ● Produto indisponível no momento
-          </span>
-        ) : estoque <= 3 ? (
-          <span className="font-semibold text-promo">
-            {estoque === 1
-              ? "● Última unidade em estoque"
-              : `● Últimas ${estoque} unidades em estoque`}
-          </span>
-        ) : (
-          <span className="font-semibold text-success">● Disponível em estoque</span>
-        )}
-      </p>
+      {/* Fio dourado: a assinatura que separa o preço da decisão de compra. */}
+      <div aria-hidden className="h-px bg-ouro" />
 
       {/* Variação com estoque próprio */}
       {temOpcoes && (
         <fieldset>
-          <legend className="mb-2 text-sm font-bold text-ink-900">
+          <legend className="mb-2 text-sm font-semibold text-grafite-900">
             {product.variantAxis ?? "Variação"}:{" "}
-            <span className="font-medium text-ink-600">{opcao?.label}</span>
+            <span className="font-normal text-ink-600">{opcao?.label}</span>
           </legend>
           <div className="flex flex-wrap gap-2">
             {opcoes.map((item) => {
@@ -150,18 +118,23 @@ export function ProductPurchase({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => { setVariantId(item.id); setQuantity(1); mostrarFotoDaVariacao(item.image ?? null); }}
+                  onClick={() => {
+                    setVariantId(item.id);
+                    setQuantity(1);
+                    // Sem foto própria, a galeria volta para a capa.
+                    mostrarFotoDaVariacao(item.image ?? null);
+                  }}
                   aria-pressed={item.id === variantId}
-                  className={`rounded-lg border-2 px-4 py-2 text-left text-sm font-semibold transition-colors ${
+                  className={`${opcaoBase} ${
                     item.id === variantId
-                      ? "border-gold-400 bg-gold-50 text-gold-900"
+                      ? opcaoMarcada
                       : esgotada
-                        ? "border-ink-100 text-ink-300"
-                        : "border-ink-200 text-ink-600 hover:border-ink-400"
+                        ? "border-fio text-ink-500 hover:border-grafite-700"
+                        : opcaoLivre
                   }`}
                 >
                   {item.label}
-                  <span className="mt-0.5 block text-xs font-medium">
+                  <span className="mt-0.5 block text-xs font-normal tabular-nums text-ink-600">
                     {esgotada ? "Sem estoque" : formatPrice(item.price)}
                   </span>
                 </button>
@@ -174,9 +147,9 @@ export function ProductPurchase({
       {/* Variação apenas informativa (produto sem estoque por opção) */}
       {variantGroup && (
         <fieldset>
-          <legend className="mb-2 text-sm font-bold text-ink-900">
+          <legend className="mb-2 text-sm font-semibold text-grafite-900">
             {variantGroup.name}:{" "}
-            <span className="font-medium text-ink-600">{variant}</span>
+            <span className="font-normal text-ink-600">{variant}</span>
           </legend>
           <div className="flex flex-wrap gap-2">
             {variantGroup.options.map((option) => (
@@ -185,11 +158,7 @@ export function ProductPurchase({
                 type="button"
                 onClick={() => setVariant(option)}
                 aria-pressed={variant === option}
-                className={`rounded-lg border-2 px-4 py-2 text-sm font-semibold transition-colors ${
-                  variant === option
-                    ? "border-gold-400 bg-gold-50 text-gold-900"
-                    : "border-ink-200 text-ink-600 hover:border-ink-400"
-                }`}
+                className={`${opcaoBase} ${variant === option ? opcaoMarcada : opcaoLivre}`}
               >
                 {option}
               </button>
@@ -200,76 +169,164 @@ export function ProductPurchase({
 
       {/* Quantidade */}
       {!outOfStock && (
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-ink-900">Quantidade</span>
-          <div className="flex items-center rounded-lg border border-ink-200">
-            <button
-              type="button"
-              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span id="rotulo-quantidade" className="text-sm font-semibold text-grafite-900">
+            Quantidade
+          </span>
+          <div
+            role="group"
+            aria-labelledby="rotulo-quantidade"
+            className="flex items-center rounded-control border border-fio bg-white"
+          >
+            <BotaoQuantidade
+              icon="menos"
+              label="Diminuir quantidade"
               disabled={quantity <= 1}
-              aria-label="Diminuir quantidade"
-              className="flex h-10 w-10 items-center justify-center text-lg font-bold text-ink-600 transition-colors hover:bg-ink-50 disabled:text-ink-300"
-            >
-              −
-            </button>
-            <span className="min-w-10 text-center font-bold tabular-nums">
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+            />
+            <span className="min-w-10 text-center text-base font-semibold tabular-nums text-grafite-900">
               {quantity}
             </span>
-            <button
-              type="button"
-              onClick={() => setQuantity((q) => Math.min(estoque, q + 1))}
+            <BotaoQuantidade
+              icon="mais"
+              label="Aumentar quantidade"
               disabled={quantity >= estoque}
-              aria-label="Aumentar quantidade"
-              className="flex h-10 w-10 items-center justify-center text-lg font-bold text-ink-600 transition-colors hover:bg-ink-50 disabled:text-ink-300"
-            >
-              +
-            </button>
+              onClick={() => setQuantity((q) => Math.min(estoque, q + 1))}
+            />
           </div>
-          <span className="text-xs text-ink-400">
+          <span className="text-xs tabular-nums text-ink-500">
             {estoque} {estoque === 1 ? "disponível" : "disponíveis"}
           </span>
         </div>
       )}
 
-      {/* Ações */}
-      {/* Ações. Só as cores e a forma seguem o sistema novo (grafite como ação,
-          sem azul); a hierarquia dos três botões é revista no bloco da página
-          de produto. */}
-      <div className="space-y-2.5">
+      {/* Ações: um principal e, abaixo, o carrinho em contorno. */}
+      <div ref={acoesRef} className="space-y-2.5">
         <Button onClick={buyNow} disabled={outOfStock} size="lg" fullWidth>
           {outOfStock ? "Indisponível" : "Comprar agora"}
         </Button>
 
-        <button
-          type="button"
-          onClick={added ? openCart : add}
-          disabled={outOfStock}
-          className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-control border px-6 py-3 text-base font-semibold transition-[background-color,border-color,color,translate] duration-(--duracao-toque) ease-out active:translate-y-px disabled:cursor-not-allowed disabled:border-fio disabled:text-ink-400 ${
-            added
-              ? "border-success bg-success-light text-success"
-              : "border-grafite-900 text-grafite-900 hover:bg-grafite-900/5"
-          }`}
-        >
-          {added ? (
-            <>
-              <Icon name="check" />
-              No carrinho
-              <span className="sr-only">: abrir o carrinho</span>
-            </>
-          ) : (
-            "Adicionar ao carrinho"
-          )}
-        </button>
-
-        <WhatsAppChooser
-          message={productMessage(product, productUrl)}
-          kind="whatsapp_product"
-          productId={product.id}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-control border-2 border-whatsapp px-6 py-3 text-base font-bold text-[#128C7E] transition-colors duration-(--duracao-toque) hover:bg-whatsapp/10"
-        >
-          Comprar pelo WhatsApp
-        </WhatsAppChooser>
+        {!outOfStock && (
+          <Button
+            variant="secundario"
+            size="lg"
+            fullWidth
+            onClick={added ? openCart : add}
+          >
+            {added ? (
+              <>
+                <Icon name="check" className="text-ouro" />
+                No carrinho
+                <span className="sr-only">: abrir o carrinho</span>
+              </>
+            ) : (
+              "Adicionar ao carrinho"
+            )}
+          </Button>
+        )}
+        <span role="status" className="sr-only">
+          {added && <span key={adicoes}>{product.name} adicionado ao carrinho</span>}
+        </span>
       </div>
+
+      {/* Contato humano: abre o seletor de atendente de sempre, com a mesma
+          mensagem e o mesmo registro de atendimento (whatsapp_product). */}
+      <WhatsAppChooser
+        message={productMessage(product, productUrl)}
+        kind="whatsapp_product"
+        productId={product.id}
+        className="flex min-h-14 w-full items-center gap-3 rounded-control border border-fio bg-white px-3 py-2.5 text-left transition-colors duration-(--duracao-toque) hover:border-grafite-900"
+      >
+        {/* Grafite sobre o verde: o glifo branco ficaria abaixo de 3:1. */}
+        <span
+          aria-hidden
+          className="flex size-9 shrink-0 items-center justify-center rounded-pill bg-whatsapp text-grafite-900"
+        >
+          <WhatsAppIcon className="size-5" />
+        </span>
+        <span className="text-sm font-semibold text-grafite-900">
+          {chamadaDoContato(
+            mode === "customer_choice" ? contacts.map((contact) => contact.name) : [],
+          )}
+        </span>
+      </WhatsAppChooser>
+
+      {!outOfStock && (
+        <BarraCompraFixa
+          alvo={acoesRef}
+          cents={preco}
+          // Só a frase curta cabe ao lado do botão. Nos produtos com
+          // parcelamento real o preço já é o do Pix, e a barra diz isso.
+          lines={product.cardInstallment ? { pix: linhas.pix, cartao: null } : null}
+          rotulo="Comprar agora"
+          onComprar={buyNow}
+        />
+      )}
     </div>
+  );
+}
+
+const opcaoBase =
+  "min-h-11 rounded-control border bg-white px-4 py-2 text-left text-sm font-medium transition-colors duration-(--duracao-toque)";
+// Marcada: o fio vira grafite de 2 px (borda + anel por dentro), sem mudar o tamanho.
+const opcaoMarcada = "border-grafite-900 font-semibold text-grafite-900 ring-1 ring-inset ring-grafite-900";
+const opcaoLivre = "border-fio text-grafite-900 hover:border-grafite-900";
+
+/**
+ * "Dúvida? Chama Juliano ou Gabriel no WhatsApp", com os nomes de quem o
+ * painel põe para atender (a mesma lista do seletor). Sem artigo antes do
+ * nome: a lista pode ganhar gente nova, e "o" nem sempre serve. Em rodízio ou
+ * "menos ocupado" o diálogo não deixa escolher, então vai sem nomes (lista
+ * vazia): a frase não promete uma escolha que o fluxo não dá.
+ */
+function chamadaDoContato(nomes: string[]): string {
+  const unicos = [...new Set(nomes.map((nome) => nome.trim()).filter(Boolean))];
+  if (unicos.length === 0) return "Dúvida? Fale com a gente no WhatsApp";
+  const lista = new Intl.ListFormat("pt-BR", { type: "disjunction" }).format(unicos);
+  return `Dúvida? Chama ${lista} no WhatsApp`;
+}
+
+/** Estoque real. O vermelho de oferta só aparece quando a urgência é de verdade. */
+function Disponibilidade({ estoque }: { estoque: number }) {
+  const [icone, texto, cor]: [IconName, string, string] =
+    estoque <= 0
+      ? ["info", "Produto indisponível no momento", "font-semibold text-grafite-900"]
+      : estoque <= 3
+        ? [
+            "alerta",
+            estoque === 1 ? "Última unidade em estoque" : `Últimas ${estoque} unidades em estoque`,
+            "font-semibold text-oferta",
+          ]
+        : ["check", "Disponível em estoque", "text-ink-600"];
+
+  return (
+    <p className={`mt-3 flex items-center gap-2 text-sm ${cor}`}>
+      <Icon name={icone} size={18} className={estoque > 3 ? "text-ouro" : undefined} />
+      {texto}
+    </p>
+  );
+}
+
+function BotaoQuantidade({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="flex size-11 items-center justify-center text-grafite-900 transition-colors duration-(--duracao-toque) hover:bg-papel disabled:cursor-not-allowed disabled:text-ink-300 disabled:hover:bg-transparent"
+    >
+      <Icon name={icon} size={16} />
+    </button>
   );
 }

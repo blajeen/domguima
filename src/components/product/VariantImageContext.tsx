@@ -3,6 +3,16 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 /**
+ * Pedido do seletor para a galeria. É um objeto novo a cada clique: marcar de
+ * novo a mesma opção também traz a foto dela de volta. `src` null é opção sem
+ * foto própria, e aí a galeria volta para a capa em vez de ficar na foto da
+ * cor escolhida antes.
+ */
+export interface PedidoDeFoto {
+  src: string | null;
+}
+
+/**
  * Liga a escolha da variação à galeria do produto.
  *
  * O seletor de cor e a galeria são componentes irmãos em colunas diferentes do
@@ -14,11 +24,19 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
  * a página já abrir na imagem certa sem um efeito que pisca depois da montagem.
  */
 interface VariantImage {
-  src: string | null;
+  /** Último pedido do seletor, ou null depois que o cliente mexe na galeria. */
+  pedido: PedidoDeFoto | null;
+  /** O seletor pede a foto da opção marcada (null: a opção não tem foto). */
   escolher: (src: string | null) => void;
+  /** Gesto do cliente na galeria: o pedido do seletor deixa de valer. */
+  liberar: () => void;
 }
 
-const VariantImageContext = createContext<VariantImage>({ src: null, escolher: () => {} });
+const VariantImageContext = createContext<VariantImage>({
+  pedido: null,
+  escolher: () => {},
+  liberar: () => {},
+});
 
 export function VariantImageProvider({
   initialSrc = null,
@@ -27,9 +45,12 @@ export function VariantImageProvider({
   initialSrc?: string | null;
   children: React.ReactNode;
 }) {
-  const [src, setSrc] = useState<string | null>(initialSrc);
-  const escolher = useCallback((valor: string | null) => setSrc(valor), []);
-  const value = useMemo(() => ({ src, escolher }), [src, escolher]);
+  const [pedido, setPedido] = useState<PedidoDeFoto | null>(() =>
+    initialSrc ? { src: initialSrc } : null,
+  );
+  const escolher = useCallback((src: string | null) => setPedido({ src }), []);
+  const liberar = useCallback(() => setPedido(null), []);
+  const value = useMemo(() => ({ pedido, escolher, liberar }), [pedido, escolher, liberar]);
   return <VariantImageContext.Provider value={value}>{children}</VariantImageContext.Provider>;
 }
 

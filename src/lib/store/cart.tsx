@@ -89,7 +89,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // quando o cliente comprou a branca.
         image: opcao?.image ?? product.images[0]?.src ?? "",
         price: opcao ? opcao.price : product.price,
-        oldPrice: opcao ? undefined : product.oldPrice,
+        // O preço "de" segue a regra do parcelamento: vale para a opção com o
+        // preço-base do produto, a mesma que a página mostra com o −X%.
+        oldPrice: !opcao || opcao.price === product.price ? product.oldPrice : undefined,
         quantity,
         stock: estoque,
         weight: product.shipping.weight,

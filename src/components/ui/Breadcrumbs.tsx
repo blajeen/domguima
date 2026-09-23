@@ -30,20 +30,29 @@ export function Breadcrumbs({
   return (
     <>
       <nav aria-label="Você está aqui" className="text-sm">
-        <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-400">
+        {/* ink-500: o ink-400 antigo ficava em 4:1 sobre o papel, abaixo do AA. */}
+        <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ink-500">
           {items.map((item, i) => {
             const last = i === items.length - 1;
             return (
-              <li key={`${item.label}-${i}`} className="flex items-center gap-1.5">
+              <li
+                key={`${item.label}-${i}`}
+                className={`flex items-center gap-1.5 ${last ? "min-w-0" : ""}`}
+              >
                 {item.href && !last ? (
                   <Link
                     href={item.href}
-                    className="transition-colors hover:text-gold-700 hover:underline"
+                    className="decoration-ouro underline-offset-2 transition-colors duration-(--duracao-toque) hover:text-grafite-900 hover:underline"
                   >
                     {item.label}
                   </Link>
                 ) : (
-                  <span className={last ? "font-medium text-ink-700" : undefined} aria-current={last ? "page" : undefined}>
+                  // O último item (o nome do produto pode ser longo) fica numa
+                  // linha só: o título da página repete o nome logo abaixo.
+                  <span
+                    className={last ? "truncate font-medium text-grafite-900" : undefined}
+                    aria-current={last ? "page" : undefined}
+                  >
                     {item.label}
                   </span>
                 )}

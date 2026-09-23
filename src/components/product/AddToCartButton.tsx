@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { type CartProductInput, useCart } from "@/lib/store/cart";
 
 /** Quanto tempo o botão fica em "No carrinho" antes de voltar ao normal. */
-const CONFIRMACAO_MS = 1500;
+export const CONFIRMACAO_MS = 1500;
 
 /**
  * A única parte do card de produto que roda no navegador: põe no carrinho e
