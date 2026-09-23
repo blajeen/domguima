@@ -90,7 +90,7 @@ function Cartaz({ product, transicaoFoto }: { product: Product; transicaoFoto: b
             size="destaque"
             cents={product.price}
             oldCents={product.oldPrice}
-            lines={paymentLines(product.price, product.cardInstallment)}
+            lines={paymentLines(product.cardInstallment)}
           />
         </div>
       </Link>

@@ -1,10 +1,10 @@
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { InventorySpreadsheet } from "@/components/admin/InventorySpreadsheet";
-import { getAdminProducts, getInventoryMovements } from "@/lib/admin/data";
+import { getAdminProducts, getParcelamento, getInventoryMovements } from "@/lib/admin/data";
 import type { InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/types";
 
 export default async function InventoryPage() {
-  const [products, movements] = await Promise.all([getAdminProducts(), getInventoryMovements(200)]);
+  const [products, movements, parcelamento] = await Promise.all([getAdminProducts(), getInventoryMovements(200), getParcelamento()]);
   // Produto com variacao entra como UMA LINHA POR OPCAO, cada uma com o
   // proprio saldo. Antes ele ficava de fora e o lojista nao tinha onde ver o
   // estoque de cada cor.
@@ -12,8 +12,6 @@ export default async function InventoryPage() {
     const image = [...(product.product_images ?? [])].sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order)[0];
     const base = {
       product_id: product.id, old_price_cents: product.old_price_cents,
-      installment_count: product.card_installment?.count ?? null,
-      installment_value_cents: product.card_installment?.value ?? null,
       low_stock_threshold: product.low_stock_threshold, status: product.status,
       category_name: product.categories?.name ?? product.category_id,
       image_alt: image?.alt ?? product.name, updated_at: product.updated_at,
@@ -46,7 +44,7 @@ export default async function InventoryPage() {
 
   return <>
     <AdminPageHeader eyebrow="Operação de estoque" title="Estoque" description="Uma visão rápida para conferir preços, corrigir quantidades e registrar as saídas do dia com segurança." />
-    <PanelCard className="!p-0"><InventorySpreadsheet products={sheetProducts} movements={sheetMovements} todayUnits={todayUnits} /></PanelCard>
+    <PanelCard className="!p-0"><InventorySpreadsheet products={sheetProducts} movements={sheetMovements} todayUnits={todayUnits} parcelamento={parcelamento} /></PanelCard>
   </>;
 }
 

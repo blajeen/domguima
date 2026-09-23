@@ -473,6 +473,12 @@ export interface AdminProductRow {
   tags: string[];
   data_source: "shopee-verified" | "loja-verified" | "placeholder";
   source_url: string | null;
+  /**
+   * Parcelado digitado à mão (legado, da importação inicial). A loja NÃO lê
+   * mais esta coluna: calcula o parcelado pelo preço com a tabela da
+   * maquininha (`lib/catalog/parcelamento.ts`). Mantida só para não apagar
+   * dado do banco.
+   */
   card_installment: { count: number; value: number } | null;
   seller_note: string | null;
   published_at: string | null;
@@ -511,8 +517,6 @@ export interface InventorySheetProduct {
   sku: string;
   price_cents: number;
   old_price_cents: number | null;
-  installment_count: number | null;
-  installment_value_cents: number | null;
   stock: number;
   low_stock_threshold: number;
   status: ProductStatus;
@@ -593,8 +597,14 @@ export interface StoreSettings {
   googleRating: string;
   googleRatingCount: string;
   googleVerifiedAt: string;
-  pixDiscountPercent: string;
-  maxInstallments: string;
+  /**
+   * Taxas da maquininha por quantidade de parcelas (1x, 2x, ...), em %,
+   * separadas por ";". O site calcula o parcelado de cada produto com elas
+   * (`lib/catalog/parcelamento.ts`); leia sempre com `lerParcelamento()`.
+   */
+  cardFeeTable: string;
+  /** Até quantas vezes a chamada junto do preço anuncia ("em até 12x"). Ver `lerParcelamento()`. */
+  cardInstallmentsHeadline: string;
   /**
    * Um `LeadDistributionMode`. Fica como string porque StoreSettings inteiro e
    * gravado como texto pelo formulario; `normalizeLeadDistributionMode()`

@@ -106,7 +106,7 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
               className="min-w-0"
               cents={product.price}
               oldCents={product.oldPrice}
-              lines={paymentLines(product.price, product.cardInstallment)}
+              lines={paymentLines(product.cardInstallment)}
             />
             <ButtonLink href={href} size="sm" className="shrink-0">
               Ver produto

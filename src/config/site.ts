@@ -143,12 +143,3 @@ export const support = {
   email: null as string | null,
 } as const;
 
-/** Regras comerciais. CONFIG — confirmar com o lojista. */
-export const commerce = {
-  /** Nº máximo de parcelas exibido nos cards/página de produto. */
-  maxInstallments: 3,
-  /** Parcela mínima em centavos (não parcela abaixo disso). */
-  minInstallmentCents: 3000,
-  /** Desconto à vista no Pix, em %. 0 desativa o selo. */
-  pixDiscountPercent: 5,
-} as const;

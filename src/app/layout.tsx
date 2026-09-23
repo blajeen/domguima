@@ -7,9 +7,10 @@ import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { WhatsAppFloat } from "@/components/layout/WhatsAppFloat";
 import { site } from "@/config/site";
-import { loadPublicAttendants } from "@/lib/catalog/database";
+import { loadParcelamento, loadPublicAttendants } from "@/lib/catalog/database";
 import { AttendantsProvider } from "@/lib/store/attendants";
 import { CartProvider } from "@/lib/store/cart";
+import { ParcelamentoProvider } from "@/lib/store/parcelamento";
 import { JsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/utils/seo";
 import "./globals.css";
 
@@ -105,9 +106,11 @@ export const viewport: Viewport = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Uma leitura so para todos os botoes de WhatsApp do site. Header, rodape e
+  // Uma leitura so para todos os botoes de WhatsApp do site e para a tabela da
+  // maquininha da gaveta do carrinho (produto, carrinho e checkouts leem a
+  // tabela no proprio segmento; ver loadParcelamento). Header, rodape e
   // flutuante ja leem o catalogo; readCatalogState deduplica no cache de 5s.
-  const attendants = await loadPublicAttendants();
+  const [attendants, parcelamento] = await Promise.all([loadPublicAttendants(), loadParcelamento()]);
   return (
     <html
       lang="pt-BR"
@@ -133,13 +136,15 @@ export default async function RootLayout({
         </a>
 
         <AttendantsProvider value={attendants}>
-          <CartProvider>
-            <Header />
-            <main id="conteudo">{children}</main>
-            <Footer />
-            <CartDrawer />
-            <WhatsAppFloat />
-          </CartProvider>
+          <ParcelamentoProvider value={parcelamento}>
+            <CartProvider>
+              <Header />
+              <main id="conteudo">{children}</main>
+              <Footer />
+              <CartDrawer />
+              <WhatsAppFloat />
+            </CartProvider>
+          </ParcelamentoProvider>
         </AttendantsProvider>
       </body>
     </html>

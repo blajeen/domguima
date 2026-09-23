@@ -73,14 +73,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const estoque = opcao ? opcao.stock : product.stock;
       if (estoque <= 0) return;
 
-      // O parcelamento real vale para o preço do produto. Opção com preço
-      // próprio fica sem ele (undefined), e o total não inventa parcela.
-      const parcelamento = !product.cardInstallment
-        ? null
-        : !opcao || opcao.price === product.price
-          ? product.cardInstallment
-          : undefined;
-
       const incoming: CartItem = {
         productId: product.id,
         slug: product.slug,
@@ -89,15 +81,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // quando o cliente comprou a branca.
         image: opcao?.image ?? product.images[0]?.src ?? "",
         price: opcao ? opcao.price : product.price,
-        // O preço "de" segue a regra do parcelamento: vale para a opção com o
-        // preço-base do produto, a mesma que a página mostra com o −X%.
+        // O preço "de" vale para a opção com o preço-base do produto, a mesma
+        // que a página mostra com o −X%.
         oldPrice: !opcao || opcao.price === product.price ? product.oldPrice : undefined,
         quantity,
         stock: estoque,
         weight: product.shipping.weight,
         variant: opcao ? opcao.label : variant,
         ...(opcao ? { variantId: opcao.id } : {}),
-        ...(parcelamento !== undefined ? { cardInstallment: parcelamento } : {}),
       };
 
       const key = lineKey(incoming);
@@ -108,17 +99,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         existing
           ? current.map((i) =>
               lineKey(i) === key
-                ? {
-                    ...i,
-                    quantity: Math.min(i.quantity + quantity, i.stock),
-                    // Linha antiga, sem o parcelamento salvo: completa agora,
-                    // se o preço dela ainda é o mesmo do produto.
-                    ...(i.cardInstallment === undefined &&
-                    incoming.cardInstallment !== undefined &&
-                    i.price === incoming.price
-                      ? { cardInstallment: incoming.cardInstallment }
-                      : {}),
-                  }
+                ? { ...i, quantity: Math.min(i.quantity + quantity, i.stock) }
                 : i,
             )
           : [...current, incoming],

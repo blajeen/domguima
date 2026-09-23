@@ -191,14 +191,11 @@ export function numerosDoProduto(product: Product): NumeroDoProduto[] {
 
 /**
  * Linhas de Pix e cartão do preço mostrado na página de produto, com a mesma
- * frase do card (`paymentLines`). Numa opção com preço próprio, o parcelamento
- * real informado para o produto não vale: ele foi calculado para outro valor.
- * Aí fica só a linha do Pix (o preço desses produtos já é o do Pix), a mesma
- * regra que o carrinho usa para não afirmar parcela que ninguém informou.
+ * frase do card (`paymentLines`). Cada opção tem o parcelado calculado sobre o
+ * preço dela (no servidor, em `comParcelamento`, lib/catalog/database.ts),
+ * então a opção mais cara mostra a parcela certa em vez de perder a linha do
+ * cartão.
  */
 export function linhasDoPreco(product: Product, opcao?: ProductVariantOption): PaymentLines {
-  const preco = opcao ? opcao.price : product.price;
-  if (!product.cardInstallment) return paymentLines(preco);
-  if (!opcao || opcao.price === product.price) return paymentLines(preco, product.cardInstallment);
-  return { pix: paymentLines(preco, product.cardInstallment).pix, cartao: null };
+  return paymentLines(opcao ? opcao.cardInstallment : product.cardInstallment);
 }

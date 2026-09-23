@@ -20,13 +20,6 @@ export interface CartItem {
    * para dar baixa na cor certa; `variant` sozinho e so o rotulo exibido.
    */
   variantId?: string;
-  /**
-   * Parcelamento real no cartão (com taxa) que o lojista informou para este
-   * preço, para o total do carrinho repetir a frase do card. `null`: o produto
-   * não tem (vale o Pix com desconto). Ausente: linha salva antes deste campo,
-   * ou opção com preço próprio; aí o carrinho não afirma condição nenhuma.
-   */
-  cardInstallment?: { count: number; value: number } | null;
 }
 
 /**
@@ -45,7 +38,6 @@ export interface CartProductInput {
   images: { src: string }[];
   shipping: { weight: number };
   variantOptions?: ProductVariantOption[];
-  cardInstallment?: { count: number; value: number };
 }
 
 /** Produto + variação são linhas distintas no carrinho (110V não é 220V). */

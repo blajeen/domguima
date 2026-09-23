@@ -1,4 +1,4 @@
-import { commerce, company, shopeeStats, site, social, whatsapp } from "@/config/site";
+import { company, shopeeStats, site, social, whatsapp } from "@/config/site";
 
 /**
  * Páginas institucionais.
@@ -152,19 +152,19 @@ export const institutionalPages: InstitutionalPage[] = [
       },
       {
         heading: "Parcelamento",
-        // As duas frases que o preço mostra (paymentLines, em utils/format):
-        // parcelamento informado pelo lojista sai "com taxa"; sem ele, vale a
-        // estimativa "sem juros" de `commerce`. Citar só uma contradiria o
-        // produto. CONFIG: o dono confirma as duas condições.
+        // Igual ao que o preço mostra (paymentLines, em utils/format): o preço
+        // cadastrado é o à vista, e o parcelado sai da tabela da maquininha das
+        // Configurações, com a taxa repassada (lib/catalog/parcelamento). Sem
+        // número de vezes aqui: a página é estática e a tabela é do painel.
         paragraphs: [
-          `O parcelamento no cartão aparece junto do preço de cada produto. Quando a linha diz "com taxa", é o parcelamento que a loja informou para aquele produto, com a taxa do cartão já no valor da parcela, e o preço em destaque é o do Pix ou dinheiro.`,
-          `Quando a linha diz "sem juros", é uma estimativa em até ${commerce.maxInstallments}x, sujeita a confirmação no momento da compra e ao valor mínimo de parcela.`,
+          "O preço em destaque em cada produto é o preço à vista, no Pix ou em dinheiro.",
+          "No cartão de crédito, a taxa da maquininha, quando houver, já está somada ao valor de cada parcela. A tabela com todas as parcelas aparece na página de cada produto e no checkout, quando você escolhe cartão de crédito.",
         ],
       },
       {
-        heading: "Desconto no Pix",
+        heading: "Pix e dinheiro",
         paragraphs: [
-          "Pagamentos à vista no Pix têm desconto, sinalizado na página de cada produto. É a forma mais rápida de confirmar o pedido, porque a compensação é imediata.",
+          "Pix e dinheiro pagam o preço em destaque, sem acréscimo. O Pix é a forma mais rápida de confirmar o pedido, porque a compensação é imediata.",
         ],
       },
       {

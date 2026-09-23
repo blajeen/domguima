@@ -170,7 +170,8 @@ consulte o [Guia de pesquisa de produtos](docs/GUIA-PESQUISA-DE-PRODUTOS.md).
 - [ ] `support.hours` e `support.email` em `src/config/site.ts` (hoje `null`, então não aparecem)
 - [ ] CNPJ e endereço fiscal para o rodapé e as páginas institucionais
 - [ ] Atualizar periodicamente a nota e a quantidade pública do Google
-- [ ] Confirmar as regras comerciais em `commerce` (parcelamento e desconto no Pix)
+- [x] Parcelamento no cartão: o preço cadastrado é o à vista (Pix ou dinheiro) e o site calcula o parcelado de cada produto com a tabela da maquininha (1x a 18x, mandada pelo dono em 23/09/2026), editável em Configurações → Parcelamento no cartão, junto com o "em até Nx" anunciado no preço
+- [ ] Confirmar com o dono: a chamada junto do preço fica em 12x (como na lista de vendas dele) ou vai até 18x? E a maquininha tem parcela mínima?
 
 ---
 

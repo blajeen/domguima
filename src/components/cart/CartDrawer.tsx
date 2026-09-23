@@ -22,7 +22,6 @@ export function CartDrawer() {
         items.length > 0 ? (
           <div className="space-y-3">
             <CartTotals
-              items={items}
               subtotal={subtotal}
               savings={savings}
               shipping="Calculado na próxima etapa"

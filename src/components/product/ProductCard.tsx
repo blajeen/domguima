@@ -117,7 +117,7 @@ export function ProductCard({
             className="mt-3"
             cents={product.price}
             oldCents={product.oldPrice}
-            lines={paymentLines(product.price, product.cardInstallment)}
+            lines={paymentLines(product.cardInstallment)}
           />
         </div>
       </Link>
@@ -171,6 +171,5 @@ function paraOCarrinho(product: Product): CartProductInput {
     stock: product.stock,
     images: product.images[0] ? [{ src: product.images[0].src }] : [],
     shipping: { weight: product.shipping.weight },
-    cardInstallment: product.cardInstallment,
   };
 }

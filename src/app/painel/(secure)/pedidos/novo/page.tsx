@@ -3,7 +3,7 @@ import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { OrderComposer, type OrderComposerLead } from "@/components/admin/OrderComposer";
 import { requireOwner } from "@/lib/admin/auth";
 import { phoneKey } from "@/lib/admin/customers";
-import { getAdminProducts, getSalesOrders, getSellers } from "@/lib/admin/data";
+import { getAdminProducts, getParcelamento, getSalesOrders, getSellers } from "@/lib/admin/data";
 import { findLead } from "@/lib/admin/leads";
 import { LEAD_KIND_LABELS, type LeadRecord } from "@/lib/admin/types";
 import { isTrafficSource } from "@/lib/services/origem";
@@ -23,11 +23,12 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   const voltaBruta = typeof params.volta === "string" ? params.volta : "";
   const volta = voltaBruta.startsWith("/painel/atendimento") ? voltaBruta : "/painel/atendimento";
 
-  const [products, sellers, atendimento, pedidos] = await Promise.all([
+  const [products, sellers, atendimento, pedidos, parcelamento] = await Promise.all([
     getAdminProducts(),
     getSellers(),
     atendimentoId ? findLead(atendimentoId) : Promise.resolve(null),
     atendimentoId ? getSalesOrders() : Promise.resolve([]),
+    getParcelamento(),
   ]);
   const options = products.filter((product) => product.status !== "archived").map((product) => ({
     id: product.id,
@@ -61,7 +62,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         {" "}<Link href={volta} className="font-bold underline">Voltar ao Atendimento</Link>
       </div>
     )}
-    <OrderComposer products={options} sellers={sellers} lead={lead} returnTo={lead ? volta : undefined} />
+    <OrderComposer products={options} sellers={sellers} taxas={parcelamento.taxas} lead={lead} returnTo={lead ? volta : undefined} />
   </>;
 }
 

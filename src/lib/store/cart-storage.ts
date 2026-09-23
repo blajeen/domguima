@@ -39,21 +39,14 @@ function isCartItem(value: unknown): value is CartItem {
 }
 
 /**
- * Parcelamento salvo que não tem cara de parcelamento vira "não se sabe": o
- * total do carrinho então não mostra condição, em vez de mostrar "R$ NaN".
+ * Carrinhos salvos até 23/09/2026 guardavam o parcelado de cada linha. Hoje o
+ * total calcula o parcelado sobre a soma, com a tabela da maquininha, e o
+ * campo antigo (às vezes com um valor velho) só sairia do navegador quando o
+ * cliente esvaziasse o carrinho.
  */
-function withValidInstallment(item: CartItem): CartItem {
-  const parcela: unknown = item.cardInstallment;
-  if (parcela === undefined || parcela === null) return item;
-  const p = parcela as Record<string, unknown>;
-  const ok =
-    typeof p.count === "number" &&
-    Number.isInteger(p.count) &&
-    p.count >= 1 &&
-    typeof p.value === "number" &&
-    p.value > 0;
-  if (ok) return item;
-  const limpo = { ...item };
+function semParceladoAntigo(item: CartItem): CartItem {
+  if (!("cardInstallment" in item)) return item;
+  const limpo: CartItem & { cardInstallment?: unknown } = { ...item };
   delete limpo.cardInstallment;
   return limpo;
 }
@@ -64,7 +57,7 @@ function read(): CartItem[] {
     if (!raw) return EMPTY;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return EMPTY;
-    const valid = parsed.filter(isCartItem).map(withValidInstallment);
+    const valid = parsed.filter(isCartItem).map(semParceladoAntigo);
     return valid.length > 0 ? valid : EMPTY;
   } catch {
     // Modo privado, cota cheia ou JSON corrompido: começa com carrinho vazio.

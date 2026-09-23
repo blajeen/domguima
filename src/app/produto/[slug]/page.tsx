@@ -18,9 +18,11 @@ import {
   numerosDoProduto,
   type NumeroDoProduto,
 } from "@/lib/catalog/apresentacao";
+import { loadParcelamento } from "@/lib/catalog/database";
 import { getAllProducts, getCatalogCategories, getProductBySlug, getRelatedProducts } from "@/lib/catalog/queries";
 import { reputacaoDaLoja, type CanalReputacao } from "@/lib/catalog/reputacao";
 import type { Product, Specification } from "@/lib/catalog/types";
+import { ParcelamentoProvider } from "@/lib/store/parcelamento";
 import { formatDate, formatNota, formatWeight } from "@/lib/utils/format";
 import { absoluteUrl, JsonLd } from "@/lib/utils/seo";
 
@@ -93,6 +95,7 @@ export default async function ProductPage({ params }: PageProps) {
   const category = (await getCatalogCategories()).find((item) => item.id === product.categoryId);
   const related = await getRelatedProducts(product);
   const { google, shopee } = await reputacaoDaLoja();
+  const parcelamento = await loadParcelamento();
   const productUrl = absoluteUrl(`/produto/${product.slug}`);
   // A pagina abre na mesma opcao que o seletor comeca marcada: a primeira com
   // estoque. Calcular aqui evita a galeria trocar de foto depois de montar.
@@ -158,7 +161,11 @@ export default async function ProductPage({ params }: PageProps) {
             {numeros.length > 0 && <NumerosDoProduto numeros={numeros} />}
 
             <div className="mt-5">
-              <ProductPurchase product={product} productUrl={productUrl} />
+              {/* A tabela de parcelas lê a tabela da maquininha desta página,
+                  a mesma leitura que calculou o cardInstallment do produto. */}
+              <ParcelamentoProvider value={parcelamento}>
+                <ProductPurchase product={product} productUrl={productUrl} />
+              </ParcelamentoProvider>
             </div>
 
             {/* Observação real do lojista — nunca texto genérico de marketing. */}

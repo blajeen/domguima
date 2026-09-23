@@ -7,6 +7,7 @@ import { contactableAttendants } from "@/lib/admin/distribution";
 import { normalizeLeadDistributionMode } from "@/lib/admin/sellers";
 import { contactsFor } from "@/lib/services/whatsapp";
 import { categories as fallbackCategories } from "./categories";
+import { lerParcelamento, parcelamentoMaximo, PARCELAMENTO_PADRAO, type ParcelamentoDaLoja } from "./parcelamento";
 import { products as fallbackProducts } from "./products";
 import type { Category, Product, ProductImage } from "./types";
 import type { LeadDistributionMode, StoreSettings } from "@/lib/admin/types";
@@ -20,10 +21,33 @@ export interface PublicAttendants {
 export async function loadCatalogProducts(): Promise<Product[]> {
   try {
     const state = await readCatalogState();
-    if (!state.catalogEnabled) return fallbackProducts;
+    const parcelamento = lerParcelamento(state.settings);
+    if (!state.catalogEnabled) return fallbackProducts.map((product) => comParcelamento(product, parcelamento));
     const products = state.products.filter((product) => product.status === "active");
-    return products.length ? products.map((row) => toProduct(row as unknown as Record<string, unknown>)) : fallbackProducts;
-  } catch { return fallbackProducts; }
+    return (products.length ? products.map((row) => toProduct(row as unknown as Record<string, unknown>)) : fallbackProducts)
+      .map((product) => comParcelamento(product, parcelamento));
+  } catch { return fallbackProducts.map((product) => comParcelamento(product, PARCELAMENTO_PADRAO)); }
+}
+
+/**
+ * O parcelado de cada produto e de cada opção, calculado sobre o preço à
+ * vista com a tabela da maquininha. É o único lugar que o define: a coluna
+ * `card_installment` do banco (digitada à mão, que ficava velha quando o
+ * preço mudava) não é mais lida pela loja.
+ */
+function comParcelamento(product: Product, parcelamento: ParcelamentoDaLoja): Product {
+  return {
+    ...product,
+    cardInstallment: parcelamentoMaximo(product.price, parcelamento) ?? undefined,
+    ...(product.variantOptions
+      ? {
+          variantOptions: product.variantOptions.map((opcao) => ({
+            ...opcao,
+            cardInstallment: parcelamentoMaximo(opcao.price, parcelamento) ?? undefined,
+          })),
+        }
+      : {}),
+  };
 }
 
 export async function loadCatalogCategories(): Promise<Category[]> {
@@ -33,6 +57,16 @@ export async function loadCatalogCategories(): Promise<Category[]> {
     const categories = state.categories.filter((category) => category.active).sort((a, b) => a.sort_order - b.sort_order);
     return categories.length ? categories.map((row) => ({ id: row.id, name: row.name, slug: row.slug, description: row.description, icon: row.icon, order: row.sort_order, inMainMenu: row.in_main_menu })) : fallbackCategories;
   } catch { return fallbackCategories; }
+}
+
+/**
+ * Tabela da maquininha e chamada das Configurações, para o que calcula no
+ * navegador. As páginas que mostram parcelas (produto, carrinho, checkouts)
+ * leem aqui no próprio segmento: o layout raiz não é buscado de novo na
+ * navegação dentro do site, e a tabela dele ficaria velha até o recarregamento.
+ */
+export async function loadParcelamento(): Promise<ParcelamentoDaLoja> {
+  return lerParcelamento(await loadPublicStoreSettings());
 }
 
 export async function loadPublicStoreSettings(): Promise<StoreSettings> {
@@ -84,6 +118,6 @@ function toProduct(row: Record<string, unknown>): Product {
     ...(variantOptions.length ? { variantOptions, variantAxis: String(row.variant_axis ?? "Variação") } : {}),
     variants: Array.isArray(row.variants) ? row.variants as Product["variants"] : [], specifications: Array.isArray(row.specifications) ? row.specifications as Product["specifications"] : [],
     shipping: { weight: Number(shipping?.weight ?? 0), dimensions: { length: Number(shipping?.dimensions?.length ?? 0), width: Number(shipping?.dimensions?.width ?? 0), height: Number(shipping?.dimensions?.height ?? 0) }, origin: String(shipping?.origin ?? "Minas Gerais") },
-    ...(row.rating != null ? { rating: Number(row.rating) } : {}), ...(row.review_count != null ? { reviewCount: Number(row.review_count) } : {}), ...(row.sold_count != null ? { soldCount: Number(row.sold_count) } : {}), isFeatured: Boolean(row.is_featured), isBestSeller: Boolean(row.is_best_seller), isOffer: Boolean(row.is_offer), isExclusive: Boolean(row.is_exclusive), tags: Array.isArray(row.tags) ? row.tags.map(String) : [], dataSource: (row.data_source ?? "loja-verified") as Product["dataSource"], ...(row.source_url ? { sourceUrl: String(row.source_url) } : {}), ...(row.card_installment ? { cardInstallment: row.card_installment as Product["cardInstallment"] } : {}), ...(row.seller_note ? { sellerNote: String(row.seller_note) } : {}), ...(row.published_at ? { publishedAt: String(row.published_at) } : {}), ...(row.last_stock_entry_at ? { lastStockEntryAt: String(row.last_stock_entry_at) } : {}), ...(row.last_sale_at ? { lastSaleAt: String(row.last_sale_at) } : {}), heroEnabled: row.hero_enabled !== false, heroPriority: Number(row.hero_priority ?? 0),
+    ...(row.rating != null ? { rating: Number(row.rating) } : {}), ...(row.review_count != null ? { reviewCount: Number(row.review_count) } : {}), ...(row.sold_count != null ? { soldCount: Number(row.sold_count) } : {}), isFeatured: Boolean(row.is_featured), isBestSeller: Boolean(row.is_best_seller), isOffer: Boolean(row.is_offer), isExclusive: Boolean(row.is_exclusive), tags: Array.isArray(row.tags) ? row.tags.map(String) : [], dataSource: (row.data_source ?? "loja-verified") as Product["dataSource"], ...(row.source_url ? { sourceUrl: String(row.source_url) } : {}), ...(row.seller_note ? { sellerNote: String(row.seller_note) } : {}), ...(row.published_at ? { publishedAt: String(row.published_at) } : {}), ...(row.last_stock_entry_at ? { lastStockEntryAt: String(row.last_stock_entry_at) } : {}), ...(row.last_sale_at ? { lastSaleAt: String(row.last_sale_at) } : {}), heroEnabled: row.hero_enabled !== false, heroPriority: Number(row.hero_priority ?? 0),
   };
 }

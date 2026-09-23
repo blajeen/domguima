@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { simulateAllInstallments } from "@/lib/admin/card-fees";
+import { formatarTaxa, type TaxasDoCartao } from "@/lib/catalog/parcelamento";
 import { formatPrice } from "@/lib/utils/format";
 
 /**
@@ -17,17 +18,20 @@ import { formatPrice } from "@/lib/utils/format";
  */
 export function InstallmentSimulator({
   cents,
+  taxas,
   titulo = "Simulação de parcelamento",
   aberto = false,
 }: {
   cents: number;
+  /** A tabela de Configurações, a mesma que o site usa. */
+  taxas: TaxasDoCartao;
   titulo?: string;
   aberto?: boolean;
 }) {
   const [mostrando, setMostrando] = useState(aberto);
 
-  if (cents <= 0) return null;
-  const linhas = simulateAllInstallments(cents);
+  if (cents <= 0 || taxas.length === 0) return null;
+  const linhas = simulateAllInstallments(cents, taxas);
 
   return (
     <section className="rounded-xl border border-ink-200 bg-white">
@@ -40,7 +44,8 @@ export function InstallmentSimulator({
         <span>
           <span className="block text-sm font-black text-ink-900">{titulo}</span>
           <span className="block text-xs text-ink-500">
-            Sobre {formatPrice(cents)} · taxas da maquininha de 2,93% (1x) a 11,51% (12x)
+            Sobre {formatPrice(cents)} · taxas da maquininha de {formatarTaxa(taxas[0])} (1x) a{" "}
+            {formatarTaxa(taxas[taxas.length - 1])} ({taxas.length}x)
           </span>
         </span>
         <span className="shrink-0 text-xs font-bold text-blue-700">{mostrando ? "ocultar" : "ver tabela"}</span>
@@ -63,9 +68,7 @@ export function InstallmentSimulator({
                 {linhas.map((linha) => (
                   <tr key={linha.count}>
                     <td className="py-2 pr-3 font-black text-ink-900">{linha.count}x</td>
-                    <td className="py-2 pr-3 text-ink-500">
-                      {linha.feePercent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}%
-                    </td>
+                    <td className="py-2 pr-3 text-ink-500">{formatarTaxa(linha.feePercent)}</td>
                     <td className="py-2 pr-3 font-bold text-ink-900">
                       {linha.count}× {formatPrice(linha.installmentCents)}
                     </td>

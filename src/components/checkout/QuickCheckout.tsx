@@ -9,6 +9,7 @@ import { ATENDIMENTO_ROUTE, atendimentoFields, quickCartMessage } from "@/lib/se
 import { useAttendants } from "@/lib/store/attendants";
 import { lineKey, useCart } from "@/lib/store/cart";
 import { CartTotals } from "@/components/cart/CartTotals";
+import { TabelaDeParcelas } from "@/components/product/TabelaDeParcelas";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, textLinkStyles } from "@/components/ui/Button";
 import { campoStyles } from "@/components/ui/campo";
@@ -236,12 +237,14 @@ export function QuickCheckout() {
           </ul>
           <div className="border-t border-fio pt-3">
             <CartTotals
-              items={items}
               subtotal={subtotal}
               savings={savings}
               shipping="Combinado com o vendedor"
               showSubtotal={false}
             />
+            {/* Aqui não há escolha de pagamento: as parcelas ficam à mão,
+                recolhidas, para o cliente já chegar ao vendedor sabendo. */}
+            <TabelaDeParcelas cents={subtotal} rotulo="Parcelas no cartão (sem o frete)" className="mt-3" />
           </div>
           <div className="mt-3 text-center">
             <Link href="/checkout" className={textLinkStyles}>

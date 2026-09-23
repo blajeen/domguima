@@ -2,6 +2,7 @@ import "server-only";
 
 import { readCatalogState } from "./catalog-store";
 import { buildCustomerIndex, customerSummaries, lookupCustomerPurchases, recentBuyers, RECENT_BUYERS_DAYS, repurchaseSuggestions, type CustomerIndex } from "./customers";
+import { lerParcelamento, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { defaultStoreSettings } from "./defaults";
 import { countLeads, leadLocalDate, listOpenLeadKeys } from "./leads";
 import { canonicalSellerId, sortSellers } from "./sellers";
@@ -185,6 +186,11 @@ export async function getAuditLogs(limit = 100) {
 export async function getStoreSettings(): Promise<StoreSettings> {
   const state = await readCatalogState();
   return { ...defaultStoreSettings, ...state.settings };
+}
+
+/** Tabela da maquininha e chamada de Configurações, as mesmas que o site usa para o parcelado. */
+export async function getParcelamento(): Promise<ParcelamentoDaLoja> {
+  return lerParcelamento(await getStoreSettings());
 }
 
 function normalizeProductOperationalMeta(value?: Partial<ProductOperationalMeta> | null): ProductOperationalMeta {

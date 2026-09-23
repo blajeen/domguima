@@ -1,3 +1,5 @@
+import type { Installment } from "@/lib/utils/format";
+
 /** Origem do registro — sempre explícita, nunca "meio real". */
 export type DataSource =
   /** Importado da loja oficial na Shopee. IDs, preços, fotos e vendas reais. */
@@ -47,6 +49,8 @@ export interface ProductVariantOption {
   stock: number;
   /** Foto desta opcao. Ausente = usa a imagem principal do produto. */
   image?: string;
+  /** Parcelado calculado sobre o preco DESTA opcao (ver Product.cardInstallment). */
+  cardInstallment?: Installment;
 }
 
 export interface Product {
@@ -90,13 +94,13 @@ export interface Product {
   /** Link do anúncio original, quando existir. */
   sourceUrl?: string;
   /**
-   * Parcelamento REAL no cartão, com a taxa da maquininha já embutida —
-   * informado pelo lojista, não calculado. Quando presente, a UI mostra este
-   * valor em vez do parcelamento "sem juros" computado, e não soma o desconto
-   * genérico do Pix por cima: para estes produtos, `price` já É o preço à
-   * vista no Pix/dinheiro, exatamente como o lojista informou.
+   * A chamada do cartão junto do preço ("em até Nx de R$ X"), CALCULADA sobre
+   * `price` com a tabela da maquininha das Configurações, com a taxa
+   * repassada (`parcelamentoMaximo`, aplicado em `comParcelamento`, em
+   * lib/catalog/database.ts). `price` é sempre o preço à vista no Pix ou
+   * dinheiro, o único que o lojista cadastra. Ausente quando a tabela só tem 1x.
    */
-  cardInstallment?: { count: number; value: number };
+  cardInstallment?: Installment;
   /** Observação pontual do lojista (ex.: "Entrega grátis em Uberlândia"). */
   sellerNote?: string;
   /** Data real de publicacao pelo painel. Ausente nos itens antigos importados. */

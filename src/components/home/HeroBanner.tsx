@@ -194,7 +194,7 @@ function Slide({
           tone="papel"
           cents={banner.price.price}
           oldCents={banner.price.oldPrice}
-          lines={paymentLines(banner.price.price, banner.price.cardInstallment)}
+          lines={paymentLines(banner.price.cardInstallment)}
         />
         <ButtonLink href={banner.href} variant="claro" className="mt-6 w-fit">
           {banner.ctaLabel}

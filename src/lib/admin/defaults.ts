@@ -1,5 +1,6 @@
 import { whatsapp } from "@/config/site";
 import { categories as fallbackCategories } from "@/lib/catalog/categories";
+import { ANUNCIAR_ATE_PADRAO, TAXAS_PADRAO, taxasParaTexto } from "@/lib/catalog/parcelamento";
 import { products as fallbackProducts } from "@/lib/catalog/products";
 import type { AdminCategoryRow, AdminProductRow, StoreSettings } from "./types";
 
@@ -20,8 +21,8 @@ export const defaultStoreSettings: StoreSettings = {
   googleRating: "5,0",
   googleRatingCount: "405",
   googleVerifiedAt: "2026-08-20",
-  pixDiscountPercent: "5",
-  maxInstallments: "3",
+  cardFeeTable: taxasParaTexto(TAXAS_PADRAO),
+  cardInstallmentsHeadline: String(ANUNCIAR_ATE_PADRAO),
   leadDistributionMode: "customer_choice",
 };
 
@@ -40,7 +41,7 @@ export function fallbackProductRow(product: (typeof fallbackProducts)[number]): 
     shipping: product.shipping, rating: product.rating ?? null, review_count: product.reviewCount ?? null,
     sold_count: product.soldCount ?? null, is_featured: product.isFeatured, is_best_seller: product.isBestSeller,
     is_offer: product.isOffer, is_exclusive: product.isExclusive ?? false, tags: product.tags, data_source: product.dataSource, source_url: product.sourceUrl ?? null,
-    card_installment: product.cardInstallment ?? null, seller_note: product.sellerNote ?? null,
+    card_installment: null, seller_note: product.sellerNote ?? null,
     published_at: product.publishedAt ?? null, last_stock_entry_at: product.lastStockEntryAt ?? null,
     last_sale_at: product.lastSaleAt ?? null, hero_enabled: product.heroEnabled ?? true,
     hero_priority: product.heroPriority ?? 0, created_at: "2026-08-20T00:00:00.000Z",

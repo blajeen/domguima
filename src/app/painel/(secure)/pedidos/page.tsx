@@ -9,7 +9,8 @@ import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
 import { buildCustomerIndex, phoneKey, recurrenceBadge } from "@/lib/admin/customers";
-import { getSalesOrders, getSellers } from "@/lib/admin/data";
+import { getParcelamento, getSalesOrders, getSellers } from "@/lib/admin/data";
+import type { TaxasDoCartao } from "@/lib/catalog/parcelamento";
 import { channelFilterParam, matchesOriginFilters, ORIGIN_FILTER_NOT_INFORMED, sourceFilterParam } from "@/lib/admin/reports";
 import {
   ORDER_CHANNEL_LABELS,
@@ -32,7 +33,7 @@ const BULK_FORM_ID = "pedidos-em-massa";
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<Params> }) {
   await requireOwner();
   const params = await searchParams;
-  const [allOrders, sellers] = await Promise.all([getSalesOrders(), getSellers()]);
+  const [allOrders, sellers, parcelamento] = await Promise.all([getSalesOrders(), getSellers(), getParcelamento()]);
   const query = typeof params.q === "string" ? params.q.trim() : "";
   const seller = typeof params.vendedor === "string" ? params.vendedor : "";
   const status = params.status === "cancelled" ? "cancelled" : params.status === "completed" ? "completed" : params.status === "pending" ? "pending" : "";
@@ -138,6 +139,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               key={order.id}
               order={order}
               sellers={sellers}
+              taxas={parcelamento.taxas}
               volta={volta}
               customer={chave ? recurrenceBadge(clientes.completedBefore(chave, order.created_at), clientes.completedOrders(chave)) : null}
             />
@@ -149,9 +151,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function OrderRow({ order, sellers, volta, customer }: {
+function OrderRow({ order, sellers, taxas, volta, customer }: {
   order: SalesOrderRecord;
   sellers: Awaited<ReturnType<typeof getSellers>>;
+  taxas: TaxasDoCartao;
   volta: string;
   /** Etiqueta de recorrência; `null` quando o pedido não tem telefone nem CPF (ou foi cancelado). */
   customer: { returning: boolean; label: string } | null;
@@ -251,7 +254,7 @@ function OrderRow({ order, sellers, volta, customer }: {
               </div>}
               {order.status === "completed" && <div className="mt-4"><CancelOrderForm orderId={order.id} orderNumber={order.number} /></div>}
               {order.status === "cancelled" && <p className="mt-4 border-t border-ink-100 pt-4 text-xs text-ink-400">Pedido cancelado. Confira o histórico se precisar auditar a operação.</p>}
-              {order.status !== "cancelled" && <div className="mt-4 border-t border-ink-100 pt-4"><InstallmentSimulator cents={order.total_cents} titulo={`Parcelamento de ${order.number}`} /></div>}
+              {order.status !== "cancelled" && <div className="mt-4 border-t border-ink-100 pt-4"><InstallmentSimulator cents={order.total_cents} taxas={taxas} titulo={`Parcelamento de ${order.number}`} /></div>}
             </div>
           </div>
         </div>

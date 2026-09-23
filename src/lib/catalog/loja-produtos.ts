@@ -8,9 +8,10 @@ import type { Product, ProductImage, Specification } from "./types";
  *
  * Estes produtos vêm da lista de vendas que a Dom Guima usa no WhatsApp
  * (arquivo "VENDAS NOVO.txt", recebido do lojista em 20/08/2026). Preço,
- * marca, especificação e voltagem são REAIS — a taxa do cartão inclusive,
- * que aqui é exibida como o lojista informa (com taxa), não calculada como
- * "sem juros".
+ * marca, especificação e voltagem são REAIS. O parcelado da lista (`card`)
+ * fica só como histórico: desde 23/09/2026 o site calcula o parcelado de todo
+ * produto pelo preço à vista, com a tabela da maquininha de Configurações
+ * (lib/catalog/parcelamento.ts), e não lê mais esse valor.
  *
  * O que NÃO temos ainda: foto do produto em si (por isso `dataSource:
  * "loja-verified"`, não "shopee-verified") e dado de venda/avaliação — por
@@ -76,7 +77,11 @@ interface LojaDraft {
   categoryId: string;
   /** Centavos — preço à vista informado pelo lojista (Pix ou dinheiro). */
   price: number;
-  /** [parcelas, valor da parcela em centavos] — com taxa do cartão, real. */
+  /**
+   * [parcelas, valor da parcela em centavos] como a lista de 20/08/2026 trazia.
+   * Histórico: o site calcula o parcelado pela tabela da maquininha
+   * (`comParcelamento`, em lib/catalog/database.ts) e sobrescreve este valor.
+   */
   card: [number, number];
   img: string;
   bullets: string[];

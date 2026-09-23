@@ -5,9 +5,11 @@ import { saveProductAction } from "@/app/painel/actions";
 import type { CategorySkuChoice } from "@/lib/admin/sku";
 import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta } from "@/lib/admin/types";
 import type { ProductResearchResult } from "@/lib/admin/product-research-types";
-import { formatPrice, normalize } from "@/lib/utils/format";
+import { formatPrice, normalize, paymentLines } from "@/lib/utils/format";
 import { onlyDigits } from "@/lib/utils/validators";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
+import { parcelamentoMaximo, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
+import { InstallmentSimulator } from "./InstallmentSimulator";
 import { ProductResearchAssistant, type ResearchFillReport, type ResearchLookup } from "./ProductResearchAssistant";
 import { VariantEditor } from "./VariantEditor";
 
@@ -20,9 +22,11 @@ interface ProductFormProps {
   templates?: ProductAssistTemplate[];
   /** Falso enquanto a migracao de variacoes nao foi aplicada ao banco. */
   variantsSupported?: boolean;
+  /** Tabela da maquininha e chamada de Configuracoes, para mostrar o parcelado que o site vai calcular. */
+  parcelamento: ParcelamentoDaLoja;
 }
 
-export function ProductForm({ product, categories, operationalMeta, initialCategoryId = "", skuChoices = [], templates = [], variantsSupported = true }: ProductFormProps) {
+export function ProductForm({ product, categories, operationalMeta, initialCategoryId = "", skuChoices = [], templates = [], variantsSupported = true, parcelamento }: ProductFormProps) {
   const [state, action] = useActionState(saveProductAction, {});
   const choicesByCategory = useMemo(() => new Map(skuChoices.map((choice) => [choice.categoryId, choice])), [skuChoices]);
   const categoryNames = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
@@ -172,10 +176,10 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     </div></Section>
 
     <Section title="Preço, estoque e publicação" description="Novos produtos já ficam publicados por padrão. Você pode escolher rascunho quando quiser preparar o cadastro antes de mostrar na loja."><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Field name="cost" label="Custo (R$)" inputMode="decimal" value={cost} onChange={(event) => setCost(event.target.value)} hint="Uso interno; não aparece na loja." /><Field name="price" label="Preço atual (R$)" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required error={state.errors?.priceCents} /><Field name="oldPrice" label="Preço anterior (R$)" inputMode="decimal" defaultValue={cents(product?.old_price_cents)} hint="Opcional; deve ser maior." />
+      <Field name="cost" label="Custo (R$)" inputMode="decimal" value={cost} onChange={(event) => setCost(event.target.value)} hint="Uso interno; não aparece na loja." /><Field name="price" label="Preço à vista (R$)" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} required error={state.errors?.priceCents} hint="Pix ou dinheiro. O parcelado no cartão é calculado sozinho." /><Field name="oldPrice" label="Preço anterior (R$)" inputMode="decimal" defaultValue={cents(product?.old_price_cents)} hint="Opcional; deve ser maior." />
       {product ? <label className={labelClass}>Estoque atual<input value={product.stock} disabled className={`${fieldClass} bg-ink-50`} /><input type="hidden" name="stock" value={product.stock} /><span className="mt-1 block font-normal text-ink-400">Use a tela Estoque para alterar.</span></label> : <Field name="stock" label="Estoque inicial" type="number" min="0" defaultValue={0} required />}
       <Field name="lowStockThreshold" label="Avisar estoque baixo em" type="number" min="0" defaultValue={product?.low_stock_threshold ?? 3} required /><label className={labelClass}>Status<select name="status" defaultValue={product?.status ?? "active"} className={fieldClass}><option value="active">Publicado</option><option value="draft">Rascunho</option><option value="archived">Arquivado</option></select></label>
-      <div className={`rounded-xl border p-4 sm:col-span-2 ${costCents > 0 && priceCents > 0 ? grossProfit >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50" : "border-ink-200 bg-ink-50"}`}><p className="text-[10px] font-black uppercase tracking-wide text-ink-500">Margem bruta estimada</p>{costCents > 0 && priceCents > 0 ? <div className="mt-2 flex flex-wrap items-end justify-between gap-3"><div><strong className={`text-xl ${grossProfit >= 0 ? "text-green-800" : "text-red-700"}`}>{formatPrice(grossProfit)}</strong><span className="ml-2 text-sm font-bold text-ink-600">{marginPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><small className="text-ink-500">Antes de impostos, frete e comissão</small></div> : <p className="mt-2 text-xs text-ink-500">Preencha custo e preço para calcular.</p>}</div>
+      <div className={`rounded-xl border p-4 sm:col-span-2 ${costCents > 0 && priceCents > 0 ? grossProfit >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50" : "border-ink-200 bg-ink-50"}`}><p className="text-[10px] font-black uppercase tracking-wide text-ink-500">Margem bruta estimada</p>{costCents > 0 && priceCents > 0 ? <div className="mt-2 flex flex-wrap items-end justify-between gap-3"><div><strong className={`text-xl ${grossProfit >= 0 ? "text-green-800" : "text-red-700"}`}>{formatPrice(grossProfit)}</strong><span className="ml-2 text-sm font-bold text-ink-600">{marginPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><small className="text-ink-500">Antes de impostos, frete e comissão</small></div> : <p className="mt-2 text-xs text-ink-500">Preencha custo e preço para calcular.</p>}</div><PrecoNoSite priceCents={priceCents} parcelamento={parcelamento} comVariacoes={variantsSupported && (product?.product_variants ?? []).some((opcao) => opcao.active)} />
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:col-span-2 lg:col-span-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-blue-950">Comparativo de preços</p><p className="mt-1 text-xs text-blue-700">Pesquisa atual: {comparisonTerm || "informe nome, modelo ou EAN"}</p></div><div className="flex flex-wrap gap-2"><SearchLink label="Google Shopping" href={comparisonTerm ? googleShoppingUrl(comparisonTerm) : ""} /><SearchLink label="Buscar preços no Google" href={comparisonTerm ? googlePriceUrl(comparisonTerm) : ""} /></div></div><p className="mt-2 text-[10px] leading-relaxed text-blue-600">Os resultados abrem no Google para conferência. O painel não copia preços nem altera sua oferta automaticamente.</p></div>
       <div className="flex flex-wrap gap-4 sm:col-span-2 lg:col-span-3 lg:pt-2"><Check name="isFeatured" label="Destaque na home" checked={product?.is_featured} /><Check name="isOffer" label="Oferta" checked={product?.is_offer} /><Check name="isBestSeller" label="Seleção mais vendidos" checked={product?.is_best_seller} /><Check name="isExclusive" label="Exclusivo Dom Guima" checked={product?.is_exclusive} /><Check name="heroEnabled" label="Pode aparecer no banner" checked={product?.hero_enabled ?? true} /></div><Field name="heroPriority" label="Prioridade no banner" type="number" min="-100" max="100" defaultValue={product?.hero_priority ?? 0} hint="0 = automático; use de -100 a 100 para ajustar." />
     </div></Section>
@@ -188,6 +192,34 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
 
     <div className="sticky bottom-4 z-10 flex flex-col-reverse gap-3 rounded-xl border border-ink-200 bg-white/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"><FormMessage state={state} /><SubmitButton pendingLabel="Salvando produto...">Salvar produto</SubmitButton></div>
   </form>;
+}
+
+/**
+ * Como o preço vai aparecer na loja: o à vista e a chamada do cartão que o
+ * site calcula com a tabela da maquininha (a mesma conta de `comParcelamento`,
+ * em lib/catalog/database.ts). O lojista cadastra só o à vista; mudou o
+ * preço, o parcelado acompanha. Linha inteira da grade: a caixa de um lado e
+ * a tabela do simulador do outro, que precisa de largura para não rolar.
+ *
+ * Com variações, o preço do produto passa a ser o menor das opções ao salvar,
+ * e cada opção tem o parcelado do próprio preço: a prévia pelo campo de preço
+ * mostraria um número que o site não vai mostrar.
+ */
+function PrecoNoSite({ priceCents, parcelamento, comVariacoes }: { priceCents: number; parcelamento: ParcelamentoDaLoja; comVariacoes: boolean }) {
+  const linhas = paymentLines(parcelamentoMaximo(priceCents, parcelamento));
+  return <div className="grid gap-3 sm:col-span-2 lg:col-span-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-start">
+    <div className="rounded-xl border border-ink-200 bg-ink-50 p-4">
+      <p className="text-[10px] font-black uppercase tracking-wide text-ink-500">Como aparece no site</p>
+      {comVariacoes
+        ? <p className="mt-2 text-xs leading-relaxed text-ink-600">Produto com variações: o site calcula o parcelado de cada opção pelo preço dela, com a tabela da maquininha de Configurações.</p>
+        : priceCents > 0 ? <>
+          <p className="mt-2"><strong className="text-xl text-ink-900">{formatPrice(priceCents)}</strong> <span className="text-xs font-bold text-ink-600">{linhas.pix}</span></p>
+          {linhas.cartao && <p className="mt-0.5 text-xs text-ink-700">{linhas.cartao}</p>}
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-500">Calculado sozinho com a tabela da maquininha de Configurações.</p>
+        </> : <p className="mt-2 text-xs text-ink-500">Preencha o preço à vista para ver o parcelado.</p>}
+    </div>
+    {!comVariacoes && priceCents > 0 && <InstallmentSimulator cents={priceCents} taxas={parcelamento.taxas} titulo="Tabela de parcelas deste preço" />}
+  </div>;
 }
 
 function Section({ title, description, children, collapsible = false }: { title: string; description?: string; children: React.ReactNode; collapsible?: boolean }) { if (collapsible) return <details className="group rounded-2xl border border-ink-100 bg-white shadow-card"><summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 [&::-webkit-details-marker]:hidden"><div><h2 className="text-base font-black">{title}</h2>{description && <p className="mt-1 text-xs text-ink-500">{description}</p>}</div><span className="rounded-full bg-ink-50 px-3 py-1 text-xs font-black text-ink-500 group-open:hidden">Abrir</span><span className="hidden rounded-full bg-ink-50 px-3 py-1 text-xs font-black text-ink-500 group-open:inline">Fechar</span></summary><div className="border-t border-ink-100 p-5">{children}</div></details>; return <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-base font-black">{title}</h2>{description && <p className="mt-1 text-xs text-ink-500">{description}</p>}<div className="mt-5">{children}</div></section>; }

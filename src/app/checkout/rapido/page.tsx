@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { QuickCheckout } from "@/components/checkout/QuickCheckout";
+import { loadParcelamento } from "@/lib/catalog/database";
+import { ParcelamentoProvider } from "@/lib/store/parcelamento";
 
 export const metadata: Metadata = {
   title: "Finalização rápida",
@@ -7,6 +9,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function QuickCheckoutPage() {
-  return <QuickCheckout />;
+// A tabela de parcelas lê a tabela da maquininha deste segmento, não a do
+// layout raiz, que fica velha na navegação dentro do site.
+export default async function QuickCheckoutPage() {
+  return (
+    <ParcelamentoProvider value={await loadParcelamento()}>
+      <QuickCheckout />
+    </ParcelamentoProvider>
+  );
 }

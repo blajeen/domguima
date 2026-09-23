@@ -10,7 +10,6 @@ export interface InventoryCountUpdate {
   expectedPriceCents?: number;
   priceCents?: number;
   oldPriceCents?: number | null;
-  cardInstallment?: { count: number; value: number } | null;
 }
 
 export interface DailySaleUpdate {
@@ -54,7 +53,7 @@ export function applyInventoryCounts(
     if (nextOldPrice !== null && nextOldPrice <= nextPrice) {
       throw new InventoryOperationError(`O preço anterior de “${rotulo}” precisa ser maior que o preço atual.`);
     }
-    if (stockAtual === update.stock && precoAtual === nextPrice && product.old_price_cents === nextOldPrice && update.cardInstallment === undefined) return null;
+    if (stockAtual === update.stock && precoAtual === nextPrice && product.old_price_cents === nextOldPrice) return null;
     return { product, opcao, update, nextPrice, nextOldPrice, stockAtual, precoAtual };
   }).filter((change) => change !== null);
 
@@ -71,9 +70,9 @@ export function applyInventoryCounts(
       product.stock = update.stock;
       product.price_cents = nextPrice;
     }
-    // Preco anterior e parcelamento sao do produto, nao da opcao.
+    // Preco anterior e do produto, nao da opcao. O parcelado nao se grava: o
+    // site calcula pelo preco, com a tabela da maquininha (Configuracoes).
     product.old_price_cents = nextOldPrice;
-    if (update.cardInstallment !== undefined) product.card_installment = update.cardInstallment;
     product.updated_at = now;
 
     if (update.stock !== stockAtual) {

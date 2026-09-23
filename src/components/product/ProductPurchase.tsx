@@ -14,6 +14,7 @@ import { useCart } from "@/lib/store/cart";
 import { formatPrice } from "@/lib/utils/format";
 import { CONFIRMACAO_MS } from "./AddToCartButton";
 import { BarraCompraFixa } from "./BarraCompraFixa";
+import { TabelaDeParcelas } from "./TabelaDeParcelas";
 import { useVariantImage } from "./VariantImageContext";
 
 /**
@@ -64,8 +65,8 @@ export function ProductPurchase({
   const outOfStock = estoque <= 0;
   const linhas = linhasDoPreco(product, opcao);
   // O preço "de" é do preço-base do produto (o mesmo que o card mostra com o
-  // −X%). Vale para a opção com esse preço, como o parcelamento em
-  // `linhasDoPreco`; opção com preço próprio fica sem desconto.
+  // −X%). Vale para a opção com esse preço; opção com preço próprio fica sem
+  // desconto. O parcelado não tem essa regra: é calculado sobre cada preço.
   const precoAnterior = !opcao || opcao.price === product.price ? product.oldPrice : undefined;
 
   useEffect(() => {
@@ -99,6 +100,8 @@ export function ProductPurchase({
           lines={linhas}
         />
         <Disponibilidade estoque={estoque} />
+        {/* Sobre o preço da opção marcada: trocar a cor mais cara refaz as parcelas. */}
+        <TabelaDeParcelas cents={preco} className="mt-3" />
       </div>
 
       {/* Fio dourado: a assinatura que separa o preço da decisão de compra. */}
@@ -256,9 +259,9 @@ export function ProductPurchase({
         <BarraCompraFixa
           alvo={acoesRef}
           cents={preco}
-          // Só a frase curta cabe ao lado do botão. Nos produtos com
-          // parcelamento real o preço já é o do Pix, e a barra diz isso.
-          lines={product.cardInstallment ? { pix: linhas.pix, cartao: null } : null}
+          // Só a frase curta cabe ao lado do botão: o preço é o à vista, no
+          // Pix ou dinheiro, e a barra diz isso.
+          lines={{ pix: linhas.pix, cartao: null }}
           rotulo="Comprar agora"
           onComprar={buyNow}
         />

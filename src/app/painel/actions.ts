@@ -31,6 +31,7 @@ import {
   type TrafficSource,
 } from "@/lib/admin/types";
 import { isTrafficSource, trafficSourceLabel } from "@/lib/services/origem";
+import { ANUNCIAR_ATE_PADRAO, MAX_PARCELAS, taxasParaTexto, validarTabelaDigitada } from "@/lib/catalog/parcelamento";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, isValidDocument, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
@@ -42,7 +43,6 @@ const inventoryCountInput = z.object({
   expectedPriceCents: z.number().int().positive().optional(),
   priceCents: z.number().int().positive().optional(),
   oldPriceCents: z.number().int().positive().nullable().optional(),
-  cardInstallment: z.object({ count: z.number().int().min(2).max(24), value: z.number().int().positive() }).nullable().optional(),
 });
 
 const dailySaleInput = z.object({
@@ -530,16 +530,37 @@ export async function saveCategoryAction(_: ActionState, formData: FormData): Pr
 
 export async function saveSettingsAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
-  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "pixDiscountPercent", "maxInstallments", "leadDistributionMode"];
+  const keys: Array<Exclude<keyof StoreSettings, "catalogEnabled" | "cardFeeTable" | "cardInstallmentsHeadline">> = ["supportEmail", "supportHours", "cnpj", "fiscalAddress", "whatsappDisplay", "whatsappNumber", "instagramUrl", "shopeeUrl", "googleUrl", "googleRating", "googleRatingCount", "googleVerifiedAt", "leadDistributionMode"];
+  const parcelamento = readParcelamento(formData);
+  if (!parcelamento.ok) return { message: parcelamento.message };
   await mutateCatalogState((state) => {
     const before = { ...state.settings };
     for (const key of keys) state.settings[key] = String(formData.get(key) ?? "").trim();
+    state.settings.cardFeeTable = taxasParaTexto(parcelamento.taxas);
+    state.settings.cardInstallmentsHeadline = String(parcelamento.anunciarAte);
     // Valor fora da lista (form adulterado ou versao antiga) volta ao padrao.
     state.settings.leadDistributionMode = normalizeLeadDistributionMode(state.settings.leadDistributionMode);
     audit(state, owner.id, "settings.updated", "settings", "store", before, state.settings);
   });
   refreshCatalog();
   return { ok: true, message: "Configuracoes salvas." };
+}
+
+/**
+ * Tabela da maquininha (`cardFee_1` = 1x ...) e chamada do preço de
+ * Configurações. Mesma validação que o formulário faz antes de enviar
+ * (`validarTabelaDigitada`); aqui ela segura form adulterado ou antigo.
+ */
+function readParcelamento(formData: FormData): { ok: true; taxas: number[]; anunciarAte: number } | { ok: false; message: string } {
+  const valores = Array.from({ length: MAX_PARCELAS }, (_, indice) => String(formData.get(`cardFee_${indice + 1}`) ?? ""));
+  const tabela = validarTabelaDigitada(valores);
+  if (!tabela.ok) return { ok: false, message: tabela.mensagem };
+  if (tabela.taxas.length < 2) return { ok: true, taxas: tabela.taxas, anunciarAte: ANUNCIAR_ATE_PADRAO };
+  const anunciarAte = Number(formData.get("cardInstallmentsHeadline"));
+  if (!Number.isInteger(anunciarAte) || anunciarAte < 2 || anunciarAte > tabela.taxas.length) {
+    return { ok: false, message: `Anunciar junto do preço: escolha de 2 a ${tabela.taxas.length} vezes (a última da tabela).` };
+  }
+  return { ok: true, taxas: tabela.taxas, anunciarAte };
 }
 
 // `name` vem primeiro de proposito: o zod reporta a primeira falha na ordem das

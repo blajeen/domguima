@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { registerDailySalesAction, saveInventoryCountsAction } from "@/app/painel/actions";
 import type { ActionState, InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/types";
+import { parcelamentoMaximo, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { formatPrice, normalize } from "@/lib/utils/format";
 
 type ViewMode = "count" | "sales";
@@ -19,16 +20,18 @@ function matchesStockFilter(filter: StockFilter, stock: number, lowStockThreshol
 }
 type SortKey = "name" | "price" | "stock";
 type Draft = { stock: number; originalStock: number; exitQty: number };
-type ImportLine = { rowNumber: number; sku: string; name: string; productId: string | null; stock: number | null; priceCents: number | null; oldPriceCents: number | null; cardInstallment?: { count: number; value: number } | null; issues: string[] };
-type ImportPreview = { fileName: string; rows: ImportLine[] };
+type ImportLine = { rowNumber: number; sku: string; name: string; productId: string | null; stock: number | null; priceCents: number | null; oldPriceCents: number | null; issues: string[] };
+type ImportPreview = { fileName: string; rows: ImportLine[]; parceladoIgnorado: boolean };
 
 interface InventorySpreadsheetProps {
   products: InventorySheetProduct[];
   movements: InventorySheetMovement[];
   todayUnits: number;
+  /** Tabela da maquininha e chamada de Configurações, para a coluna informativa de parcelado. */
+  parcelamento: ParcelamentoDaLoja;
 }
 
-export function InventorySpreadsheet({ products, movements, todayUnits }: InventorySpreadsheetProps) {
+export function InventorySpreadsheet({ products, movements, todayUnits, parcelamento }: InventorySpreadsheetProps) {
   const [sheetProducts, setSheetProducts] = useState(products);
   const [mode, setMode] = useState<ViewMode>("count");
   const [query, setQuery] = useState("");
@@ -139,12 +142,15 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
   }
 
   function exportExcel() {
-    const header = ["nome_produto", "sku", "estoque", "valor_real", "valor_promocional", "valor_parcelado"];
+    const header = ["nome_produto", "sku", "estoque", "valor_real", "valor_promocional", "parcelado_no_site (calculado)"];
     const lines = sheetProducts.map((product) => {
       const draft = drafts[product.id];
       const real = product.old_price_cents ?? product.price_cents;
       const promo = product.old_price_cents ? product.price_cents : "";
-      const installment = product.installment_count && product.installment_value_cents ? `${product.installment_count}x de ${formatPrice(product.installment_value_cents)}` : "";
+      // Só informativo: o site calcula o parcelado sozinho pela tabela da
+      // maquininha (Configurações), e a importação ignora esta coluna.
+      const parcelado = parcelamentoMaximo(product.price_cents, parcelamento);
+      const installment = parcelado ? `${parcelado.count}x de ${formatPrice(parcelado.value)}` : "";
       return [product.name, product.sku, draft.stock, formatPrice(real), promo === "" ? "" : formatPrice(Number(promo)), installment].map(csvCell).join(";");
     });
     const blob = new Blob(["\uFEFF", [header.map(csvCell).join(";"), ...lines].join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -168,7 +174,6 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
     const stockIndex = indexOf("estoque", "quantidade");
     const realIndex = indexOf("valor_real", "preco_real", "preco");
     const promoIndex = indexOf("valor_promocional", "preco_promocional", "promocional");
-    const installmentIndex = indexOf("valor_parcelado", "parcelado");
     if (skuIndex < 0 || stockIndex < 0 || realIndex < 0) { setFeedback({ message: "A lista precisa conter as colunas SKU, estoque e valor_real." }); return; }
     const productsBySku = new Map(sheetProducts.map((product) => [normalize(product.sku), product]));
     const seen = new Set<string>();
@@ -192,12 +197,13 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
       if (realIndex >= 0 && real === null) issues.push("Valor real inválido");
       if (promoIndex >= 0 && String(row[promoIndex] ?? "").trim() && promo === null) issues.push("Valor promocional inválido");
       if (real !== null) { priceCents = promo ?? real; oldPriceCents = promo !== null ? real : null; if (oldPriceCents !== null && oldPriceCents <= priceCents) issues.push("Valor real deve ser maior que o promocional"); }
-      const cardInstallment = installmentIndex >= 0 ? parseInstallment(row[installmentIndex]) : undefined;
-      if (installmentIndex >= 0 && String(row[installmentIndex] ?? "").trim() && !cardInstallment) issues.push("Valor parcelado inválido");
-      if (cardInstallment && (cardInstallment.count < 2 || cardInstallment.count > 24)) issues.push("Parcelamento deve ficar entre 2x e 24x");
-      return { rowNumber, sku, name, productId: product?.id ?? null, stock, priceCents, oldPriceCents, cardInstallment, issues };
+      return { rowNumber, sku, name, productId: product?.id ?? null, stock, priceCents, oldPriceCents, issues };
     }).filter((row) => row.sku || row.name || row.stock !== null);
-    setImportPreview({ fileName: file.name, rows: previewRows });
+    // Listas antigas (e a de hoje, se o lojista editar a coluna) trazem o
+    // parcelado; ele não se importa mais, e a prévia avisa em vez de calar.
+    const parceladoIndex = headers.findIndex((header) => header === "valor_parcelado" || header.startsWith("parcelado"));
+    const parceladoIgnorado = parceladoIndex >= 0 && rows.slice(1).some((row) => String(row[parceladoIndex] ?? "").trim() !== "");
+    setImportPreview({ fileName: file.name, rows: previewRows, parceladoIgnorado });
     setFeedback({});
   }
 
@@ -205,13 +211,13 @@ export function InventorySpreadsheet({ products, movements, todayUnits }: Invent
     if (!importPreview) return;
     const validRows = importPreview.rows.filter((row) => !row.issues.length && row.productId && row.stock !== null && row.priceCents !== null);
     if (!validRows.length) return;
-    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.product_id, variantId: product.variant_id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents, ...(row.cardInstallment !== undefined ? { cardInstallment: row.cardInstallment } : {}) }; });
+    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.product_id, variantId: product.variant_id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents }; });
     setFeedback({});
     startTransition(async () => {
       const result = await saveInventoryCountsAction(updates);
       setFeedback(result);
       if (result.ok) {
-        setSheetProducts((current) => current.map((product) => { const row = validRows.find((item) => item.productId === product.id); return row ? { ...product, stock: row.stock!, price_cents: row.priceCents!, old_price_cents: row.oldPriceCents, ...(row.cardInstallment !== undefined ? { installment_count: row.cardInstallment?.count ?? null, installment_value_cents: row.cardInstallment?.value ?? null } : {}) } : product; }));
+        setSheetProducts((current) => current.map((product) => { const row = validRows.find((item) => item.productId === product.id); return row ? { ...product, stock: row.stock!, price_cents: row.priceCents!, old_price_cents: row.oldPriceCents } : product; }));
         setDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, draft]) => { const row = validRows.find((item) => item.productId === id); return row ? [id, { ...draft, stock: row.stock!, originalStock: row.stock!, exitQty: 0 }] : [id, draft]; })));
         setImportPreview(null);
       }
@@ -282,7 +288,7 @@ function StockStepper({ value, max, onChange, onStep, label }: { value: number; 
 function StockStatus({ stock, threshold }: { stock: number; threshold: number }) { if (stock === 0) return <span className="inventory-status is-out"><i />Esgotado</span>; if (stock <= threshold) return <span className="inventory-status is-low"><i />Atenção</span>; return <span className="inventory-status is-ok"><i />Saudável</span>; }
 function ImportPreviewPanel({ preview, isPending, onCancel, onApply }: { preview: ImportPreview; isPending: boolean; onCancel: () => void; onApply: () => void }) {
   const validCount = preview.rows.filter((row) => !row.issues.length).length;
-  return <div className="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventory-import-title"><div className="inventory-import-head"><div><p className="inventory-kicker">Conferência antes de salvar</p><h3 id="inventory-import-title">Importar lista de estoque</h3><p>{preview.fileName} · {preview.rows.length} linhas lidas</p></div><button type="button" onClick={onCancel} aria-label="Fechar prévia">×</button></div><div className="inventory-import-summary"><span className="valid"><b>{validCount}</b> reconhecidas</span><span className={preview.rows.length - validCount ? "invalid" : "valid"}><b>{preview.rows.length - validCount}</b> com problema</span><small>O SKU é usado para localizar o produto. Nome e categoria não são alterados.</small></div><div className="inventory-import-table-wrap"><table><thead><tr><th>Linha</th><th>Produto / SKU</th><th>Estoque</th><th>Valores</th><th>Resultado</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={`${row.rowNumber}-${row.sku}`}><td>{row.rowNumber}</td><td><strong>{row.name || "Produto sem nome"}</strong><small>{row.sku || "SKU vazio"}</small></td><td>{row.stock ?? "—"}</td><td>{row.priceCents !== null ? formatPrice(row.priceCents) : "—"}{row.oldPriceCents !== null && <small>real {formatPrice(row.oldPriceCents)}</small>}</td><td>{row.issues.length ? <span className="import-row-error">{row.issues.join(" · ")}</span> : <span className="import-row-ok">✓ Pronta para aplicar</span>}</td></tr>)}</tbody></table></div><div className="inventory-import-foot"><button type="button" className="inventory-secondary-action" onClick={onCancel} disabled={isPending}>Cancelar</button><button type="button" className="inventory-primary-action" onClick={onApply} disabled={isPending || !validCount}>{isPending ? "Aplicando..." : `Aplicar ${validCount} ${validCount === 1 ? "linha" : "linhas"}`}</button></div></div>;
+  return <div className="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventory-import-title"><div className="inventory-import-head"><div><p className="inventory-kicker">Conferência antes de salvar</p><h3 id="inventory-import-title">Importar lista de estoque</h3><p>{preview.fileName} · {preview.rows.length} linhas lidas</p></div><button type="button" onClick={onCancel} aria-label="Fechar prévia">×</button></div><div className="inventory-import-summary"><span className="valid"><b>{validCount}</b> reconhecidas</span><span className={preview.rows.length - validCount ? "invalid" : "valid"}><b>{preview.rows.length - validCount}</b> com problema</span><small>O SKU é usado para localizar o produto. Nome e categoria não são alterados.</small>{preview.parceladoIgnorado && <small role="note"><b>Coluna de parcelado ignorada:</b> o site calcula o parcelado sozinho pelo preço, com a tabela da maquininha de Configurações.</small>}</div><div className="inventory-import-table-wrap"><table><thead><tr><th>Linha</th><th>Produto / SKU</th><th>Estoque</th><th>Valores</th><th>Resultado</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={`${row.rowNumber}-${row.sku}`}><td>{row.rowNumber}</td><td><strong>{row.name || "Produto sem nome"}</strong><small>{row.sku || "SKU vazio"}</small></td><td>{row.stock ?? "—"}</td><td>{row.priceCents !== null ? formatPrice(row.priceCents) : "—"}{row.oldPriceCents !== null && <small>real {formatPrice(row.oldPriceCents)}</small>}</td><td>{row.issues.length ? <span className="import-row-error">{row.issues.join(" · ")}</span> : <span className="import-row-ok">✓ Pronta para aplicar</span>}</td></tr>)}</tbody></table></div><div className="inventory-import-foot"><button type="button" className="inventory-secondary-action" onClick={onCancel} disabled={isPending}>Cancelar</button><button type="button" className="inventory-primary-action" onClick={onApply} disabled={isPending || !validCount}>{isPending ? "Aplicando..." : `Aplicar ${validCount} ${validCount === 1 ? "linha" : "linhas"}`}</button></div></div>;
 }
 function SortIcon({ active, ascending }: { active: boolean; ascending: boolean }) { return <span className={`inventory-sort ${active ? "is-active" : ""}`}>{active ? ascending ? "↑" : "↓" : "↕"}</span>; }
 function reasonLabel(value: string) { return ({ initial_import: "Importação", manual_adjustment: "Ajuste manual", sale: "Venda confirmada", cancellation: "Cancelamento", correction: "Contagem física" } as Record<string, string>)[value] ?? value; }
@@ -295,12 +301,6 @@ function parseMoney(value: string | undefined) {
   const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : (raw.match(/\./g)?.length ?? 0) > 1 ? raw.replace(/\./g, "") : raw;
   const amount = Number(normalized);
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : null;
-}
-function parseInstallment(value: string | undefined) {
-  const match = String(value ?? "").match(/(\d+)\s*x[^\d]*([\d.]+(?:,\d{1,2})?)/i);
-  if (!match) return null;
-  const amount = parseMoney(match[2]);
-  return amount ? { count: Number(match[1]), value: amount } : null;
 }
 function parseCsv(value: string) {
   const text = value.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");

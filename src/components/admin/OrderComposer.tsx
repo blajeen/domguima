@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createOrderAction, customerPurchasesAction } from "@/app/painel/actions";
 import { commissionForUnit } from "@/lib/admin/commission";
 import { customerIdentities } from "@/lib/admin/customers";
+import type { TaxasDoCartao } from "@/lib/catalog/parcelamento";
 import { InstallmentSimulator } from "./InstallmentSimulator";
 import {
   ORDER_CHANNEL_LABELS,
@@ -92,6 +93,8 @@ export interface OrderComposerLead {
 interface OrderComposerProps {
   products: OrderProductOption[];
   sellers: SellerRecord[];
+  /** Tabela da maquininha de Configurações, para a simulação do total. */
+  taxas: TaxasDoCartao;
   lead?: OrderComposerLead | null;
   /** Lista de Atendimento para onde voltar depois de lançar o pedido do atendimento. */
   returnTo?: string;
@@ -100,7 +103,7 @@ interface OrderComposerProps {
 /** Espera o operador parar de digitar antes de perguntar ao servidor. */
 const ESPERA_DA_CONSULTA_MS = 400;
 
-export function OrderComposer({ products, sellers, lead = null, returnTo }: OrderComposerProps) {
+export function OrderComposer({ products, sellers, taxas, lead = null, returnTo }: OrderComposerProps) {
   const router = useRouter();
   const ativos = sellers.filter((seller) => seller.active);
   // Com atendimento de origem, o vendedor sugerido é quem já atende o cliente.
@@ -258,7 +261,7 @@ export function OrderComposer({ products, sellers, lead = null, returnTo }: Orde
 
     <aside className="h-fit space-y-5 xl:sticky xl:top-8">
       <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="text-lg font-black">Fechamento</h2><label className={`${labelClass} mt-4`}>Vendedor<select required value={sellerId} onChange={(event) => setSellerId(event.target.value)} className={fieldClass}><option value="">Selecione</option>{ativos.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}</select></label><div className="mt-4 grid grid-cols-2 gap-3"><label className={labelClass}>Canal<select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)} className={fieldClass}>{PANEL_ORDER_CHANNELS.map((valor) => <option key={valor} value={valor}>{ORDER_CHANNEL_LABELS[valor]}</option>)}</select></label><label className={labelClass}>Origem<select value={source} onChange={(event) => setSource(event.target.value as typeof source)} className={fieldClass}>{origens.map((valor) => <option key={valor} value={valor}>{TRAFFIC_SOURCE_LABELS[valor]}</option>)}</select></label><p className="col-span-2 text-[11px] leading-relaxed text-ink-400">Canal: onde a venda foi fechada. Origem: como o cliente conheceu a loja. Os dois alimentam o relatório de tráfego.</p></div><div className="mt-5"><p className="text-xs font-bold text-ink-500">Desconto rápido</p><div className="mt-2 grid grid-cols-4 gap-2">{[0, 5, 10, 15].map((percent) => <button key={percent} type="button" onClick={() => applyDiscount(percent)} className="rounded-lg border border-ink-200 py-2 text-xs font-black hover:border-gold-400 hover:bg-gold-50">{percent}%</button>)}</div></div><label className={`${labelClass} mt-5`}>Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={fieldClass} placeholder="Pagamento, entrega ou condição combinada" /></label><dl className="mt-5 space-y-2 border-t border-ink-100 pt-4 text-sm"><Summary label="Produtos" value={`${units} unidade(s)`} /><Summary label="Valor de tabela" value={formatPrice(gross)} /><Summary label="Desconto" value={`− ${formatPrice(discount)}`} muted={!discount} /><div className="flex items-end justify-between border-t border-ink-100 pt-3"><dt className="font-bold">Total do pedido</dt><dd className="text-2xl font-black">{formatPrice(total)}</dd></div></dl><div className="mt-4 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><strong>Comissão calculada: {formatPrice(commission)}</strong><p className="mt-1 leading-relaxed">A comissão usa o preço final de cada unidade e fica congelada no pedido.</p></div>{feedback.message && <p role="alert" className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{feedback.message}</p>}<button type="submit" disabled={isPending || !lines.length} className="mt-5 w-full rounded-xl bg-ink-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? "Finalizando pedido..." : "Finalizar pedido e baixar estoque"}</button><p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">A baixa acontece somente após a confirmação deste botão.</p></section>
-      {total > 0 && <InstallmentSimulator cents={total} titulo="Parcelamento deste pedido" />}
+      {total > 0 && <InstallmentSimulator cents={total} taxas={taxas} titulo="Parcelamento deste pedido" />}
       <CommissionTable />
     </aside>
   </form>;
