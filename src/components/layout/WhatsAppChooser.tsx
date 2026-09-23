@@ -1,8 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { buttonStyles } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { useDialogoModal } from "@/components/ui/useDialogoModal";
+import { useVidroParado } from "@/components/ui/useVidroParado";
 import type { WhatsappContact } from "@/config/site";
 import type { LeadKind } from "@/lib/admin/types";
 import { atendimentoLink } from "@/lib/services/whatsapp";
@@ -60,6 +65,16 @@ export function WhatsAppChooser({ message, kind = "whatsapp_generic", productId,
   );
 }
 
+/**
+ * Painel de vidro claro (bem opaco) sobre uma tinta leve: no celular sobe de
+ * baixo, como folha; a partir de sm fica no centro. Vai direto para o <body>
+ * (portal): aberto do header ou do rodapé, não herda a cor de texto nem o foco
+ * do grafite, nem fica preso na camada deles. Entra com @starting-style, só
+ * opacidade e posição, ainda sólido: vira vidro quando para (useVidroParado).
+ *
+ * Com zoom alto ou o celular deitado, o painel pode ser maior que a tela: ele
+ * rola por dentro, e o título e o Fechar continuam alcançáveis.
+ */
 function ContactDialog({
   open,
   onClose,
@@ -74,89 +89,96 @@ function ContactDialog({
   href: (attendantId: string) => string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const tituloId = useId();
+  const textoId = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-    panelRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused.current?.focus();
-    };
-  }, [open, onClose]);
+  // O primeiro foco vai para a primeira opção (link), como antes.
+  useDialogoModal(panelRef, open, onClose, "a[href]");
+  const [vidro, aoTerminarTransicao] = useVidroParado(open);
 
   if (!open) return null;
 
   // Nos modos automáticos o cliente não escolhe: uma opção só, e quem recebe é
   // decidido no servidor na hora do redirect.
-  const opcoes = automatico
-    ? [{ id: "auto", name: "Falar no WhatsApp", detail: "Vamos te conectar com um atendente disponível" }]
-    : contacts.map((contact) => ({ id: contact.id, name: contact.name, detail: `${contact.role} · ${contact.display}` }));
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center" role="presentation">
-      <div className="absolute inset-0 bg-ink-950/50" onClick={onClose} />
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
+      <div
+        aria-hidden
+        onClick={onClose}
+        className="absolute inset-0 bg-grafite-950/30 transition-opacity duration-(--duracao-entrada) ease-out starting:opacity-0"
+      />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Escolha com quem falar no WhatsApp"
-        className="relative w-full max-w-sm rounded-t-card bg-white p-5 shadow-float sm:rounded-card"
+        aria-labelledby={tituloId}
+        aria-describedby={textoId}
+        onTransitionEnd={aoTerminarTransicao}
+        className={`${vidro ? "glass-light" : "bg-white/96"} relative max-h-full w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-card border-t border-fio p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-grafite-900 shadow-float transition-[opacity,translate] duration-(--duracao-entrada) ease-out starting:translate-y-4 starting:opacity-0 sm:rounded-card sm:border sm:pb-5 sm:starting:translate-y-2`}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-extrabold text-ink-900">Falar no WhatsApp</h2>
-            <p className="mt-0.5 text-sm text-ink-500">
-              {automatico ? "Vamos te conectar com um atendente." : "Com quem você quer falar?"}
+            <h2 id={tituloId} className="text-lg font-bold text-grafite-900">
+              Atendimento no WhatsApp
+            </h2>
+            <p id={textoId} className="mt-0.5 text-sm text-ink-600">
+              {automatico ? "Vamos te conectar com um atendente disponível." : "Com quem você quer falar?"}
             </p>
           </div>
-          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2 -mt-2" />
+          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2.5 -mt-2.5" />
         </div>
 
-        <ul className="mt-4 space-y-2">
-          {opcoes.map((opcao) => (
-            <li key={opcao.id}>
-              <a
-                href={href(opcao.id)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onClose}
-                className="flex items-center gap-3 rounded-control border border-fio px-4 py-3 transition-colors duration-(--duracao-toque) hover:border-whatsapp hover:bg-whatsapp/10"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp text-white">
-                  <WhatsAppIcon className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-ink-900">{opcao.name}</span>
-                  <span className="block text-xs text-ink-500">{opcao.detail}</span>
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
+        {automatico ? (
+          <a
+            href={href("auto")}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className={buttonStyles({ variant: "whatsapp", size: "lg", fullWidth: true, className: "mt-5" })}
+          >
+            <Icon name="whatsapp" />
+            Falar no WhatsApp
+          </a>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {contacts.map((contact) => (
+              <li key={contact.id}>
+                <a
+                  href={href(contact.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                  className="group/atendente flex items-center gap-3 rounded-control border border-fio bg-white px-3 py-3 transition-colors duration-(--duracao-toque) hover:border-grafite-900"
+                >
+                  {/* A inicial no lugar de uma foto: não há foto da equipe no site.
+                      Raio de controle, e não pílula: a pílula é só de chip sobre
+                      foto, FAB e contador. */}
+                  <span
+                    aria-hidden
+                    className="flex size-11 shrink-0 items-center justify-center rounded-control bg-papel-escuro text-lg font-semibold text-grafite-900"
+                  >
+                    {contact.name.trim().charAt(0).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-base font-semibold leading-snug text-grafite-900">{contact.name}</span>
+                    <span className="block text-sm leading-snug text-ink-600">{contact.role}</span>
+                    <span className="block text-sm leading-snug tabular-nums text-ink-600">{contact.display}</span>
+                  </span>
+                  {/* O verde marca a ação: a linha inteira é o link. Mesma marca
+                      da linha de contato da página de produto. */}
+                  <span
+                    aria-hidden
+                    className="flex size-9 shrink-0 items-center justify-center rounded-control bg-whatsapp text-grafite-900 transition-colors duration-(--duracao-toque) group-hover/atendente:bg-whatsapp-escuro"
+                  >
+                    <Icon name="whatsapp" />
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
-  );
-}
-
-export function WhatsAppIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.38-.27.3-1.04 1.02-1.04 2.48s1.06 2.88 1.21 3.08c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.63.71.22 1.36.19 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35Z" />
-      <path
-        fillRule="evenodd"
-        d="M12.04 2C6.6 2 2.18 6.42 2.18 11.86c0 1.74.46 3.44 1.32 4.94L2.1 22l5.34-1.4a9.82 9.82 0 0 0 4.6 1.17h.01c5.43 0 9.85-4.42 9.85-9.86 0-2.63-1.02-5.11-2.88-6.97A9.79 9.79 0 0 0 12.04 2Zm0 18.03h-.01a8.2 8.2 0 0 1-4.17-1.14l-.3-.18-3.1.81.83-3.02-.2-.31a8.16 8.16 0 0 1-1.25-4.36c0-4.52 3.68-8.2 8.2-8.2 2.19 0 4.25.86 5.8 2.41a8.15 8.15 0 0 1 2.4 5.8c0 4.52-3.68 8.19-8.2 8.19Z"
-        clipRule="evenodd"
-      />
-    </svg>
+    </div>,
+    document.body,
   );
 }

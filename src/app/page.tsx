@@ -8,6 +8,7 @@ import {
 import { InstagramSection } from "@/components/home/InstagramSection";
 import { ReviewsSection } from "@/components/home/ReviewsSection";
 import { TrustBar } from "@/components/home/TrustBar";
+import { MidiaDoTopo } from "@/components/layout/MidiaDoTopo";
 import { ProductCarousel } from "@/components/product/ProductCarousel";
 import { site } from "@/config/site";
 import { getSmartBanners } from "@/lib/catalog/smart-banners";
@@ -69,9 +70,10 @@ export default async function HomePage() {
   return (
     <>
       <div className="site-shell grid gap-4 py-4 lg:grid-cols-3 lg:items-stretch">
-        <div className="min-w-0 lg:col-span-2">
+        {/* Enquanto o banner passa por baixo do header, o header vira vidro. */}
+        <MidiaDoTopo className="min-w-0 lg:col-span-2">
           <HeroBanner banners={heroBanners} compact />
-        </div>
+        </MidiaDoTopo>
         <ExclusiveProductCarousel products={exclusiveProducts} />
       </div>
 

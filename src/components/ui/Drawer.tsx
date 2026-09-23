@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { IconButton } from "./IconButton";
+import { useDialogoModal } from "./useDialogoModal";
+import { useVidroParado } from "./useVidroParado";
 
 interface DrawerProps {
   open: boolean;
@@ -10,16 +13,31 @@ interface DrawerProps {
   /** Lado de onde o painel entra. */
   side?: "right" | "left";
   children: React.ReactNode;
-  /** Rodapé fixo (ex.: resumo + botão finalizar). */
+  /** Rodapé fixo (ex.: resumo + botão finalizar), preso embaixo sobre a lista. */
   footer?: React.ReactNode;
+  /**
+   * Rodapé em vidro claro, com a lista rolando por baixo. A especificação põe
+   * vidro só no rodapé do carrinho; nas outras gavetas ele é branco sólido.
+   */
+  rodapeVidro?: boolean;
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const semAssinatura = () => () => {};
 
 /**
- * Painel lateral acessível: trava o scroll do fundo, fecha no Esc, prende o
- * foco enquanto aberto e devolve o foco a quem abriu.
+ * Painel lateral acessível (carrinho, menu e filtros): trava a rolagem do
+ * fundo, fecha no Esc, prende o foco enquanto aberto e devolve o foco a quem
+ * abriu (useDialogoModal).
+ *
+ * Vai direto para o <body> (portal). O menu do celular é montado dentro do
+ * header, e lá a gaveta herdava a cor de texto e o foco do grafite e ficava na
+ * camada do header. Fechada, não há o que mostrar no HTML do servidor: o
+ * portal só monta no navegador.
+ *
+ * Aparência: o painel desliza em 320 ms com a curva da loja, sobre uma tinta
+ * grafite que aparece junto. O desfoque da página atrás (6 px) e o vidro do
+ * rodapé do carrinho só ligam com a gaveta parada (useVidroParado): durante o
+ * deslize, e na saída, tudo é sólido.
  */
 export function Drawer({
   open,
@@ -28,94 +46,103 @@ export function Drawer({
   side = "right",
   children,
   footer,
+  rodapeVidro = false,
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const rolagemRef = useRef<HTMLDivElement>(null);
+  const rodapeRef = useRef<HTMLDivElement>(null);
+  const tituloId = useId();
+  const noNavegador = useSyncExternalStore(semAssinatura, () => true, () => false);
+  const [vidro, aoTerminarTransicao] = useVidroParado(open);
 
+  useDialogoModal(panelRef, open, onClose);
+
+  // O rodapé cobre o fim da lista: ao navegar pelo Tab, o item em foco para
+  // acima dele, e não por baixo.
+  const temRodape = Boolean(footer);
   useEffect(() => {
-    if (!open) return;
-
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
-
-    // Trava o scroll sem deslocar o layout (o body já tem scrollbar-gutter).
-    const { overflow } = document.body.style;
-    document.body.style.overflow = "hidden";
-
-    // Foca o primeiro elemento útil do painel.
-    const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    first?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab" || !panelRef.current) return;
-
-      const nodes = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
-      ).filter((el) => el.offsetParent !== null);
-      if (nodes.length === 0) return;
-
-      const firstNode = nodes[0];
-      const lastNode = nodes[nodes.length - 1];
-
-      if (event.shiftKey && document.activeElement === firstNode) {
-        event.preventDefault();
-        lastNode.focus();
-      } else if (!event.shiftKey && document.activeElement === lastNode) {
-        event.preventDefault();
-        firstNode.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
+    const rolagem = rolagemRef.current;
+    const rodape = rodapeRef.current;
+    if (!rolagem || !rodape) return;
+    const observador = new ResizeObserver(() => {
+      rolagem.style.scrollPaddingBottom = `${rodape.offsetHeight}px`;
+    });
+    observador.observe(rodape);
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = overflow;
-      previouslyFocused.current?.focus();
+      observador.disconnect();
+      rolagem.style.scrollPaddingBottom = "";
     };
-  }, [open, onClose]);
+  }, [temRodape, noNavegador]);
 
-  return (
+  if (!noNavegador) return null;
+
+  return createPortal(
     <div
-      className={`fixed inset-0 z-[60] ${open ? "" : "pointer-events-none"}`}
-      aria-hidden={!open}
+      // Fechada, a gaveta sai do Tab e do leitor de tela na hora (inert) e da
+      // pintura no fim da animação (`visibility` só entra na transição ao
+      // fechar). Assim a sombra do painel escondido não aparece na borda da
+      // tela.
+      inert={!open}
+      className={`fixed inset-0 z-[60] ${
+        open ? "visible" : "invisible transition-[visibility] duration-(--duracao-gaveta)"
+      }`}
     >
+      {/* Desfoque da página atrás: camada própria, sem transição, que liga
+          seco com a gaveta parada e sai na hora ao fechar. Abaixo de 28rem (a
+          largura máxima do painel) ele cobre a tela inteira, e o desfoque só
+          custaria. */}
+      {vidro && (
+        <div
+          aria-hidden
+          className="absolute inset-0 hidden backdrop-blur-[6px] reduced-transparency:backdrop-blur-none min-[28rem]:block"
+        />
+      )}
+
+      {/* A tinta é quem aparece e some aos poucos. */}
       <div
-        className={`absolute inset-0 bg-ink-950/50 transition-opacity duration-300 ${
+        aria-hidden
+        onClick={onClose}
+        className={`absolute inset-0 bg-grafite-950/40 transition-opacity duration-(--duracao-gaveta) ease-out reduced-transparency:bg-grafite-950/60 ${
           open ? "opacity-100" : "opacity-0"
         }`}
-        onClick={onClose}
       />
 
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
-        className={`absolute inset-y-0 flex w-full max-w-md flex-col bg-white shadow-drawer transition-transform duration-300 ease-out ${
+        aria-labelledby={tituloId}
+        onTransitionEnd={aoTerminarTransicao}
+        className={`absolute inset-y-0 flex w-full max-w-md flex-col bg-white text-grafite-900 shadow-float transition-transform duration-(--duracao-gaveta) ease-out ${
           side === "right"
             ? `right-0 ${open ? "translate-x-0" : "translate-x-full"}`
             : `left-0 ${open ? "translate-x-0" : "-translate-x-full"}`
         }`}
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-3.5">
-          <h2 className="text-base font-bold text-ink-900">{title}</h2>
-          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2" />
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-fio px-4">
+          <h2 id={tituloId} className="text-lg font-bold text-grafite-900">
+            {title}
+          </h2>
+          <IconButton icon="fechar" label="Fechar" onClick={onClose} className="-mr-2.5" />
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          {children}
-        </div>
-
-        {footer && (
-          <div className="shrink-0 border-t border-ink-100 bg-white p-4">
-            {footer}
+        <div ref={rolagemRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex min-h-full flex-col">
+            <div className="flex-1">{children}</div>
+            {footer && (
+              <div
+                ref={rodapeRef}
+                className={`sticky bottom-0 border-t border-fio p-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${
+                  rodapeVidro && vidro ? "glass-light" : "bg-white"
+                }`}
+              >
+                {footer}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

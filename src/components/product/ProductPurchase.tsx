@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { WhatsAppChooser, WhatsAppIcon } from "@/components/layout/WhatsAppChooser";
+import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PriceTag } from "@/components/ui/PriceTag";
@@ -237,12 +237,13 @@ export function ProductPurchase({
         productId={product.id}
         className="flex min-h-14 w-full items-center gap-3 rounded-control border border-fio bg-white px-3 py-2.5 text-left transition-colors duration-(--duracao-toque) hover:border-grafite-900"
       >
-        {/* Grafite sobre o verde: o glifo branco ficaria abaixo de 3:1. */}
+        {/* Grafite sobre o verde: o glifo branco ficaria abaixo de 3:1. Mesma
+            marca das linhas da escolha do atendente, que abre daqui. */}
         <span
           aria-hidden
-          className="flex size-9 shrink-0 items-center justify-center rounded-pill bg-whatsapp text-grafite-900"
+          className="flex size-9 shrink-0 items-center justify-center rounded-control bg-whatsapp text-grafite-900"
         >
-          <WhatsAppIcon className="size-5" />
+          <Icon name="whatsapp" />
         </span>
         <span className="text-sm font-semibold text-grafite-900">
           {chamadaDoContato(

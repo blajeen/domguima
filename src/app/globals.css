@@ -147,7 +147,9 @@
  * - sem suporte a backdrop-filter, o fundo já é quase opaco e legível sozinho;
  * - "reduzir transparência" deixa sólido.
  * A tinta mínima do vidro escuro é .62 (e não .5): com uma foto branca atrás,
- * é o que mantém texto papel em 4,5:1.
+ * é o que mantém texto papel em 4,5:1. Quem tem texto em ouro ou pequeno sobe
+ * a tinta com `[--vidro-tinta:…]` (o header usa .78: com branco atrás, o
+ * letreiro ouro-claro fica em 4,9:1 e o texto papel em 7,9:1).
  * O fio de luz vai em --tw-inset-shadow para somar com `shadow-float`
  * (os dois montam a mesma composição de box-shadow do Tailwind).
  */
@@ -160,7 +162,7 @@
     var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
 
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    background-color: rgb(22 23 27 / 0.62);
+    background-color: rgb(22 23 27 / var(--vidro-tinta, 0.62));
     -webkit-backdrop-filter: blur(18px) saturate(170%);
     backdrop-filter: blur(18px) saturate(170%);
   }
@@ -172,6 +174,10 @@
   }
 }
 
+/* Painéis claros com texto e preço (sugestões da busca, escolha do atendente,
+   rodapé do carrinho): bem opaco, .9. Mesmo com preto atrás, o texto ink-600
+   fica em 8,8:1 e o ink-500 em 6:1. Esses painéis entram sólidos e só viram
+   vidro parados (useVidroParado). */
 @utility glass-light {
   background-color: rgb(255 255 255 / 0.96);
   --tw-inset-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
@@ -181,7 +187,7 @@
     var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000);
 
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    background-color: rgb(255 255 255 / 0.88);
+    background-color: rgb(255 255 255 / 0.9);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     backdrop-filter: blur(20px) saturate(160%);
   }
@@ -229,26 +235,30 @@
     --duracao-gaveta: 320ms;
 
     /* Altura do header fixo, para os elementos sticky não ficarem por baixo
-       dele. Valores do header atual (celular, sm e lg): quem mudar a altura do
-       header atualiza aqui. */
+       dele. Todas as linhas do header têm altura fixa (Header.tsx), então a
+       soma é exata. Abaixo de lg: linha da logo (3,5rem) + linha da busca
+       (3,5rem) + fio de ouro (1px). Quem mudar uma linha atualiza aqui. */
     --header-h: 7.0625rem;
   }
 
-  @media (width >= 40rem) {
-    :root {
-      --header-h: 7.3125rem;
-    }
-  }
-
+  /* A partir de lg: avisos (1,75rem) + barra principal (4rem) + fio de ouro
+     (1px) + menu de categorias (2,5rem, com o fio dele por dentro). */
   @media (width >= 64rem) {
     :root {
-      --header-h: 8.125rem;
+      --header-h: 8.3125rem;
     }
   }
 
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Âncora, "Pular para o conteúdo" e rolagem até o campo em foco param
+     abaixo do header fixo, e não por baixo dele. O painel esconde o header da
+     loja, então lá a rolagem continua como era. */
+  html:not(:has(.admin-app)) {
+    scroll-padding-top: var(--header-h);
   }
 
   body {
@@ -259,9 +269,11 @@
     scrollbar-gutter: stable;
   }
 
-  /* Foco visível e consistente — requisito de acessibilidade. */
+  /* Foco visível e consistente — requisito de acessibilidade. Sobre grafite
+     (header, rodapé) a área escura troca a cor com `[--cor-foco:…]`: o ouro
+     padrão fica em 3,2:1 no grafite, e o ouro-claro, no branco, em 1,8:1. */
   :focus-visible {
-    outline: 2px solid var(--color-gold-600);
+    outline: 2px solid var(--cor-foco, var(--color-gold-600));
     outline-offset: 2px;
     border-radius: 4px;
   }

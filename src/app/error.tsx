@@ -19,10 +19,10 @@ export default function Error({
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
       <Icon name="alerta" size={40} className="mx-auto text-ouro-texto" />
-      <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink-900">
+      <h1 className="mt-4 text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
         Algo deu errado por aqui
       </h1>
-      <p className="mx-auto mt-2 max-w-md text-sm text-ink-500">
+      <p className="mx-auto mt-2 max-w-md text-base text-ink-600">
         Tivemos um problema ao carregar esta página. Tente de novo. Se
         continuar, fale com a gente pelo WhatsApp.
       </p>

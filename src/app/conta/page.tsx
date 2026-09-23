@@ -20,10 +20,10 @@ export const metadata: Metadata = {
 export default function AccountPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+      <h1 className="text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
         Meus pedidos
       </h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <p className="mt-2 max-w-prose text-base leading-relaxed text-ink-600">
         A venda da Dom Guima é assistida. Acompanhamento, dúvidas e suporte são
         resolvidos diretamente com a nossa equipe:
       </p>
@@ -101,7 +101,7 @@ function Card({
   return (
     <div className="rounded-card border border-fio bg-white p-5">
       <Icon name={icon} size={24} className="text-ouro-texto" />
-      <h2 className="mt-3 text-base font-bold text-ink-900">{title}</h2>
+      <h2 className="mt-3 text-base font-bold text-grafite-900">{title}</h2>
       <p className="mt-1 text-sm leading-relaxed text-ink-600">{text}</p>
       {whatsappMessage ? (
         <WhatsAppChooser message={whatsappMessage} className={className}>

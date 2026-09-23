@@ -417,7 +417,7 @@ npm run test:smoke           # noutro
 Percorre a loja num navegador real e falha (exit 1) se algo quebrar: rotas fora do ar,
 erro de console, exceção de JS, imagem quebrada, vazamento horizontal de 320px a 1920px,
 fluxo de carrinho, validação do checkout, busca por CEP e autocomplete. Também confere o
-WhatsApp do site: o diálogo “Com quem você quer falar?” abre, o clique num atendente
+WhatsApp do site: o diálogo “Atendimento no WhatsApp” abre, o clique num atendente
 passa por `/api/atendimentos/whatsapp` e ela responde 302 para o `wa.me` do atendente
 certo, e o pedido rápido é um POST (303). Essas chamadas vão marcadas para a rota **não
 registrar** atendimento, e a aba aberta recebe uma página simulada: o smoke não suja a

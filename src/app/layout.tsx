@@ -20,9 +20,12 @@ const libreFranklin = Libre_Franklin({
   display: "swap",
 });
 
-// Só o letreiro da marca e raros momentos de marca. Sem preload: o arquivo só
-// é baixado quando algum texto usa `font-brand`, e não disputa com a foto
-// principal da página.
+// Só o letreiro da marca e raros momentos de marca. Sem preload, mesmo com o
+// letreiro no header de toda página: os ~46 KB não disputam com a foto
+// principal. Até o arquivo chegar, o letreiro sai na serifada de reserva que o
+// next/font ajusta às medidas da Bodoni (troca o desenho, quase sem mexer no
+// layout).
+// Medir no F6 se vale ligar o preload.
 const bodoniModa = Bodoni_Moda({
   subsets: ["latin"],
   axes: ["opsz"],
@@ -91,7 +94,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#101216",
+  // O grafite-900 do header: a barra do navegador no celular continua o topo.
+  themeColor: "#1c1d21",
   width: "device-width",
   initialScale: 1,
 };
@@ -121,7 +125,7 @@ export default async function RootLayout({
 
         <a
           href="#conteudo"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-ink-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-control focus:bg-grafite-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-papel focus-visible:outline-ouro-claro"
         >
           Pular para o conteúdo
         </a>

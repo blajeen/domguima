@@ -5,6 +5,7 @@ import { useState } from "react";
 import { buttonStyles } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { social } from "@/config/site";
 import { categoryIcon } from "@/lib/catalog/categories";
 import type { Category } from "@/lib/catalog/types";
@@ -26,18 +27,19 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
 
   return (
     <>
-      <button
-        type="button"
+      <IconButton
+        icon="menu"
+        label="Abrir menu"
+        variant="sobre-escuro"
         onClick={() => setOpen(true)}
-        aria-label="Abrir menu"
-        className="-ml-1 rounded-lg p-2 text-white transition-colors hover:bg-white/10 lg:hidden"
-      >
-        <Icon name="menu" size={24} />
-      </button>
+        aria-haspopup="dialog"
+        // A margem negativa alinha o traço do ícone à borda do conteúdo.
+        className="-ml-2.5 lg:hidden"
+      />
 
       <Drawer open={open} onClose={() => setOpen(false)} title="Menu" side="left">
         <nav
-          className="p-2"
+          className="px-2 py-3"
           aria-label="Navegação principal"
           onClick={closeOnLinkClick}
         >
@@ -47,7 +49,7 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
           </Item>
           <Item href="/mais-vendidos">Mais vendidos</Item>
 
-          <p className="px-3 pb-1 pt-4 text-sm font-semibold text-ink-500">Categorias</p>
+          <Grupo>Categorias</Grupo>
           {categories.map((category) => (
             <Item
               key={category.id}
@@ -58,7 +60,10 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
             </Item>
           ))}
 
-          <p className="px-3 pb-1 pt-4 text-sm font-semibold text-ink-500">Atendimento</p>
+          <Grupo>Atendimento</Grupo>
+          <Item href="/conta" icon="caixa">
+            Meus pedidos
+          </Item>
           <Item href="/institucional/contato" icon="conversa">
             Fale com a gente
           </Item>
@@ -69,7 +74,7 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
             Trocas e devoluções
           </Item>
 
-          <div className="mt-4 space-y-2 border-t border-ink-100 p-3">
+          <div className="mt-4 space-y-2 border-t border-fio px-1 pt-4">
             <WhatsAppChooser
               message={genericMessage}
               className={buttonStyles({ variant: "whatsapp", fullWidth: true })}
@@ -102,6 +107,11 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
   );
 }
 
+/** Título de grupo: peso, não caixa alta. */
+function Grupo({ children }: { children: React.ReactNode }) {
+  return <p className="px-3 pb-1 pt-5 text-sm font-semibold text-ink-600">{children}</p>;
+}
+
 function Item({
   href,
   icon,
@@ -117,8 +127,8 @@ function Item({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors hover:bg-ink-50 ${
-        highlight ? "font-bold text-oferta" : "font-medium text-ink-700"
+      className={`flex min-h-11 items-center gap-3 rounded-control px-3 text-base transition-colors duration-(--duracao-toque) hover:bg-papel ${
+        highlight ? "font-semibold text-oferta" : "font-medium text-grafite-900"
       }`}
     >
       {icon && <Icon name={icon} className="text-ink-500" />}

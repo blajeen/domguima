@@ -21,18 +21,18 @@ export default async function OrderSentPage({ searchParams }: { searchParams: Pr
   const orderId = siteOrder && typeof params.pedido === "string" ? params.pedido.slice(0, 80) : undefined;
   return (
     <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success-light text-success">
-        <Icon name="check" size={32} />
-      </div>
-      <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+      {/* Ícone solto, como nas outras telas de estado: sem círculo em volta e
+          sem o verde, que na loja é só de ação de WhatsApp. */}
+      <Icon name="check" size={40} className="mx-auto text-ouro-texto" />
+      <h1 className="mt-4 text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
         {siteOrder ? "Solicitação recebida!" : "Pedido enviado!"}
       </h1>
-      <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-600">
+      <p className="mx-auto mt-3 max-w-md text-base leading-relaxed text-ink-600">
         {siteOrder
           ? `Recebemos sua solicitação${params.numero ? ` ${params.numero}` : ""} pelo site. O dono da Dom Guima vai conferir os dados e entrar em contato para confirmar o pedido.`
           : "Abrimos uma conversa no WhatsApp com o resumo do seu pedido. Se a janela não abriu, é só clicar no botão abaixo: o resumo continua lá."}
       </p>
-      <p className="mt-4 text-sm text-ink-500">
+      <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-ink-600">
         {siteOrder
           ? "A confirmação do pedido, do frete, do prazo e do pagamento será feita diretamente com você antes de qualquer cobrança."
           : "Vamos confirmar o frete, o prazo e a forma de pagamento com você antes de qualquer cobrança."}

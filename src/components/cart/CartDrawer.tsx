@@ -15,6 +15,9 @@ export function CartDrawer() {
       open={isOpen}
       onClose={closeCart}
       title={count > 0 ? `Meu carrinho (${count})` : "Meu carrinho"}
+      // Rodapé em vidro claro, com os itens rolando por baixo: o único rodapé
+      // de gaveta com vidro na especificação.
+      rodapeVidro
       footer={
         items.length > 0 ? (
           <div className="space-y-3">
@@ -26,11 +29,13 @@ export function CartDrawer() {
               showSubtotal={false}
             />
 
-            {/* O pedido rápido termina no WhatsApp do vendedor: por isso o verde. */}
-            <ButtonLink href="/checkout/rapido" onClick={closeCart} variant="whatsapp" fullWidth>
-              Finalizar rápido com vendedor
-            </ButtonLink>
-            <p className="text-center text-xs text-ink-500">Só seu nome. Ideal para Uberlândia.</p>
+            <div className="space-y-1.5">
+              {/* O pedido rápido termina no WhatsApp do vendedor: por isso o verde. */}
+              <ButtonLink href="/checkout/rapido" onClick={closeCart} variant="whatsapp" fullWidth>
+                Finalizar rápido com vendedor
+              </ButtonLink>
+              <p className="text-center text-xs text-ink-600">Só seu nome. Ideal para Uberlândia.</p>
+            </div>
 
             <ButtonLink href="/checkout" onClick={closeCart} variant="secundario" fullWidth>
               Checkout completo
@@ -61,10 +66,10 @@ function EmptyCart({ onClose }: { onClose: () => void }) {
     <div className="flex flex-col items-center px-6 py-16 text-center">
       {/* Ícone solto, igual ao da página /carrinho: sem círculo em volta. */}
       <Icon name="carrinho" size={40} className="text-ink-400" />
-      <p className="mt-4 text-base font-bold text-ink-900">
+      <p className="mt-4 text-base font-bold text-grafite-900">
         Seu carrinho está vazio
       </p>
-      <p className="mt-1 max-w-xs text-sm text-ink-500">
+      <p className="mt-1 max-w-xs text-sm text-ink-600">
         Dá uma olhada nas ofertas. Tem bastante coisa com desconto.
       </p>
       <ButtonLink href="/ofertas" onClick={onClose} className="mt-5">

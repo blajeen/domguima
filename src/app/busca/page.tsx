@@ -60,8 +60,8 @@ async function SearchSuggestions() {
   const [bestSellers, categories] = await Promise.all([getBestSellers(8), getCatalogCategories()]);
 
   return (
-    <div className="mt-10 border-t border-ink-100 pt-8 text-left">
-      <p className="mb-3 text-center text-sm font-semibold text-ink-700">
+    <div className="mt-10 border-t border-fio pt-8 text-left">
+      <p className="mb-3 text-center text-sm font-semibold text-grafite-900">
         Que tal procurar por uma destas categorias?
       </p>
       <div className="mb-10 flex flex-wrap justify-center gap-2">
@@ -90,10 +90,10 @@ async function EmptyQuery() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-20 text-center">
       <Icon name="busca" size={40} className="mx-auto text-ink-400" />
-      <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink-900">
+      <h1 className="mt-4 text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
         O que você está procurando?
       </h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <p className="mt-2 text-base text-ink-600">
         Digite na busca do topo o nome do produto, a categoria ou a marca.
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-2">

@@ -50,38 +50,40 @@ export default async function InstitutionalPage({ params }: PageProps) {
       />
 
       <article className="mt-5">
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink-900 sm:text-3xl">
+        <h1 className="text-balance text-titulo-lg font-bold text-grafite-900 sm:text-4xl">
           {page.title}
         </h1>
 
         {page.intro && (
-          <p className="mt-4 text-[15px] leading-relaxed text-ink-600">
+          <p className="mt-4 max-w-prose text-lg leading-relaxed text-ink-600">
             {page.intro}
           </p>
         )}
 
-        <div className="mt-8 space-y-8">
+        <div className="mt-10 space-y-9">
           {page.sections.map((section) => (
             <section key={section.heading}>
-              <h2 className="text-lg font-extrabold tracking-tight text-ink-900">
+              <h2 className="text-balance text-titulo font-bold text-grafite-900">
                 {section.heading}
               </h2>
               {section.paragraphs?.map((paragraph, i) => (
                 <p
                   key={i}
-                  className="mt-2.5 text-[15px] leading-relaxed text-ink-600"
+                  className="mt-3 max-w-prose text-base leading-relaxed text-ink-600"
                 >
                   {paragraph}
                 </p>
               ))}
               {section.list && (
-                <ul className="mt-3 space-y-2">
+                <ul className="mt-3 max-w-prose space-y-2.5">
                   {section.list.map((item) => (
                     <li
                       key={item}
-                      className="flex gap-2.5 text-[15px] leading-relaxed text-ink-600"
+                      className="flex gap-3 text-base leading-relaxed text-ink-600"
                     >
-                      <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold-400" />
+                      {/* Traço de ouro no lugar de marcador, como nos
+                          destaques da página de produto. */}
+                      <span aria-hidden className="mt-[0.8em] h-px w-3 shrink-0 bg-ouro" />
                       {item}
                     </li>
                   ))}
@@ -94,7 +96,7 @@ export default async function InstitutionalPage({ params }: PageProps) {
 
       {/* Mesmo bloco e mesmo botão verde do /conta: ação de WhatsApp é verde. */}
       <div className="mt-12 rounded-card border border-fio bg-white p-6 text-center">
-        <p className="text-base font-bold text-ink-900">Ficou alguma dúvida?</p>
+        <p className="text-base font-bold text-grafite-900">Ficou alguma dúvida?</p>
         <p className="mt-1 text-sm text-ink-600">
           Fale com a gente. Respondemos rápido.
         </p>
@@ -108,7 +110,7 @@ export default async function InstitutionalPage({ params }: PageProps) {
       </div>
 
       <nav aria-label="Outras páginas" className="mt-10">
-        <p className="mb-3 text-sm font-semibold text-ink-500">Veja também</p>
+        <h2 className="mb-3 text-sm font-semibold text-grafite-900">Veja também</h2>
         <ul className="flex flex-wrap gap-2">
           {institutionalPages
             .filter((other) => other.slug !== page.slug)

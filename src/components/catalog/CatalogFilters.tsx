@@ -276,28 +276,29 @@ export function FilterTrigger() {
   );
 }
 
-/** Gaveta do mobile. Fica fora do fluxo, então não afeta o layout. */
+/**
+ * Gaveta do mobile. O Drawer vai direto para o <body>, fora do fluxo, e só
+ * abre pelo botão "Filtrar", que some a partir de lg.
+ */
 export function FilterDrawer() {
   const { open, setOpen, resultCount } = useFilters();
 
   return (
-    <div className="lg:hidden">
-      <Drawer
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Filtrar"
-        side="left"
-        footer={
-          <Button onClick={() => setOpen(false)} fullWidth>
-            Ver {resultCount} {resultCount === 1 ? "produto" : "produtos"}
-          </Button>
-        }
-      >
-        <div className="p-4">
-          <FilterBody />
-        </div>
-      </Drawer>
-    </div>
+    <Drawer
+      open={open}
+      onClose={() => setOpen(false)}
+      title="Filtrar"
+      side="left"
+      footer={
+        <Button onClick={() => setOpen(false)} fullWidth>
+          Ver {resultCount} {resultCount === 1 ? "produto" : "produtos"}
+        </Button>
+      }
+    >
+      <div className="p-4">
+        <FilterBody />
+      </div>
+    </Drawer>
   );
 }
 

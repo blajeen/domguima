@@ -11,10 +11,13 @@ export function CartButton() {
     <button
       type="button"
       onClick={openCart}
-      className="relative flex items-center gap-2 rounded-lg px-2 py-1 text-white transition-colors hover:bg-white/10 sm:px-2.5"
+      // 44 px de altura e de largura mínima: alvo de toque também no celular.
+      // A cor vem do header (papel sobre o grafite ou o vidro).
+      className="relative flex h-11 min-w-11 items-center justify-center gap-2 rounded-control px-2.5 transition-colors duration-(--duracao-toque) hover:bg-white/10"
       aria-label={
-        count > 0 ? `Abrir carrinho — ${count} item(ns)` : "Abrir carrinho"
+        count > 0 ? `Abrir carrinho, ${count} ${count === 1 ? "item" : "itens"}` : "Abrir carrinho"
       }
+      aria-haspopup="dialog"
     >
       <span className="relative">
         <Icon name="carrinho" />

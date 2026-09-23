@@ -15,7 +15,7 @@
  *   • nenhum vazamento horizontal de 320px a 1920px
  *   • o fluxo de compra funciona: adicionar → gaveta → persistir → checkout
  *   • o formulário do checkout valida e o CEP preenche o endereço
- *   • o WhatsApp do site: o diálogo "Com quem você quer falar?" abre, clicar
+ *   • o WhatsApp do site: o diálogo "Atendimento no WhatsApp" abre, clicar
  *     num atendente passa pela rota /api/atendimentos/whatsapp e ela responde
  *     302 para o wa.me; o pedido rápido é um POST (303 para o wa.me)
  *   • o painel (só com login, ver abaixo): início, Pedidos, Atendimento,
@@ -213,8 +213,8 @@ if (await formularioRapido.count()) {
 console.log("\n▸ WhatsApp do site");
 await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
 await page.getByRole("button", { name: /Falar com a Dom Guima no WhatsApp/ }).click();
-const dialogo = page.getByRole("dialog", { name: "Escolha com quem falar no WhatsApp" });
-if (await dialogo.isVisible().catch(() => false)) pass("diálogo \"Com quem você quer falar?\" abre");
+const dialogo = page.getByRole("dialog", { name: "Atendimento no WhatsApp" });
+if (await dialogo.isVisible().catch(() => false)) pass("diálogo \"Atendimento no WhatsApp\" abre");
 else fail("diálogo do WhatsApp não abriu");
 
 const destinos = await dialogo.locator("a[href]").evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""));
