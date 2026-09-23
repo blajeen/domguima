@@ -8,6 +8,7 @@ const nav = [
   { href: "/painel/pedidos/novo", label: "Novo pedido", icon: "+" },
   { href: "/painel/pedidos", label: "Pedidos", icon: "P" },
   { href: "/painel/atendimento", label: "Atendimento", icon: "☎" },
+  { href: "/painel/clientes", label: "Clientes", icon: "☺" },
   { href: "/painel/ofertas", label: "Ofertas", icon: "%" },
   { href: "/painel/estoque", label: "Estoque", icon: "↕" },
   { href: "/painel/categorias", label: "Categorias", icon: "◇" },

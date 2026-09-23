@@ -5,7 +5,7 @@ import { formatPrice } from "@/lib/utils/format";
 import { linkOrderToLead, readCatalogState, type CatalogState } from "./catalog-store";
 import { defaultStoreSettings } from "./defaults";
 import { distributionCandidates, eligibleAttendants } from "./distribution";
-import { createLead, deleteLeads, findLead, findLeadByOrder, findLeadsByOrders, updateLead, type LeadPatch } from "./leads";
+import { createLead, deleteLeads, findLead, findLeadByOrder, findLeadsByOrders, LEAD_CRM_UNAVAILABLE_MESSAGE, updateLead, type LeadPatch } from "./leads";
 import { assignPendingSalesOrder } from "./orders";
 import { normalizeLeadDistributionMode } from "./sellers";
 import {
@@ -13,6 +13,7 @@ import {
   LEAD_STAGE_LABELS,
   UNASSIGNED_ORDER_SELLER_ID,
   type LeadRecord,
+  type LeadStage,
   type SalesOrderRecord,
   type SellerRecord,
 } from "./types";
@@ -193,6 +194,171 @@ export async function assignOrderOfLead(lead: LeadRecord, seller: SellerRecord |
     await assignPendingSalesOrder(order, seller, actorId);
   } catch (error) {
     console.warn(`Nao foi possivel acompanhar o pedido do atendimento ${lead.id}.`, error);
+  }
+}
+
+/**
+ * Pedido pelo numero que o operador digitou: "DG-20260922-001",
+ * "dg 20260922 001" ou so "20260922-001". Compara apenas letras e digitos.
+ */
+export function findOrderByNumber(orders: readonly SalesOrderRecord[], typed: string): SalesOrderRecord | null {
+  const limpo = typed.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!limpo) return null;
+  const alvo = limpo.startsWith("DG") ? limpo : `DG${limpo}`;
+  return orders.find((order) => order.number.toUpperCase().replace(/[^A-Z0-9]/g, "") === alvo) ?? null;
+}
+
+export interface LeadOrderLinkResult {
+  ok: boolean;
+  /** Frase pronta para o operador (faixa verde ou vermelha da tela). */
+  message: string;
+}
+
+/**
+ * Liga um atendimento a um pedido que ja existe ("Vincular a pedido" na tela de
+ * Atendimento) ou ao pedido que acabou de ser lancado a partir dele.
+ *
+ * Um pedido tem no maximo um atendimento: pedido que ja pertence a outro e
+ * recusado, e atendimento ja ligado a um pedido vivo tambem — trocar em
+ * silencio desfaria o historico do outro lado. So um pedido cancelado (ou que
+ * nao existe mais) libera o atendimento para um pedido novo.
+ *
+ * O que acontece com o atendimento depende do pedido:
+ *
+ *   * FINALIZADO — a venda aconteceu: etapa "Ganho" e o atendimento passa a
+ *     quem vendeu, o mesmo que responde pela comissao (igual a confirmacao).
+ *   * AGUARDANDO CONFIRMACAO — ainda pode nao acontecer: a etapa fica como
+ *     esta (um "Perdido" reabre como "Em atendimento") e fecha sozinha quando o
+ *     pedido for confirmado ou cancelado. Atendimento e pedido passam a andar
+ *     juntos: quem esta sem atendente herda o do outro lado.
+ *   * CANCELADO — recusado: nao ha venda para ganhar.
+ *
+ * O vinculo grava so o `order_id`: nome, telefone e chave do cliente NAO sao
+ * copiados do pedido para o atendimento. A tela de Atendimento mostra os do
+ * pedido vinculado enquanto ele existir (inclusive para a etiqueta de cliente
+ * recorrente), e excluir o pedido — o caminho do pedido de eliminacao de dados
+ * (LGPD) — nao deixa uma copia deles para tras num atendimento que antes nao
+ * tinha dado pessoal nenhum. Nunca lanca erro: a resposta ja vem como frase
+ * para a tela.
+ */
+export async function linkLeadToOrder(leadId: string, order: SalesOrderRecord, state: CatalogState, actorId: string): Promise<LeadOrderLinkResult> {
+  try {
+    const lead = await findLead(leadId);
+    if (!lead) return { ok: false, message: "Este atendimento não existe mais. Atualize a página." };
+    if (lead.order_id === order.id) return { ok: true, message: `Este atendimento já estava vinculado ao pedido ${order.number}.` };
+
+    if (lead.order_id) {
+      const atual = state.operations.orders.find((item) => item.id === lead.order_id);
+      if (atual && atual.status !== "cancelled") {
+        return { ok: false, message: `Este atendimento já está vinculado ao pedido ${atual.number}. Um atendimento acompanha um pedido só.` };
+      }
+    }
+    if (order.status === "cancelled") {
+      return { ok: false, message: `O pedido ${order.number} foi cancelado. Vincule a um pedido finalizado ou aguardando confirmação.` };
+    }
+    if (order.lead_id && order.lead_id !== lead.id) {
+      return { ok: false, message: `O pedido ${order.number} já pertence a outro atendimento.` };
+    }
+    // A frase vai para a URL (?erro=): nada de nome de cliente nela.
+    const outro = await findLeadByOrder(order.id);
+    if (outro && outro.id !== lead.id) {
+      return { ok: false, message: `O pedido ${order.number} já pertence a outro atendimento.` };
+    }
+
+    const sellers = state.operations.sellers;
+    const nomeDe = (id: string | null) => (id ? sellers.find((seller) => seller.id === id)?.name ?? id : "Fila livre");
+    const pedidoTemAtendente = order.seller_id !== UNASSIGNED_ORDER_SELLER_ID;
+    const patch: LeadPatch = { order_id: order.id };
+    let entregarPedidoA: SellerRecord | null = null;
+    let aviso = "";
+
+    if (order.status === "completed") {
+      patch.stage = "won";
+      if (pedidoTemAtendente && lead.seller_id !== order.seller_id) {
+        patch.seller_id = order.seller_id;
+        patch.assigned_by = actorId;
+      }
+    } else {
+      if (lead.stage === "lost") patch.stage = "in_progress";
+      if (!lead.seller_id && pedidoTemAtendente) {
+        patch.seller_id = order.seller_id;
+        patch.assigned_by = actorId;
+      } else if (lead.seller_id && !pedidoTemAtendente) {
+        entregarPedidoA = sellers.find((seller) => seller.id === lead.seller_id && seller.active) ?? null;
+      } else if (lead.seller_id && pedidoTemAtendente && lead.seller_id !== order.seller_id) {
+        aviso = ` O pedido está com ${order.seller_name} e o atendimento com ${nomeDe(lead.seller_id)}: ajuste um dos dois se precisar.`;
+      }
+    }
+
+    const etapa = patch.stage ?? lead.stage;
+    const { found, unavailable } = await updateLead(lead.id, patch, {
+      actor_id: actorId,
+      action: "lead.linked",
+      after_data: {
+        pedido: order.number,
+        etapa: LEAD_STAGE_LABELS[etapa],
+        ...("seller_id" in patch ? { atendente: nomeDe(patch.seller_id ?? null) } : {}),
+      },
+    });
+    if (unavailable) return { ok: false, message: LEAD_CRM_UNAVAILABLE_MESSAGE };
+    if (!found) return { ok: false, message: "Este atendimento não existe mais. Atualize a página." };
+
+    // O lado do pedido e so uma anotacao (o atendimento e quem manda no
+    // vinculo): falhar aqui avisa no console e nao desfaz nada.
+    await linkOrderToLead(order.id, lead.id);
+
+    if (entregarPedidoA) {
+      try {
+        await assignPendingSalesOrder(order, entregarPedidoA, actorId);
+        aviso = ` O pedido passou para ${entregarPedidoA.name}, que já cuida do atendimento.`;
+      } catch (error) {
+        console.warn(`Nao foi possivel passar o pedido ${order.number} para o atendente do atendimento ${lead.id}.`, error);
+        aviso = ` O pedido continua na fila livre: atribua em Pedidos.`;
+      }
+    }
+
+    return {
+      ok: true,
+      message: order.status === "completed"
+        ? `Atendimento vinculado ao pedido ${order.number} e marcado como Ganho.${aviso}`
+        : `Atendimento vinculado ao pedido ${order.number}, que aguarda confirmação: ao confirmar, o atendimento vira Ganho sozinho.${aviso}`,
+    };
+  } catch (error) {
+    console.warn(`Nao foi possivel vincular o atendimento ${leadId} ao pedido ${order.number}.`, error);
+    return { ok: false, message: "Não foi possível vincular o atendimento agora. Tente novamente em instantes." };
+  }
+}
+
+/**
+ * Confere a etapa escolhida contra o pedido do atendimento.
+ *
+ * `blocker`: pedido ja FINALIZADO so combina com "Ganho" — a venda aconteceu,
+ * o estoque baixou e a comissao ficou com alguem. Para desfazer, o caminho e
+ * cancelar o pedido, que fecha o atendimento como perdido sozinho. Pedido
+ * cancelado nao trava nada: o cliente pode voltar a negociar.
+ *
+ * `hint`: com o pedido ainda aguardando confirmacao, mudar a etapa para Ganho
+ * ou Perdido nao mexe no pedido; a frase lembra o operador de fazer isso em
+ * Pedidos. Best-effort: se a leitura falhar, a troca de etapa segue.
+ */
+export async function checkLeadStageChange(leadId: string, stage: LeadStage): Promise<{ blocker: string | null; hint: string }> {
+  try {
+    const lead = await findLead(leadId);
+    if (!lead?.order_id) return { blocker: null, hint: "" };
+    const order = (await readCatalogState(true)).operations.orders.find((item) => item.id === lead.order_id);
+    if (!order) return { blocker: null, hint: "" };
+    if (order.status === "completed" && stage !== "won") {
+      return {
+        blocker: `O pedido ${order.number} deste atendimento já foi confirmado: a venda aconteceu e a etapa fica “Ganho”. Se a venda foi desfeita, cancele o pedido em Pedidos — o atendimento passa a Perdido sozinho.`,
+        hint: "",
+      };
+    }
+    if (order.status === "pending" && stage === "lost") return { blocker: null, hint: ` O pedido ${order.number} continua aguardando confirmação: cancele-o em Pedidos se a venda não vai acontecer.` };
+    if (order.status === "pending" && stage === "won") return { blocker: null, hint: ` Confirme o pedido ${order.number} em Pedidos para baixar o estoque.` };
+    return { blocker: null, hint: "" };
+  } catch (error) {
+    console.warn(`Nao foi possivel conferir o pedido do atendimento ${leadId}.`, error);
+    return { blocker: null, hint: "" };
   }
 }
 

@@ -1,10 +1,11 @@
 import "server-only";
 
 import { readCatalogState } from "./catalog-store";
+import { buildCustomerIndex, customerSummaries, lookupCustomerPurchases, recentBuyers, RECENT_BUYERS_DAYS, repurchaseSuggestions, type CustomerIndex } from "./customers";
 import { defaultStoreSettings } from "./defaults";
-import { countLeads, leadLocalDate } from "./leads";
+import { countLeads, leadLocalDate, listOpenLeadKeys } from "./leads";
 import { canonicalSellerId, sortSellers } from "./sellers";
-import type { AdminCategoryRow, AdminProductRow, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
+import type { AdminCategoryRow, AdminProductRow, CustomerBook, CustomerPurchaseLookup, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
 
 export { defaultStoreSettings } from "./defaults";
 
@@ -77,6 +78,35 @@ export async function getSalesOrders() {
   return [...(await readCatalogState()).operations.orders].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+/**
+ * Clientes reconhecidos pelos pedidos finalizados (ver customers.ts), com os
+ * atendimentos em aberto de cada um.
+ *
+ * Os pedidos sao os mesmos 5.000 mais recentes que o resto do painel le; os
+ * atendimentos vem de uma leitura propria so com chave e etapa. Sem a tabela de
+ * atendimentos (migration 202609210002 nao aplicada) a tela abre do mesmo jeito,
+ * so sem o aviso de "atendimento em aberto".
+ *
+ * O indice vem junto para a tela achar o cliente dos links das outras telas,
+ * que apontam o cliente pelo numero de um pedido dele (`referenceOf`).
+ */
+export async function getCustomers(): Promise<{ book: CustomerBook; index: CustomerIndex }> {
+  const [state, abertos] = await Promise.all([readCatalogState(), listOpenLeadKeys()]);
+  const index = buildCustomerIndex(state.operations.orders);
+  return { book: customerSummaries(state.operations.orders, abertos, new Date(), index), index };
+}
+
+/**
+ * Quantas vezes o telefone e o CPF digitados no Novo pedido ja compraram.
+ *
+ * Consulta pontual no servidor: mandar ao navegador a tabela de todos os
+ * clientes (telefones e documentos de ate 5.000 pedidos) so para achar um
+ * seria despejar a base inteira na pagina.
+ */
+export async function getCustomerPurchases(customer: { phone: string; cpf: string }): Promise<CustomerPurchaseLookup> {
+  return lookupCustomerPurchases(buildCustomerIndex((await readCatalogState()).operations.orders), customer);
+}
+
 export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
   return [...(await readCatalogState()).categories].sort((a, b) => a.sort_order - b.sort_order);
 }
@@ -98,6 +128,10 @@ export async function getDashboardData() {
     ...atendentes.map((seller) => countLeads({ from: hoje, to: hoje, sellerId: seller.id })),
   ]);
 
+  // Clientes: calculados dos pedidos ja lidos, sem outra ida ao banco.
+  const clientes = customerSummaries(state.operations.orders).customers;
+  const compraramNoPeriodo = recentBuyers(clientes);
+
   return {
     /** Hoje (YYYY-MM-DD, fuso da loja): o link do card leva à lista filtrada no mesmo dia que ele contou. */
     today: hoje,
@@ -115,6 +149,14 @@ export async function getDashboardData() {
     lowStock: products.filter((item) => item.status !== "archived" && item.stock > 0 && item.stock <= item.low_stock_threshold).length,
     incomplete: products.filter((item) => !item.name || !item.sku || !item.description || item.price_cents <= 0 || !item.product_images?.length).length,
     pendingOrders,
+    /** Janela, em dias, dos dois números abaixo. */
+    recentBuyersDays: RECENT_BUYERS_DAYS,
+    /** Clientes que compraram na janela e já tinham comprado antes (2 compras ou mais). */
+    returningCustomers: compraramNoPeriodo.returning,
+    /** Todos os clientes identificados que compraram na janela. */
+    recentBuyers: compraramNoPeriodo.buyers,
+    /** Clientes com a última compra entre 60 e 180 dias: sugestões de recontato. */
+    repurchaseSuggestions: repurchaseSuggestions(clientes).length,
     recent: products.slice(0, 6),
   };
 }

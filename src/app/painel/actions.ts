@@ -6,15 +6,30 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
+import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
-import { assignLeadOfOrder, assignOrderOfLead, closeLeadsOfOrders, discardLeadsOfDeletedOrders, orderLockForLead } from "@/lib/admin/lead-orders";
-import { createLead, updateLead } from "@/lib/admin/leads";
+import { assignLeadOfOrder, assignOrderOfLead, checkLeadStageChange, closeLeadsOfOrders, discardLeadsOfDeletedOrders, findOrderByNumber, linkLeadToOrder, orderLockForLead } from "@/lib/admin/lead-orders";
+import { createLead, findLead, LEAD_CRM_UNAVAILABLE_MESSAGE, updateLead } from "@/lib/admin/leads";
 import { assignPendingSalesOrder, cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
 import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import { BULK_CHANNELS } from "@/lib/admin/bulk-orders";
-import { PANEL_ORDER_CHANNELS, PANEL_TRAFFIC_SOURCES, type ActionState, type AdminProductRow, type AdminProductVariant, type SellerRecord, type StoreSettings } from "@/lib/admin/types";
-import { trafficSourceLabel } from "@/lib/services/origem";
+import {
+  LEAD_LOST_REASON_LABELS,
+  LEAD_LOST_REASONS,
+  LEAD_STAGE_LABELS,
+  LEAD_STAGES,
+  PANEL_ORDER_CHANNELS,
+  PANEL_TRAFFIC_SOURCES,
+  type ActionState,
+  type AdminProductRow,
+  type AdminProductVariant,
+  type CustomerPurchaseLookup,
+  type SellerRecord,
+  type StoreSettings,
+  type TrafficSource,
+} from "@/lib/admin/types";
+import { isTrafficSource, trafficSourceLabel } from "@/lib/services/origem";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
 import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
@@ -53,7 +68,11 @@ const orderInput = z.object({
   }),
   notes: z.string().trim().max(500),
   channel: z.enum(PANEL_ORDER_CHANNELS, { error: "Escolha onde a venda foi fechada." }),
-  source: z.enum(PANEL_TRAFFIC_SOURCES, { error: "Escolha como o cliente chegou até a loja." }),
+  // Qualquer origem conhecida passa aqui; a action restringe às do painel, mais
+  // a do atendimento de origem (um cliente que veio da Shopee continua Shopee).
+  source: z.custom<TrafficSource>(isTrafficSource, { error: "Escolha como o cliente chegou até a loja." }),
+  // Atendimento de onde o pedido saiu ("Lançar pedido" na tela de Atendimento).
+  leadId: z.string().trim().max(80).nullable().optional(),
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(200),
     variantId: z.string().trim().max(120).nullable().optional(),
@@ -343,15 +362,49 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
   const owner = await ownerOrThrow();
   const parsed = orderInput.safeParse(input);
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Revise os dados do pedido." };
+  const { leadId, ...pedido } = parsed.data;
   try {
+    const state = await readCatalogState(true);
+    // O atendimento de origem so entra no pedido se ainda existe e nao
+    // acompanha outro pedido vivo (um cancelado libera). Atendimento que sumiu
+    // nao impede a venda: o pedido sai sem vinculo e a mensagem avisa. No
+    // reenvio do mesmo pedido (mesmo requestId) o atendimento ja aponta para
+    // ele, e isso nao e "outro pedido".
+    const atendimento = leadId ? await findLead(leadId) : null;
+    const reenviado = state.operations.orders.find((order) => order.request_id === pedido.requestId);
+    const pedidoAtual = atendimento?.order_id ? state.operations.orders.find((order) => order.id === atendimento.order_id) : undefined;
+    const vinculavel = atendimento && (!atendimento.order_id || atendimento.order_id === reenviado?.id || !pedidoAtual || pedidoAtual.status === "cancelled") ? atendimento : null;
+    // O select do painel so oferece as origens do painel; a do atendimento de
+    // origem (Shopee, Mercado Livre...) entra como opcao extra e vale tambem.
+    if (!PANEL_TRAFFIC_SOURCES.some((valor) => valor === pedido.source) && pedido.source !== vinculavel?.source) {
+      return { message: "Escolha como o cliente chegou até a loja." };
+    }
+
     // Pedido, baixa de estoque e auditoria vao numa transacao so, direto na
-    // tabela — sem passar pelo salvamento do catalogo inteiro.
-    const created = await createSalesOrder(await readCatalogState(true), parsed.data, owner.id);
+    // tabela — sem passar pelo salvamento do catalogo inteiro. A campanha do
+    // atendimento vai junto: e ela que poe a venda na linha certa do relatorio
+    // de trafego por campanha.
+    const created = await createSalesOrder(state, { ...pedido, leadId: vinculavel?.id ?? null, attribution: vinculavel?.attribution ?? {} }, owner.id);
+
+    // A venda ja esta gravada: o vinculo com o atendimento (que vira Ganho) e
+    // best-effort. Se falhar, a frase volta em `warning`, para a tela mostrar
+    // como alerta e nao na faixa verde de sucesso.
+    let recado = "";
+    let aviso: string | undefined;
+    if (leadId) {
+      const vinculo = vinculavel
+        ? await linkLeadToOrder(vinculavel.id, created, state, owner.id)
+        : { ok: false, message: "O atendimento de origem não existe mais ou já acompanha outro pedido: o pedido foi criado sem vínculo." };
+      if (vinculo.ok) recado = ` ${vinculo.message}`;
+      else aviso = vinculo.message;
+      revalidatePath("/painel/atendimento");
+    }
     refreshCatalog();
     revalidatePath("/painel/pedidos");
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/trafego");
-    return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.`, orderId: created.id, orderNumber: created.number };
+    revalidatePath("/painel/clientes");
+    return { ok: true, message: `Pedido ${created.number} finalizado. O estoque foi atualizado.${recado}`, warning: aviso, orderId: created.id, orderNumber: created.number };
   } catch (error) {
     if (error instanceof OrderOperationError) return { message: error.message };
     return catalogStorageError(error);
@@ -377,6 +430,7 @@ export async function confirmOrderAction(formData: FormData) {
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/atendimento");
     revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
     destino = `/painel/pedidos?confirmado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível confirmar o pedido agora.";
@@ -399,6 +453,7 @@ export async function cancelOrderAction(formData: FormData) {
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/atendimento");
     revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
     destino = `/painel/pedidos?cancelado=${encodeURIComponent(orderId)}`;
   } catch (error) {
     const mensagem = error instanceof OrderOperationError ? error.message : "Não foi possível cancelar o pedido agora.";
@@ -595,7 +650,7 @@ export async function saveSellersAction(_: ActionState, formData: FormData): Pro
 // Atendimentos
 // ---------------------------------------------------------------------------
 
-const CRM_INDISPONIVEL = "Os atendimentos ainda não existem no banco. Aplique supabase/migrations/202609210002_atendimentos.sql no SQL Editor.";
+const CRM_INDISPONIVEL = LEAD_CRM_UNAVAILABLE_MESSAGE;
 
 const leadInput = z.object({
   customerName: z.string().trim().min(2, "Informe o nome do cliente.").max(140, "O nome do cliente pode ter no máximo 140 caracteres."),
@@ -727,6 +782,152 @@ export async function assignLeadAction(formData: FormData) {
   }
   // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
   redirect(destino);
+}
+
+const leadStageInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  stage: z.enum(LEAD_STAGES, { error: "Escolha uma etapa válida." }),
+  lostReason: z.enum(LEAD_LOST_REASONS, { error: "Escolha um motivo da perda da lista." }).optional(),
+}).refine((value) => value.stage !== "lost" || Boolean(value.lostReason), { message: "Escolha o motivo da perda.", path: ["lostReason"] });
+
+/**
+ * Move o atendimento no funil: Novo → Em atendimento → Orçamento enviado →
+ * Aguardando pagamento → Ganho ou Perdido (com motivo obrigatório).
+ *
+ * E a etapa que o modo "menos ocupado" le para decidir quem recebe o proximo
+ * atendimento: Ganho e Perdido deixam de contar como carga. `OrderStatus` nao
+ * muda aqui — pedido so se confirma ou cancela em Pedidos.
+ */
+export async function changeLeadStageAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadStageInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    stage: String(formData.get("stage") ?? ""),
+    // Select de motivo vazio (ou ausente, fora de "Perdido") = sem motivo.
+    lostReason: String(formData.get("lostReason") ?? "").trim() || undefined,
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Revise a etapa escolhida.");
+  } else {
+    const { leadId, stage, lostReason } = parsed.data;
+    try {
+      // Pedido ja confirmado prende a etapa em Ganho; pedido pendente so ganha
+      // um lembrete na mensagem.
+      const conferencia = await checkLeadStageChange(leadId, stage);
+      if (conferencia.blocker) {
+        destino = voltaParaAtendimento(volta, "erro", conferencia.blocker);
+      } else {
+        const motivo = stage === "lost" && lostReason ? lostReason : null;
+        const { found, unavailable } = await updateLead(
+          leadId,
+          { stage, lost_reason: motivo },
+          {
+            actor_id: owner.id,
+            action: "lead.stage_changed",
+            after_data: { etapa: LEAD_STAGE_LABELS[stage], ...(motivo ? { motivo: LEAD_LOST_REASON_LABELS[motivo] } : {}) },
+          },
+        );
+        // A frase vai para a URL (?feito=): nada de nome de cliente nela.
+        destino = unavailable
+          ? voltaParaAtendimento(volta, "erro", CRM_INDISPONIVEL)
+          : !found
+            ? voltaParaAtendimento(volta, "erro", "Este atendimento não existe mais. Atualize a página.")
+            : voltaParaAtendimento(volta, "feito", `Atendimento movido para “${LEAD_STAGE_LABELS[stage]}”${motivo ? ` (${LEAD_LOST_REASON_LABELS[motivo]})` : ""}.${conferencia.hint}`);
+      }
+      revalidatePath("/painel/atendimento");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      console.error("Falha ao mudar a etapa do atendimento:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível mudar a etapa agora. Tente novamente em instantes.");
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+const leadLinkInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  orderNumber: z.string().trim().min(3, "Informe o número do pedido, como DG-20260922-001.").max(40, "Número de pedido longo demais."),
+});
+
+/**
+ * "Vincular a pedido": liga o atendimento a um pedido pelo número (DG-…).
+ *
+ * Pedido finalizado fecha o atendimento como Ganho; pedido aguardando
+ * confirmação fica ligado e fecha sozinho na confirmação ou no cancelamento. As
+ * regras (um pedido por atendimento, quem herda o atendente) moram em
+ * `linkLeadToOrder`, também usada pelo Novo pedido lançado a partir do
+ * atendimento.
+ */
+export async function linkLeadToOrderAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadLinkInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    orderNumber: String(formData.get("orderNumber") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Informe o número do pedido.");
+  } else {
+    try {
+      const state = await readCatalogState(true);
+      const pedido = findOrderByNumber(state.operations.orders, parsed.data.orderNumber);
+      if (!pedido) {
+        destino = voltaParaAtendimento(volta, "erro", `Pedido “${parsed.data.orderNumber}” não encontrado. Confira o número em Pedidos.`);
+      } else {
+        const resultado = await linkLeadToOrder(parsed.data.leadId, pedido, state, owner.id);
+        destino = voltaParaAtendimento(volta, resultado.ok ? "feito" : "erro", resultado.message);
+        revalidatePath("/painel/atendimento");
+        revalidatePath("/painel/pedidos");
+        revalidatePath("/painel/clientes");
+        revalidatePath("/painel");
+      }
+    } catch (error) {
+      console.error("Falha ao vincular atendimento a pedido:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível vincular o atendimento agora. Tente novamente em instantes.");
+    }
+  }
+  redirect(destino);
+}
+
+/**
+ * Volta para a mesma lista de Atendimento (aba e filtros) com a faixa de
+ * resultado. Só aceita caminhos do próprio painel de atendimento.
+ */
+function voltaParaAtendimento(volta: string, chave: "feito" | "erro", mensagem: string): string {
+  const base = volta.startsWith("/painel/atendimento") ? volta : "/painel/atendimento";
+  return `${base}${base.includes("?") ? "&" : "?"}${chave}=${encodeURIComponent(mensagem)}`;
+}
+
+const customerLookupInput = z.object({
+  phone: z.string().trim().max(30),
+  cpf: z.string().trim().max(30),
+});
+
+const SEM_HISTORICO: CustomerPurchaseLookup = { phonePurchases: 0, documentPurchases: 0, reference: null };
+
+/**
+ * "Este telefone/CPF já comprou N vezes" do Novo pedido: o formulário pergunta
+ * por UM cliente, enquanto o operador digita, em vez de receber a tabela de
+ * todos os telefones e CPFs da loja. Só leitura e best-effort: qualquer falha
+ * responde "sem histórico" e o pedido segue normalmente.
+ */
+export async function customerPurchasesAction(input: unknown): Promise<CustomerPurchaseLookup> {
+  await ownerOrThrow();
+  const parsed = customerLookupInput.safeParse(input);
+  if (!parsed.success) return SEM_HISTORICO;
+  try {
+    return await getCustomerPurchases(parsed.data);
+  } catch (error) {
+    console.warn("Nao foi possivel conferir o historico do cliente:", error);
+    return SEM_HISTORICO;
+  }
 }
 
 /**
@@ -945,6 +1146,7 @@ export async function createBulkOrdersAction(sellerId: unknown, blocks: unknown)
     revalidatePath("/painel/financeiro");
     revalidatePath("/painel/historico");
     revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
   }
 
   const resumo = created.length === 1 ? "1 pedido gerado" : `${created.length} pedidos gerados`;
@@ -1227,6 +1429,7 @@ export async function bulkOrdersAction(formData: FormData): Promise<void> {
     revalidatePath("/painel/historico");
     revalidatePath("/painel/atendimento");
     revalidatePath("/painel/trafego");
+    revalidatePath("/painel/clientes");
 
     const resumo = acao === "excluir"
       ? `${excluidos} pedido(s) excluído(s)${cancelados.length ? ` · estoque devolvido de ${cancelados.length}` : ""}.`

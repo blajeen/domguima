@@ -1,6 +1,8 @@
 export type ActionState = {
   ok?: boolean;
   message?: string;
+  /** Deu certo, mas com uma ressalva que o operador precisa ver como alerta, não como sucesso. */
+  warning?: string;
   errors?: Record<string, string[]>;
   orderId?: string;
   orderNumber?: string;
@@ -118,16 +120,17 @@ export interface OrderAttribution {
  * Como um atendimento novo vindo do site escolhe o atendente.
  *
  * `customer_choice` e o comportamento historico: o cliente escolhe no dialogo
- * "Com quem voce quer falar?". Os modos automaticos existem na configuracao
- * desde ja para o painel; a distribuicao em si e feita pelo fluxo de
- * atendimentos.
+ * "Com quem voce quer falar?". Nos modos automaticos a escolha e feita dentro
+ * da RPC `create_lead_v1`, com trava no banco: `round_robin` entrega para quem
+ * recebeu ha mais tempo; `least_busy` para quem tem menos atendimentos em
+ * etapa aberta (`OPEN_LEAD_STAGES`), com o rodizio como desempate.
  */
 export type LeadDistributionMode = "customer_choice" | "round_robin" | "least_busy";
 
 export const LEAD_DISTRIBUTION_MODE_LABELS: Record<LeadDistributionMode, string> = {
   customer_choice: "Cliente escolhe o atendente",
   round_robin: "Rodízio entre os atendentes",
-  least_busy: "Atendente com menos atendimentos abertos",
+  least_busy: "Atendente com menos atendimentos em aberto",
 };
 
 /**
@@ -158,6 +161,9 @@ export const LEAD_KIND_LABELS: Record<LeadKind, string> = {
  */
 export type LeadStage = "new" | "in_progress" | "quote_sent" | "awaiting_payment" | "won" | "lost";
 
+/** As etapas na ordem do funil — a mesma dos selects e do mini-funil do painel. */
+export const LEAD_STAGES = ["new", "in_progress", "quote_sent", "awaiting_payment", "won", "lost"] as const satisfies readonly LeadStage[];
+
 export const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
   new: "Novo",
   in_progress: "Em atendimento",
@@ -172,6 +178,8 @@ export const OPEN_LEAD_STAGES: readonly LeadStage[] = ["new", "in_progress", "qu
 
 export type LeadLostReason = "price" | "out_of_stock" | "delivery" | "no_reply" | "bought_elsewhere" | "other";
 
+export const LEAD_LOST_REASONS = ["price", "out_of_stock", "delivery", "no_reply", "bought_elsewhere", "other"] as const satisfies readonly LeadLostReason[];
+
 export const LEAD_LOST_REASON_LABELS: Record<LeadLostReason, string> = {
   price: "Preço",
   out_of_stock: "Sem estoque",
@@ -180,6 +188,77 @@ export const LEAD_LOST_REASON_LABELS: Record<LeadLostReason, string> = {
   bought_elsewhere: "Comprou em outro lugar",
   other: "Outro motivo",
 };
+
+/**
+ * Em que ponto da relacao com a loja o cliente esta, pelo historico de
+ * compras FINALIZADAS. As regras (quantas compras, quanto gasto, quantos dias)
+ * moram em customers.ts, como constantes no topo do arquivo.
+ */
+export type CustomerSegment = "new" | "returning" | "vip" | "inactive";
+
+export const CUSTOMER_SEGMENTS = ["new", "returning", "vip", "inactive"] as const satisfies readonly CustomerSegment[];
+
+export const CUSTOMER_SEGMENT_LABELS: Record<CustomerSegment, string> = {
+  new: "Cliente novo",
+  returning: "Recorrente",
+  vip: "VIP",
+  inactive: "Inativo",
+};
+
+/**
+ * Um cliente reconhecido pelos pedidos: todos os pedidos que compartilham
+ * telefone ou CPF/CNPJ (ver `buildCustomerIndex`). A loja nao tem cadastro de
+ * cliente; isto e calculado a cada leitura a partir dos pedidos.
+ */
+export interface CustomerSummary {
+  /** Chave canonica: telefone sem o DDI quando existe, senao CPF/CNPJ em digitos. */
+  key: string;
+  /** Todos os telefones e CPF/CNPJ do cliente, inclusive os antigos (a chave e um deles). */
+  identities: string[];
+  /** Nome do pedido mais recente que trouxe nome. */
+  name: string;
+  /** Telefone em digitos sem o 55 (vazio quando nenhum pedido trouxe). */
+  phone: string;
+  /** CPF/CNPJ em digitos (vazio quando nenhum pedido trouxe). */
+  cpf: string;
+  /** Compras finalizadas. Pedido pendente ou cancelado nao conta. */
+  ordersCount: number;
+  totalCents: number;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  /** Dias, no fuso da loja, desde a ultima compra finalizada. */
+  daysSinceLastOrder: number;
+  /** Intervalo medio entre compras, em dias. `null` com uma compra so. */
+  avgDaysBetween: number | null;
+  segment: CustomerSegment;
+  /** Atendimentos em etapa aberta com o mesmo telefone/CPF. */
+  openLeads: number;
+  lastOrderNumber: string;
+  /** Produtos da ultima compra, na ordem do pedido. */
+  lastProducts: string[];
+}
+
+/** O retrato dos clientes e o que ficou de fora dele. */
+export interface CustomerBook {
+  customers: CustomerSummary[];
+  /**
+   * Compras finalizadas sem telefone nem CPF/CNPJ (lancamento do grupo, que so
+   * traz o primeiro nome): nao ha como saber de quem sao, entao ficam fora do
+   * agrupamento e sao contadas a parte, para o numero nao parecer sumido.
+   */
+  unidentifiedOrders: number;
+  unidentifiedTotalCents: number;
+}
+
+/** Resposta do "este telefone/CPF já comprou N vezes" do Novo pedido. */
+export interface CustomerPurchaseLookup {
+  /** Compras finalizadas do cliente dono do telefone digitado. */
+  phonePurchases: number;
+  /** Compras finalizadas do cliente dono do CPF/CNPJ digitado. */
+  documentPurchases: number;
+  /** Número de um pedido do cliente, para o link do histórico (nunca o telefone ou o CPF na URL). */
+  reference: string | null;
+}
 
 /** Item do carrinho congelado no atendimento, quando o contato trouxe produtos. */
 export interface LeadItemSnapshot {

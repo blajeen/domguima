@@ -34,6 +34,18 @@ export interface CreateOrderInput {
   channel: OrderChannel;
   /** Como o cliente chegou (Instagram, indicacao...), escolhido no painel. */
   source: TrafficSource;
+  /**
+   * Atendimento de onde a venda saiu ("Lançar pedido" na tela de Atendimento).
+   * Quem chama ja conferiu que ele existe e ainda nao tem pedido: o vinculo vai
+   * gravado no proprio pedido, na mesma transacao.
+   */
+  leadId?: string | null;
+  /**
+   * Campanha e site de origem que o navegador do cliente registrou, copiados do
+   * atendimento de origem. Sem atendimento fica vazio: o painel nao ve o link
+   * por onde o cliente chegou.
+   */
+  attribution?: OrderAttribution;
   items: Array<{
     productId: string;
     quantity: number;
@@ -163,10 +175,11 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     cancelled_by: null,
     channel: input.channel,
     source: input.source,
-    // Pedido lancado no painel nao passa pelo navegador do cliente: nao ha
-    // UTM nem site de origem para guardar, so o que o operador escolheu.
-    attribution: {},
-    lead_id: null,
+    // Pedido lancado no painel nao passa pelo navegador do cliente: UTM e site
+    // de origem so existem quando vem do atendimento que os registrou (e e
+    // assim que a venda entra na linha da campanha no relatorio de trafego).
+    attribution: input.attribution ?? {},
+    lead_id: input.leadId?.trim() || null,
     customer_key: customerKey(input.customer),
     visitor_id: null,
   };
@@ -520,6 +533,12 @@ export interface ChannelOrderInput {
   paymentMethod: OrderPaymentMethod;
   /** Endereco, recado e observacoes que vieram na mensagem e nao sao produto. */
   notes: string[];
+  /**
+   * Atendimento que originou a venda, quando se sabe. A mensagem do grupo nao
+   * traz esse dado — o importador nao manda —, mas o campo existe para o pedido
+   * de canal ter o mesmo vinculo dos outros caminhos.
+   */
+  leadId?: string | null;
   items: Array<{ productId: string; quantity: number; unitPriceCents: number; variantId?: string | null }>;
 }
 
@@ -605,7 +624,7 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
     cancelled_by: null,
     ...mapBulkChannel(input.channel),
     attribution: {},
-    lead_id: null,
+    lead_id: input.leadId?.trim() || null,
     // Sem telefone nem CPF na mensagem: a chave fica nula, nunca um palpite.
     customer_key: null,
     visitor_id: null,

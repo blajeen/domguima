@@ -11,7 +11,8 @@
  * menos ocupado — com DOIS CLIQUES SIMULTANEOS no rodizio caindo em atendentes
  * diferentes), puxar para mim, transferir, devolver a fila livre, o atendimento
  * de um pedido do site (vinculo, busca pelo pedido, fechamento como ganho ou
- * perdido) e as contagens exatas que alimentam os cards do painel. Serve para
+ * perdido), as contagens exatas que alimentam os cards do painel e a leitura
+ * dos atendimentos em aberto por cliente (tela de Clientes). Serve para
  * conferir a migration supabase/migrations/202609210002_atendimentos.sql depois
  * de cola-la no SQL Editor — nao ha tabela de controle de migrations neste
  * projeto.
@@ -276,6 +277,20 @@ try {
   const { count: contadoA, error: erroA } = await db.from("leads").select("*", { count: "exact", head: true })
     .like("id", `${MARCA}%`).eq("seller_id", ATENDENTE_A).in("stage", ABERTAS);
   checar("em aberto por atendente bate com as linhas", !erroA && contadoA === esperadoA, erroA?.message ?? `banco ${contadoA} · linhas ${esperadoA}`);
+
+  // -------------------------------------------------------------------------
+  console.log("\n▸ 13. Atendimentos em aberto por cliente (tela de Clientes)");
+  // Mesma consulta de listOpenLeadKeys (src/lib/admin/leads.ts): só etapas
+  // abertas e só quem tem chave de cliente. O atendimento do pedido do teste
+  // (acima) tem chave e está fechado; um aberto com a mesma chave tem de vir.
+  const abertoComChave = await criar("aberto-com-chave", { extra: { customer_phone: "34999990000", customer_key: "34999990000" } });
+  const { data: chaves, error: erroChaves } = await db.from("leads").select("id, customer_key, stage")
+    .like("id", `${MARCA}%`).in("stage", ABERTAS).not("customer_key", "is", null);
+  checar(
+    "consulta de abertos por cliente traz o aberto com chave e nenhum fechado ou sem chave",
+    !erroChaves && (chaves ?? []).some((linha) => linha.id === abertoComChave?.lead?.id) && (chaves ?? []).every((linha) => linha.customer_key && ABERTAS.includes(linha.stage)),
+    erroChaves?.message ?? `${chaves?.length ?? 0} linha(s)`,
+  );
 } finally {
   console.log("\n▸ Limpeza");
   await limpar();

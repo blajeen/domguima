@@ -1,15 +1,29 @@
 import Link from "next/link";
+import { linkLeadToOrderAction } from "@/app/painel/actions";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { LeadActions } from "@/components/admin/LeadActions";
 import { LeadForm } from "@/components/admin/LeadForm";
+import { LeadStageSelect } from "@/components/admin/LeadStageSelect";
 import { requireOwner } from "@/lib/admin/auth";
+import { buildCustomerIndex, recurrenceBadge, type CustomerIndex } from "@/lib/admin/customers";
 import { getAdminProducts, getSalesOrders, getSellers } from "@/lib/admin/data";
 import { countLeads, LEAD_LIST_LIMIT, leadCustomerKey, leadLocalDate, listLeadsPage, type LeadFilters, type LeadPage } from "@/lib/admin/leads";
 import { sortSellers } from "@/lib/admin/sellers";
-import { LEAD_KIND_LABELS, LEAD_STAGE_LABELS, TRAFFIC_SOURCE_LABELS, type LeadRecord, type LeadStage, type SalesOrderRecord, type SellerRecord } from "@/lib/admin/types";
+import {
+  LEAD_KIND_LABELS,
+  LEAD_LOST_REASON_LABELS,
+  LEAD_STAGE_LABELS,
+  LEAD_STAGES,
+  OPEN_LEAD_STAGES,
+  TRAFFIC_SOURCE_LABELS,
+  type LeadRecord,
+  type LeadStage,
+  type SalesOrderRecord,
+  type SellerRecord,
+} from "@/lib/admin/types";
 import { latestCampaign, trafficSourceLabel } from "@/lib/services/origem";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
-import { formatPhone } from "@/lib/utils/validators";
+import { formatPhone, onlyDigits } from "@/lib/utils/validators";
 
 type Params = Record<string, string | string[] | undefined>;
 type Aba = "fila" | "meus" | "todos";
@@ -21,6 +35,8 @@ const ABAS: Array<{ id: Aba; label: string }> = [
 ];
 
 const FILTRO = "mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm";
+const BOTAO = "rounded-lg border border-ink-300 bg-white px-3 py-2 text-xs font-extrabold text-ink-800 transition-colors hover:border-gold-400";
+const PERCENTUAL = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
 
 /** Mesmos rótulos da lista de pedidos. */
 const ROTULO_DO_PEDIDO: Record<SalesOrderRecord["status"], string> = {
@@ -29,14 +45,29 @@ const ROTULO_DO_PEDIDO: Record<SalesOrderRecord["status"], string> = {
   cancelled: "Cancelado",
 };
 
+/** Cor da etiqueta de cada etapa: azul no começo do funil, verde/vermelho no fim. */
+const COR_DA_ETAPA: Record<LeadStage, string> = {
+  new: "bg-blue-50 text-blue-700",
+  in_progress: "bg-indigo-50 text-indigo-700",
+  quote_sent: "bg-amber-50 text-amber-800",
+  awaiting_payment: "bg-orange-50 text-orange-700",
+  won: "bg-green-50 text-green-700",
+  lost: "bg-red-50 text-red-700",
+};
+
 /**
- * ATENDIMENTO — quem está com quem.
+ * ATENDIMENTO — quem está com quem, e em que ponto está cada conversa.
  *
  * Todo contato que sai do site pelo WhatsApp cai aqui (a rota
  * /api/atendimentos/whatsapp registra antes de redirecionar), junto com os
  * pedidos do checkout (/api/pedidos cria o atendimento vinculado ao pedido) e
  * os atendimentos lançados a mão. As abas são conveniência: qualquer pessoa do
  * painel enxerga tudo, como o dono decidiu.
+ *
+ * Cada atendimento anda pelo funil (Novo → Em atendimento → Orçamento enviado →
+ * Aguardando pagamento → Ganho ou Perdido). As etapas são do ATENDIMENTO; o
+ * pedido continua com os próprios status, e confirmar ou cancelar o pedido
+ * fecha o atendimento vinculado sozinho.
  */
 export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<Params> }) {
   const owner = await requireOwner();
@@ -54,8 +85,17 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   const de = dataValida(texto(params.de));
   const ate = dataValida(texto(params.ate));
   const query = texto(params.q).trim();
+  // Cliente apontado por um link da tela de Clientes: vem pelo número de um
+  // pedido dele, nunca pelo telefone ou CPF (que ficariam na URL).
+  const clienteRef = texto(params.cliente).trim();
   const feito = texto(params.feito);
   const erro = texto(params.erro);
+
+  // Os pedidos vêm antes dos atendimentos: são eles que dizem quem é quem
+  // (etiqueta de recorrência e o filtro por cliente logo abaixo).
+  const [sellers, produtos, pedidos] = await Promise.all([getSellers(), getAdminProducts(), getSalesOrders()]);
+  const clientes = buildCustomerIndex(pedidos);
+  const chaveDoLink = clienteRef ? clientes.keyOfOrderNumber(clienteRef) : null;
 
   // Cada aba é uma consulta PRÓPRIA, com os filtros aplicados no banco antes do
   // teto de 500 — e não um recorte em memória dos 500 mais recentes da loja.
@@ -66,35 +106,47 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   // O filtro de atendente não vale na fila (por definição, sem atendente) nem
   // em "Meus" (o atendente é o do login): nas duas o select fica desativado e o
   // valor é guardado para quando o operador voltar para "Todos".
-  const filtrosDaLista: LeadFilters = {
+  //
+  // O funil conta com os mesmos filtros, menos a etapa (é ela que o funil
+  // separa) e a busca por texto (que só existe em memória, sobre a lista).
+  const filtrosDoFunil: Omit<LeadFilters, "q" | "stage"> = {
     from: de || undefined,
     to: ate || undefined,
-    q: query || undefined,
-    stage: etapa || undefined,
     source: origem || undefined,
+    // Todos os telefones e CPF/CNPJ do cliente: o atendimento pode ter vindo
+    // de um número antigo dele. Cliente do link não encontrado = lista vazia.
+    ...(clienteRef ? { customerKeys: clientes.identitiesOf(chaveDoLink) } : {}),
     ...(aba === "fila"
       ? { unassigned: true, open: true }
       : aba === "meus"
         ? { sellerId: owner.sellerId ?? undefined }
         : { sellerId: atendente || undefined }),
   };
+  const filtrosDaLista: LeadFilters = { ...filtrosDoFunil, q: query || undefined, stage: etapa || undefined };
   // Login sem vínculo não tem "meus": nem consulta (sem sellerId, a consulta
   // viraria "todos").
   const semVinculo = aba === "meus" && !owner.sellerId;
   const hoje = leadLocalDate(new Date().toISOString());
+  // Na fila só existem etapas abertas: Ganho e Perdido ficariam sempre em zero.
+  const etapasDoFunil: readonly LeadStage[] = aba === "fila" ? OPEN_LEAD_STAGES : LEAD_STAGES;
 
-  const [pagina, sellers, produtos, pedidos, filaLivre, chegaramHoje] = await Promise.all([
+  const [pagina, filaLivre, chegaramHoje] = await Promise.all([
     semVinculo ? Promise.resolve<LeadPage>({ leads: [], truncated: false }) : listLeadsPage(filtrosDaLista),
-    getSellers(),
-    getAdminProducts(),
-    getSalesOrders(),
     // Números do topo: contagens exatas, independentes da aba e dos filtros.
     countLeads({ unassigned: true, open: true }),
     countLeads({ from: hoje, to: hoje }),
   ]);
   const atendentes = sortSellers(sellers);
   const ativos = atendentes.filter((seller) => seller.active);
-  const abertosPorAtendente = await Promise.all(ativos.map((seller) => countLeads({ sellerId: seller.id, open: true })));
+  const [abertosPorAtendente, porEtapa] = await Promise.all([
+    Promise.all(ativos.map((seller) => countLeads({ sellerId: seller.id, open: true }))),
+    Promise.all(etapasDoFunil.map((valor) => (semVinculo ? Promise.resolve(0) : countLeads({ ...filtrosDoFunil, stage: valor })))),
+  ]);
+  const contagemDaEtapa = new Map(etapasDoFunil.map((valor, indice) => [valor, porEtapa[indice] ?? 0]));
+  const ganhos = contagemDaEtapa.get("won") ?? 0;
+  const perdidos = contagemDaEtapa.get("lost") ?? 0;
+  const taxaDeGanho = aba !== "fila" && ganhos + perdidos > 0 ? ganhos / (ganhos + perdidos) : null;
+
   const porId = new Map(sellers.map((seller) => [seller.id, seller]));
   const nomeDoProduto = new Map(produtos.map((produto) => [produto.id, produto.name]));
   const pedidoPorId = new Map(pedidos.map((pedido) => [pedido.id, pedido]));
@@ -103,10 +155,18 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   // Filtros (sem a aba e sem as mensagens) viajam nos links das abas e na volta
   // das ações, senão cada clique jogaria o operador de volta para a lista cheia.
   const filtros = new URLSearchParams();
-  for (const [chave, valor] of [["atendente", atendente], ["etapa", etapa], ["origem", origem], ["de", de], ["ate", ate], ["q", query]] as const) {
+  for (const [chave, valor] of [["atendente", atendente], ["etapa", etapa], ["origem", origem], ["de", de], ["ate", ate], ["q", query], ["cliente", clienteRef]] as const) {
     if (valor) filtros.set(chave, valor);
   }
   const volta = comFiltros(aba, filtros);
+  const semCliente = new URLSearchParams(filtros);
+  semCliente.delete("cliente");
+  const comEtapa = (valor: LeadStage | "") => {
+    const proximos = new URLSearchParams(filtros);
+    if (valor) proximos.set("etapa", valor);
+    else proximos.delete("etapa");
+    return comFiltros(aba, proximos);
+  };
   // Todas as origens conhecidas, mais qualquer valor antigo fora da lista que
   // esteja gravado (ou no filtro aplicado) — senão o select não o mostraria.
   const origens = [...new Set([...Object.keys(TRAFFIC_SOURCE_LABELS), ...leads.map((lead) => lead.source), ...(origem ? [origem] : [])])];
@@ -118,19 +178,31 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
         eyebrow="Operação comercial"
         title="Atendimento"
         description={`${leads.length}${pagina.truncated ? "+" : ""} atendimento(s) nesta lista · ${filaLivre} na fila livre`}
-        actions={<Link href="/painel/pedidos" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Ver pedidos</Link>}
+        actions={<>
+          <Link href="/painel/clientes" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Clientes</Link>
+          <Link href="/painel/pedidos" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Ver pedidos</Link>
+        </>}
       />
 
       {feito && <div role="status" className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{feito}</div>}
       {erro && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{erro}</div>}
+      {clienteRef && (
+        <div role="status" className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          {chaveDoLink
+            ? `Mostrando só os atendimentos do cliente do pedido ${clienteRef}, com qualquer telefone ou CPF dele.`
+            : `Nenhum cliente encontrado para o pedido ${clienteRef}.`}
+          {" "}<Link href={comFiltros(aba, semCliente)} className="font-bold underline">Ver todos os atendimentos</Link>
+        </div>
+      )}
       {pagina.truncated && (
         <div role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Mostrando os {LEAD_LIST_LIMIT} atendimentos mais recentes desta lista. Os números do topo contam todos; para alcançar os anteriores, filtre por atendente, etapa, origem ou data — a busca por texto procura só dentro destes {LEAD_LIST_LIMIT}.
+          Mostrando os {LEAD_LIST_LIMIT} atendimentos mais recentes desta lista. Os números do topo e do funil contam todos; para alcançar os anteriores, filtre por atendente, etapa, origem ou data — a busca por texto procura só dentro destes {LEAD_LIST_LIMIT}.
         </div>
       )}
 
       {/* Contagens exatas, feitas no banco: não dependem da aba, dos filtros nem
-          do teto da lista. */}
+          do teto da lista. "Em aberto" é o mesmo número que o modo "menos
+          ocupado" usa para escolher quem recebe o próximo atendimento. */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <PanelCard className="p-4">
           <p className="text-xs font-semibold text-ink-500">Fila livre</p>
@@ -167,11 +239,42 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
         </div>
       )}
 
+      {/* Mini-funil: quantos atendimentos há em cada etapa com os filtros de
+          agora. Cada etapa é um atalho para filtrar a lista por ela. */}
+      <PanelCard className="mt-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-black text-ink-900">Funil</h2>
+          <p className="text-xs text-ink-500">
+            {taxaDeGanho === null
+              ? "Com a aba e os filtros atuais (a busca por texto não entra na conta)."
+              : <>Ganhos: <strong className="text-green-700">{PERCENTUAL.format(taxaDeGanho)}</strong> dos {ganhos + perdidos} atendimento(s) fechados · com a aba e os filtros atuais (a busca por texto não entra na conta).</>}
+          </p>
+        </div>
+        <ol className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          {etapasDoFunil.map((valor, indice) => (
+            <li key={valor} className="flex items-center gap-2">
+              {indice > 0 && <span aria-hidden="true" className="font-bold text-ink-300">{valor === "lost" ? "ou" : "→"}</span>}
+              <Link
+                href={comEtapa(etapa === valor ? "" : valor)}
+                aria-current={etapa === valor ? "true" : undefined}
+                title={etapa === valor ? "Mostrar todas as etapas" : `Mostrar só “${LEAD_STAGE_LABELS[valor]}”`}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 font-bold transition-colors ${etapa === valor ? "border-ink-900 bg-ink-900 text-white" : "border-ink-200 bg-white text-ink-700 hover:border-gold-400"}`}
+              >
+                {LEAD_STAGE_LABELS[valor]}
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${etapa === valor ? "bg-white/15" : COR_DA_ETAPA[valor]}`}>{contagemDaEtapa.get(valor) ?? 0}</span>
+              </Link>
+            </li>
+          ))}
+          {etapa && <li><Link href={comEtapa("")} className="ml-1 font-bold text-blue-700 hover:underline">Todas as etapas</Link></li>}
+        </ol>
+      </PanelCard>
+
       <PanelCard className="mt-5">
         {/* flex-wrap em vez de grade fixa: com a origem e as datas são seis
             campos, e uma coluna a mais não pode quebrar a linha dos filtros. */}
         <form className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="aba" value={aba} />
+          {clienteRef && <input type="hidden" name="cliente" value={clienteRef} />}
           <label className="min-w-[200px] flex-1 text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Cliente, telefone ou mensagem" className={FILTRO} /></label>
           <label className="w-40 text-xs font-bold text-ink-600">Atendente
             <select
@@ -196,7 +299,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
           <label className="w-44 text-xs font-bold text-ink-600">Etapa
             <select name="etapa" defaultValue={etapa} className={FILTRO}>
               <option value="">Todas</option>
-              {Object.entries(LEAD_STAGE_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+              {LEAD_STAGES.map((valor) => <option key={valor} value={valor}>{LEAD_STAGE_LABELS[valor]}</option>)}
             </select>
           </label>
           <label className="w-40 text-xs font-bold text-ink-600">Origem
@@ -229,6 +332,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
             seller={lead.seller_id ? porId.get(lead.seller_id) ?? null : null}
             productName={lead.product_id ? nomeDoProduto.get(lead.product_id) ?? lead.product_id : ""}
             order={lead.order_id ? pedidoPorId.get(lead.order_id) ?? null : null}
+            clientes={clientes}
             sellers={atendentes}
             ownerSellerId={owner.sellerId}
             volta={volta}
@@ -246,36 +350,70 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   );
 }
 
-function LeadRow({ lead, seller, productName, order, sellers, ownerSellerId, volta }: {
+function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSellerId, volta }: {
   lead: LeadRecord;
   seller: SellerRecord | null;
   productName: string;
   /** Pedido vinculado (`lead.order_id`), quando ainda está na lista de pedidos. */
   order: SalesOrderRecord | null;
+  /** Quem é quem pelos pedidos (telefone e CPF de cada cliente e as compras dele). */
+  clientes: CustomerIndex;
   sellers: SellerRecord[];
   ownerSellerId: string | null;
   volta: string;
 }) {
-  const telefone = telefoneVisivel(lead.customer_phone);
+  // O vínculo não copia nome nem telefone do pedido para o atendimento (ver
+  // linkLeadToOrder): enquanto o pedido existir, a tela mostra os dele.
+  const nome = lead.customer_name || order?.customer?.name?.trim() || "";
+  const telefoneDoCliente = lead.customer_phone || onlyDigits(order?.customer?.phone ?? "");
+  const telefone = telefoneVisivel(telefoneDoCliente);
   // Atendente fora do cadastro atual (removido da lista) ainda é alguém: mostrar
   // o id é melhor do que dizer "Fila livre" para um atendimento que tem dono.
   const responsavel = lead.seller_id ? seller?.name ?? lead.seller_id : null;
   // A campanha mais recente é a que o cliente acabou de clicar — a mesma que
   // foi no "(ref. ...)" da mensagem do WhatsApp.
   const campanha = latestCampaign(lead.attribution);
+  // Clique de WhatsApp não traz telefone: a etiqueta de recorrência só aparece
+  // quando há como reconhecer o cliente (telefone/CPF do atendimento ou do
+  // pedido vinculado). "Recorrente" = já tinha compra finalizada ANTES: da
+  // compra, quando o pedido vinculado foi finalizado (ela mesma não conta);
+  // senão, da chegada do atendimento.
+  const chaveDoCliente = clientes.keyOf(lead.customer_key) ?? (order ? clientes.keyOfOrder(order) : null);
+  const momento = order?.status === "completed" ? order.created_at : lead.created_at;
+  const selo = lead.customer_key || chaveDoCliente
+    ? recurrenceBadge(clientes.completedBefore(chaveDoCliente, momento), clientes.completedOrders(chaveDoCliente))
+    : null;
+  // O link aponta o cliente pelo número de um pedido dele, não pelo telefone.
+  const referencia = clientes.referenceOf(chaveDoCliente);
+  // Pedido já confirmado prende a etapa em Ganho (a venda aconteceu). Se o
+  // atendimento ainda não está em Ganho — o fechamento automático da
+  // confirmação falhou —, a única troca aceita é para Ganho, e o operador
+  // acerta por aqui. Sem pedido, ou com o pedido cancelado/fora da lista, o
+  // atendimento pode ganhar outro vínculo.
+  const pedidoConfirmado = order?.status === "completed" ? order : null;
+  const travado = pedidoConfirmado && lead.stage === "won" ? `Pedido ${pedidoConfirmado.number} confirmado: a etapa fica Ganho.` : undefined;
+  const acertarParaGanho = pedidoConfirmado && lead.stage !== "won" ? `Pedido ${pedidoConfirmado.number} já confirmado: salve como Ganho.` : undefined;
+  const podeVincular = !lead.order_id || !order || order.status === "cancelled";
+  const podeLancar = podeVincular && lead.stage !== "lost";
+
   return (
     <article className="rounded-2xl border border-ink-100 bg-white shadow-card">
       <div className="grid gap-4 p-5 sm:grid-cols-[1.4fr_1fr] sm:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-black text-ink-900">{lead.customer_name || "Cliente não identificado"}</h2>
+            <h2 className="font-black text-ink-900">{nome || "Cliente não identificado"}</h2>
             <span className="rounded-full bg-ink-100 px-2.5 py-1 text-[10px] font-black uppercase text-ink-600">{LEAD_KIND_LABELS[lead.kind]}</span>
-            <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-black uppercase text-blue-700">{LEAD_STAGE_LABELS[lead.stage]}</span>
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${COR_DA_ETAPA[lead.stage]}`}>
+              {LEAD_STAGE_LABELS[lead.stage]}{lead.stage === "lost" && lead.lost_reason ? ` · ${LEAD_LOST_REASON_LABELS[lead.lost_reason]}` : ""}
+            </span>
+            {selo && (selo.returning && referencia
+              ? <Link href={`/painel/clientes?cliente=${encodeURIComponent(referencia)}`} title="Ver o histórico deste cliente" className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-700 hover:underline">{selo.label}</Link>
+              : <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase text-sky-700">{selo.label}</span>)}
             <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-black uppercase text-purple-700">{trafficSourceLabel(lead.source)}</span>
             {campanha && <span className="rounded-full bg-gold-50 px-2.5 py-1 text-[10px] font-black text-gold-800" title="Campanha (utm_campaign) do link por onde o cliente chegou">Campanha: {campanha}</span>}
           </div>
           {telefone
-            ? <a href={customerWhatsappLink(lead.customer_phone)} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm font-bold text-[#128C7E] hover:underline">{telefone} · abrir WhatsApp</a>
+            ? <a href={customerWhatsappLink(telefoneDoCliente)} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm font-bold text-[#128C7E] hover:underline">{telefone} · abrir WhatsApp</a>
             : <p className="mt-1 text-sm text-ink-400">Sem telefone registrado</p>}
           {lead.message && <p className="mt-2 line-clamp-2-safe text-xs text-ink-500">{lead.message}</p>}
           {lead.notes && <p className="mt-2 text-xs text-ink-600"><strong>Obs.:</strong> {lead.notes}</p>}
@@ -302,8 +440,47 @@ function LeadRow({ lead, seller, productName, order, sellers, ownerSellerId, vol
         </div>
       </div>
 
-      <div className="border-t border-ink-100 bg-ink-50/50 px-5 py-3">
-        <LeadActions leadId={lead.id} currentSellerId={lead.seller_id} sellers={sellers} ownerSellerId={ownerSellerId} volta={volta} />
+      <div className="space-y-3 border-t border-ink-100 bg-ink-50/50 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* `key` pela etapa gravada: depois de salvar, a página volta só com a
+              query nova e o Next não remonta a árvore — sem remontar, o select
+              guardaria o estado local antigo em vez da etapa que veio do banco. */}
+          <LeadStageSelect
+            key={`${lead.id}:${lead.stage}:${lead.lost_reason ?? ""}:${pedidoConfirmado ? "confirmado" : ""}`}
+            leadId={lead.id}
+            stage={lead.stage}
+            lostReason={lead.lost_reason}
+            volta={volta}
+            lockedReason={travado}
+            allowedStages={acertarParaGanho ? ["won"] : undefined}
+            note={acertarParaGanho}
+          />
+          <LeadActions leadId={lead.id} currentSellerId={lead.seller_id} sellers={sellers} ownerSellerId={ownerSellerId} volta={volta} />
+        </div>
+        {podeVincular && (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Formulários irmãos, nunca aninhados: o de etapa e os de
+                redistribuição ficam na linha de cima. */}
+            <form action={linkLeadToOrderAction} className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="leadId" value={lead.id} />
+              <input type="hidden" name="volta" value={volta} />
+              <input
+                name="orderNumber"
+                required
+                maxLength={40}
+                aria-label="Número do pedido para vincular a este atendimento"
+                placeholder="Vincular a pedido: DG-…"
+                className="w-56 rounded-lg border border-ink-200 bg-white px-2.5 py-2 text-xs"
+              />
+              <button type="submit" className={BOTAO}>Vincular</button>
+            </form>
+            {podeLancar && (
+              <Link href={`/painel/pedidos/novo?atendimento=${encodeURIComponent(lead.id)}&volta=${encodeURIComponent(volta)}`} className={BOTAO}>
+                Lançar pedido
+              </Link>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );

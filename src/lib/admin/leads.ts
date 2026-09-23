@@ -44,6 +44,9 @@ import {
 
 const AVISO_MIGRATION = "Atendimentos indisponiveis: aplique supabase/migrations/202609210002_atendimentos.sql no SQL Editor.";
 
+/** O que o painel diz ao operador quando a tabela de atendimentos ainda nao existe no banco. */
+export const LEAD_CRM_UNAVAILABLE_MESSAGE = "Os atendimentos ainda não existem no banco. Aplique supabase/migrations/202609210002_atendimentos.sql no SQL Editor.";
+
 /** Persistencia local de desenvolvimento (sem Supabase), no espirito de data/admin-catalog.json. */
 const LOCAL_FILE = join(process.cwd(), "data", "admin-leads.json");
 
@@ -131,6 +134,11 @@ export interface LeadFilters {
   /** YYYY-MM-DD em America/Sao_Paulo. */
   from?: string;
   to?: string;
+  /**
+   * Somente os atendimentos destas chaves de cliente (todos os telefones e
+   * CPF/CNPJ de um cliente, ver `identitiesOf`). Lista vazia = nenhum.
+   */
+  customerKeys?: readonly string[];
   /** Busca livre em nome, telefone, mensagem e produto (aplicada em memoria). */
   q?: string;
 }
@@ -461,6 +469,51 @@ export async function listLeadTraffic(filters: { from?: string; to?: string }): 
   };
 }
 
+/** O que a tela de Clientes precisa de cada atendimento em aberto: so a chave do cliente. */
+export type OpenLeadKeyRow = Pick<LeadRecord, "customer_key" | "stage">;
+
+/**
+ * Chave do cliente de cada atendimento ainda aberto (Novo, Em atendimento,
+ * Orcamento enviado, Aguardando pagamento).
+ *
+ * Serve para a tela de Clientes avisar "atendimento em aberto" antes de alguem
+ * recontatar quem ja esta sendo atendido. Traz so duas colunas, em paginas de
+ * 1.000 como o relatorio de trafego: cliques de WhatsApp que ninguem fechou se
+ * acumulam, e o teto de 500 da lista deixaria clientes de fora. Best-effort:
+ * falha ou tabela ausente devolvem o que ja foi lido (a tela so perde o aviso).
+ */
+export async function listOpenLeadKeys(): Promise<OpenLeadKeyRow[]> {
+  if (hasSupabaseConfig()) {
+    const rows: OpenLeadKeyRow[] = [];
+    for (let inicio = 0; inicio < LEAD_REPORT_LIMIT; inicio += PAGINA_DO_RELATORIO) {
+      const { data, error } = await createSupabaseAdminClient()
+        .from("leads")
+        .select("id, customer_key, stage")
+        .in("stage", [...OPEN_LEAD_STAGES])
+        .not("customer_key", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(inicio, inicio + PAGINA_DO_RELATORIO - 1);
+      if (error) {
+        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        else console.warn("Nao foi possivel ler os atendimentos em aberto:", error.message);
+        return rows;
+      }
+      for (const row of data ?? []) {
+        const stage = texto(row.stage);
+        const chave = texto(row.customer_key);
+        if (chave && stage in LEAD_STAGE_LABELS) rows.push({ customer_key: chave, stage: stage as LeadStage });
+      }
+      if (!data || data.length < PAGINA_DO_RELATORIO) return rows;
+    }
+    return rows;
+  }
+
+  return (await lerLeadsLocais())
+    .filter((lead) => lead.customer_key && isOpenLeadStage(lead.stage))
+    .map((lead) => ({ customer_key: lead.customer_key, stage: lead.stage }));
+}
+
 // ---------------------------------------------------------------------------
 // Regras puras reaproveitadas pelo painel
 // ---------------------------------------------------------------------------
@@ -505,6 +558,9 @@ function consultaFiltrada(filters: Omit<LeadFilters, "q">, somenteContar: boolea
   if (filters.source) query = query.eq("source", filters.source);
   if (filters.from) query = query.gte("created_at", inicioDoDia(filters.from));
   if (filters.to) query = query.lte("created_at", fimDoDia(filters.to));
+  // Lista vazia tem de dar zero linhas, e nao "sem filtro": "" nunca e gravado
+  // (chave ausente vira null), entao `in ("")` nao acha nada.
+  if (filters.customerKeys) query = query.in("customer_key", filters.customerKeys.length ? [...filters.customerKeys] : [""]);
   return query;
 }
 
@@ -740,6 +796,7 @@ function combina(lead: LeadRecord, filters: Omit<LeadFilters, "q">): boolean {
   if (filters.open && !isOpenLeadStage(lead.stage)) return false;
   if (filters.stage && lead.stage !== filters.stage) return false;
   if (filters.source && lead.source !== filters.source) return false;
+  if (filters.customerKeys && !(lead.customer_key && filters.customerKeys.includes(lead.customer_key))) return false;
   const dia = leadLocalDate(lead.created_at);
   if (filters.from && dia < filters.from) return false;
   if (filters.to && dia > filters.to) return false;

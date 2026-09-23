@@ -19,6 +19,9 @@ export default async function DashboardPage() {
     { label: "Pedidos aguardando", value: data.pendingOrders, color: "text-blue-700", href: "/painel/pedidos?status=pending" },
     { label: "Fila livre", value: data.freeLeads, color: "text-orange-700", href: "/painel/atendimento?aba=fila", detail: "Atendimentos esperando alguém assumir" },
     { label: "Atendimentos hoje", value: data.leadsToday, color: "text-blue-700", href: `/painel/atendimento?aba=todos&de=${data.today}&ate=${data.today}`, detail: hojePorAtendente || undefined },
+    // Quem comprou na janela e já tinha comprado antes; o link abre a lista de
+    // Clientes com o mesmo recorte (2 compras ou mais, última nos N dias).
+    { label: `Clientes recorrentes (${data.recentBuyersDays} dias)`, value: data.returningCustomers, color: "text-emerald-700", href: `/painel/clientes?segmento=recorrentes&dias=${data.recentBuyersDays}`, detail: `De ${data.recentBuyers} cliente(s) identificado(s) que compraram no período` },
   ];
 
   return (
@@ -29,7 +32,8 @@ export default async function DashboardPage() {
         description="Acompanhe o catalogo sem inventar metricas de faturamento."
         actions={<Link href="/painel/produtos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 hover:bg-gold-300">+ Novo produto</Link>}
       />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Nove cards: três colunas fecham a grade sem card sobrando. */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {stats.map((stat) => {
           const conteudo = (
             <>
@@ -73,6 +77,8 @@ export default async function DashboardPage() {
             <QuickLink href="/painel/pedidos" label="Consultar pedidos" />
             {data.pendingOrders > 0 && <QuickLink href="/painel/pedidos?status=pending" label={`Ver ${data.pendingOrders} pedido(s) aguardando`} />}
             {data.freeLeads > 0 && <QuickLink href="/painel/atendimento?aba=fila" label={`Assumir ${data.freeLeads} atendimento(s) da fila`} />}
+            {data.repurchaseSuggestions > 0 && <QuickLink href="/painel/clientes?dias=recontato&ordem=total" label={`Recontatar ${data.repurchaseSuggestions} cliente(s)`} />}
+            <QuickLink href="/painel/clientes" label="Ver clientes e recorrência" />
             <QuickLink href="/painel/trafego" label="Ver de onde vêm os clientes" />
             <QuickLink href="/painel/estoque" label="Ajustar estoque" />
             <QuickLink href="/painel/categorias" label="Organizar categorias" />

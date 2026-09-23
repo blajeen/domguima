@@ -7,6 +7,7 @@ import { bulkOrdersAction } from "@/app/painel/actions";
 import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
 import { requireOwner } from "@/lib/admin/auth";
+import { buildCustomerIndex, phoneKey, recurrenceBadge } from "@/lib/admin/customers";
 import { getSalesOrders, getSellers } from "@/lib/admin/data";
 import { channelFilterParam, matchesOriginFilters, ORIGIN_FILTER_NOT_INFORMED, sourceFilterParam } from "@/lib/admin/reports";
 import {
@@ -20,6 +21,7 @@ import {
 import { attributionCampaign, latestCampaign, orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
 import { formatPrice, normalize } from "@/lib/utils/format";
+import { onlyDigits } from "@/lib/utils/validators";
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -35,20 +37,41 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const status = params.status === "cancelled" ? "cancelled" : params.status === "completed" ? "completed" : params.status === "pending" ? "pending" : "";
   const canal = channelFilterParam(params.canal);
   const origem = sourceFilterParam(params.origem);
+  // Quem é quem: telefone e CPF que aparecem juntos em algum pedido são o mesmo
+  // cliente. Serve à busca abaixo e à etiqueta de recorrência de cada card.
+  const clientes = buildCustomerIndex(allOrders);
+  // Busca digitada só com número (telefone ou CPF, com ou sem pontuação e o
+  // 55): traz TODOS os pedidos do cliente, inclusive os que têm só o outro
+  // documento.
+  const digitosDaBusca = /^[\d\s().+/-]+$/.test(query) ? onlyDigits(query) : "";
+  const clienteDaBusca = digitosDaBusca.length >= 10 ? clientes.keyOf(phoneKey(digitosDaBusca)) ?? clientes.keyOf(digitosDaBusca) : null;
+  // "Ver pedidos" da tela de Clientes: o cliente vem pelo número de um pedido
+  // dele (nunca o telefone ou o CPF na URL) e a lista traz todos os pedidos
+  // dele, inclusive os feitos com outro telefone ou só com o CPF.
+  const clienteRef = typeof params.cliente === "string" ? params.cliente.trim() : "";
+  const clienteDoLink = clienteRef ? clientes.keyOfOrderNumber(clienteRef) : null;
   const orders = allOrders.filter((order) => {
     // A campanha entra na busca: "natal" acha os pedidos que vieram do link da campanha de Natal.
-    const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.seller_name} ${attributionCampaign(order.attribution)} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
-    return (!query || searchable.includes(normalize(query)))
+    // O telefone entra como foi digitado e só em dígitos: "(34) 99999" e "3499999" acham o mesmo pedido.
+    const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.customer.phone} ${onlyDigits(order.customer.phone ?? "")} ${order.seller_name} ${attributionCampaign(order.attribution)} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
+    const achouPelaBusca = !query
+      || searchable.includes(normalize(query))
+      || (digitosDaBusca.length >= 4 && searchable.includes(digitosDaBusca))
+      || (clienteDaBusca !== null && clientes.keyOfOrder(order) === clienteDaBusca);
+    return achouPelaBusca
+      && (!clienteRef || (clienteDoLink !== null && clientes.keyOfOrder(order) === clienteDoLink))
       && (!seller || order.seller_id === seller)
       && (!status || order.status === status)
       && matchesOriginFilters(order, { channel: canal, source: origem });
   });
   // Filtros atuais, para a atribuição voltar à mesma lista.
   const filtros = new URLSearchParams();
-  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status], ["canal", canal], ["origem", origem]] as const) {
+  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status], ["canal", canal], ["origem", origem], ["cliente", clienteRef]] as const) {
     if (valor) filtros.set(chave, valor);
   }
   const volta = filtros.toString() ? `/painel/pedidos?${filtros.toString()}` : "/painel/pedidos";
+  const semCliente = new URLSearchParams(filtros);
+  semCliente.delete("cliente");
   const created = typeof params.criado === "string" ? allOrders.find((order) => order.id === params.criado) : null;
   const confirmed = typeof params.confirmado === "string" ? allOrders.find((order) => order.id === params.confirmado) : null;
   const cancelled = typeof params.cancelado === "string";
@@ -71,12 +94,21 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       {cancelled && <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Pedido cancelado.</div>}
       {feito && <div role="status" className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{feito}</div>}
       {errorMessage && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>}
+      {clienteRef && (
+        <div role="status" className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          {clienteDoLink
+            ? `Mostrando só os pedidos do cliente do pedido ${clienteRef}, com qualquer telefone ou CPF dele.`
+            : `Nenhum cliente encontrado para o pedido ${clienteRef}.`}
+          {" "}<Link href={semCliente.toString() ? `/painel/pedidos?${semCliente.toString()}` : "/painel/pedidos"} className="font-bold underline">Ver todos os pedidos</Link>
+        </div>
+      )}
 
       <PanelCard>
         {/* flex-wrap: com canal e origem são seis campos, e uma grade fixa
             quebraria a linha em telas médias. */}
         <form className="flex flex-wrap items-end gap-3">
-          <label className="min-w-[220px] flex-1 text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Pedido, cliente, CPF, produto, SKU ou campanha" className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
+          {clienteRef && <input type="hidden" name="cliente" value={clienteRef} />}
+          <label className="min-w-[220px] flex-1 text-xs font-bold text-ink-600">Buscar<input name="q" defaultValue={query} placeholder="Pedido, cliente, CPF, telefone, produto, SKU ou campanha" className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
           <label className="w-44 text-xs font-bold text-ink-600">Vendedor<select name="vendedor" defaultValue={seller} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value={UNASSIGNED_ORDER_SELLER_ID}>Fila livre (sem atendente)</option>{sellers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="w-44 text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value="pending">Aguardando confirmação</option><option value="completed">Finalizados</option><option value="cancelled">Cancelados</option></select></label>
           <label className="w-40 text-xs font-bold text-ink-600">Canal<select name="canal" defaultValue={canal} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option>{Object.entries(ORDER_CHANNEL_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
@@ -94,14 +126,34 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         </form>
       )}
       <div className={`space-y-3 ${orders.length ? "" : "mt-5"}`}>
-        {orders.map((order) => <OrderRow key={order.id} order={order} sellers={sellers} volta={volta} />)}
+        {orders.map((order) => {
+          // Cancelado não ganha etiqueta: a venda não aconteceu, e "Cliente
+          // novo" num pedido que não existiu só confunde. "Recorrente" = o
+          // cliente já tinha compra finalizada ANTES deste pedido.
+          const chave = order.status === "cancelled" ? null : clientes.keyOfOrder(order);
+          return (
+            <OrderRow
+              key={order.id}
+              order={order}
+              sellers={sellers}
+              volta={volta}
+              customer={chave ? recurrenceBadge(clientes.completedBefore(chave, order.created_at), clientes.completedOrders(chave)) : null}
+            />
+          );
+        })}
         {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
       </div>
     </>
   );
 }
 
-function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers: Awaited<ReturnType<typeof getSellers>>; volta: string }) {
+function OrderRow({ order, sellers, volta, customer }: {
+  order: SalesOrderRecord;
+  sellers: Awaited<ReturnType<typeof getSellers>>;
+  volta: string;
+  /** Etiqueta de recorrência; `null` quando o pedido não tem telefone nem CPF (ou foi cancelado). */
+  customer: { returning: boolean; label: string } | null;
+}) {
   const payment = order.payment_method ? ORDER_PAYMENT_METHOD_LABELS[order.payment_method] : "Pagamento a combinar";
   const delivery = order.delivery_method === "uberlandia_delivery" ? "Entrega em Uberlândia" : "Frete a combinar";
   // Pedido do site que ninguém assumiu ainda: "Fila livre", no mesmo tom da
@@ -123,6 +175,9 @@ function OrderRow({ order, sellers, volta }: { order: SalesOrderRecord; sellers:
             <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${order.status === "completed" ? "bg-green-50 text-green-700" : order.status === "pending" ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-700"}`}>
               {order.status === "completed" ? "Finalizado" : order.status === "pending" ? "Aguardando confirmação" : "Cancelado"}
             </span>
+            {customer && (customer.returning
+              ? <Link href={`/painel/clientes?cliente=${encodeURIComponent(order.number)}`} title="Ver o histórico deste cliente" className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-700 hover:underline">{customer.label}</Link>
+              : <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase text-sky-700">{customer.label}</span>)}
             {/* Canal e origem só aparecem quando conhecidos: pedido antigo não
                 ganha uma etiqueta "Não informado" em cada card. */}
             {order.channel && <span className="rounded-full bg-ink-100 px-2.5 py-1 text-[10px] font-black uppercase text-ink-600">{orderChannelLabel(order.channel)}</span>}

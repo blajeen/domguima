@@ -1,6 +1,6 @@
 import { whatsapp, type WhatsappContact } from "@/config/site";
 import { resolveAttendantNumber } from "@/lib/admin/distribution";
-import type { LeadKind, SellerRecord } from "@/lib/admin/types";
+import type { CustomerSummary, LeadKind, SellerRecord } from "@/lib/admin/types";
 import type { Product } from "@/lib/catalog/types";
 import { formatPrice } from "@/lib/utils/format";
 import { formatPhone, onlyDigits } from "@/lib/utils/validators";
@@ -162,6 +162,29 @@ export function quickCartMessage(lines: CartLine[], total: number, details: Quic
 }
 
 export const genericMessage = "Olá! Vim pelo site da Dom Guima e preciso de ajuda.";
+
+/**
+ * Mensagem de recontato para quem ja comprou (tela de Clientes).
+ *
+ * So fala do que aconteceu de fato — a ultima compra, com o mes e o produto — e
+ * se coloca a disposicao. Nao promete desconto, novidade nem oferta: quem
+ * decide oferecer algo e o atendente, que edita o texto antes de enviar. Nada
+ * sai sozinho; o painel so abre a conversa com o texto pronto.
+ */
+export function recompraMessage(customer: Pick<CustomerSummary, "name" | "lastOrderAt" | "lastProducts">): string {
+  const primeiroNome = (customer.name.trim().split(/\s+/)[0] ?? "").slice(0, 40);
+  const saudacao = primeiroNome
+    ? `Olá, ${primeiroNome.charAt(0).toLocaleUpperCase("pt-BR")}${primeiroNome.slice(1).toLocaleLowerCase("pt-BR")}! Aqui é da Dom Guima.`
+    : "Olá! Aqui é da Dom Guima.";
+  const mes = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", month: "long", year: "numeric" }).format(new Date(customer.lastOrderAt));
+  const [produto, ...outros] = customer.lastProducts;
+  const itens = produto ? ` (${produto.slice(0, 60)}${outros.length ? ` e mais ${outros.length} ${outros.length === 1 ? "item" : "itens"}` : ""})` : "";
+  return [
+    saudacao,
+    `Passando para saber se ficou tudo certo com a sua compra de ${mes}${itens}.`,
+    "Se precisar de alguma coisa, é só responder por aqui.",
+  ].join("\n");
+}
 
 /**
  * Tamanho maximo do nome da campanha na mensagem: o suficiente para reconhecer,
