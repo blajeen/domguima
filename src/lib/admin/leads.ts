@@ -170,7 +170,7 @@ export async function createLead(input: LeadInput, options: CreateLeadOptions = 
       p_audit: audit,
     });
     if (error) {
-      if (crmAusente(error)) {
+      if (isMissingLeadSchema(error)) {
         console.warn(AVISO_MIGRATION, error.message);
         return { lead: null, alreadyExisted: false };
       }
@@ -218,7 +218,7 @@ export async function listLeadsPage(filters: LeadFilters = {}, limit = LEAD_LIST
   if (hasSupabaseConfig()) {
     const { data, error } = await consultaFiltrada(filters, false).order("created_at", { ascending: false }).limit(limit);
     if (error) {
-      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
       else console.warn("Nao foi possivel listar os atendimentos:", error.message);
       return { leads: [], truncated: false };
     }
@@ -248,7 +248,7 @@ export async function countLeads(filters: Omit<LeadFilters, "q"> = {}): Promise<
   if (hasSupabaseConfig()) {
     const { count, error } = await consultaFiltrada(filters, true);
     if (error) {
-      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
       else console.warn("Nao foi possivel contar os atendimentos:", error.message);
       return 0;
     }
@@ -268,7 +268,7 @@ export async function updateLead(id: string, patch: LeadPatch, audit?: LeadAudit
       p_audit: auditoria,
     });
     if (error) {
-      if (crmAusente(error)) {
+      if (isMissingLeadSchema(error)) {
         console.warn(AVISO_MIGRATION, error.message);
         return { lead: null, found: false, unavailable: true };
       }
@@ -294,7 +294,7 @@ export async function findLead(id: string): Promise<LeadRecord | null> {
   if (hasSupabaseConfig()) {
     const { data, error } = await createSupabaseAdminClient().from("leads").select("*").eq("id", id).maybeSingle();
     if (error) {
-      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
       else console.warn("Nao foi possivel buscar o atendimento:", error.message);
       return null;
     }
@@ -326,7 +326,7 @@ export async function deleteLeads(ids: readonly string[]): Promise<number> {
       const lote = alvo.slice(inicio, inicio + 100);
       const { error, count } = await createSupabaseAdminClient().from("leads").delete({ count: "exact" }).in("id", lote);
       if (error) {
-        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
         else console.warn("Nao foi possivel apagar os atendimentos:", error.message);
         return removidos;
       }
@@ -356,7 +356,7 @@ export async function findLeadByOrder(orderId: string): Promise<LeadRecord | nul
       .limit(1)
       .maybeSingle();
     if (error) {
-      if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+      if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
       else console.warn("Nao foi possivel buscar o atendimento do pedido:", error.message);
       return null;
     }
@@ -386,7 +386,7 @@ export async function findLeadsByOrders(orderIds: readonly string[]): Promise<Le
         .select("*")
         .in("order_id", ids.slice(inicio, inicio + 100));
       if (error) {
-        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
         else console.warn("Nao foi possivel buscar os atendimentos dos pedidos:", error.message);
         return encontrados;
       }
@@ -444,7 +444,7 @@ export async function listLeadTraffic(filters: { from?: string; to?: string }): 
       if (filters.to) query = query.lte("created_at", fimDoDia(filters.to));
       const { data, error } = await query;
       if (error) {
-        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
         else console.warn("Nao foi possivel ler os atendimentos do relatorio:", error.message);
         // Erro na 1a pagina: nada lido (aviso azul). Da 2a em diante: o que
         // veio e so parte do periodo (aviso ambar) — nunca numero parcial
@@ -495,7 +495,7 @@ export async function listOpenLeadKeys(): Promise<OpenLeadKeyRow[]> {
         .order("id", { ascending: true })
         .range(inicio, inicio + PAGINA_DO_RELATORIO - 1);
       if (error) {
-        if (crmAusente(error)) console.warn(AVISO_MIGRATION, error.message);
+        if (isMissingLeadSchema(error)) console.warn(AVISO_MIGRATION, error.message);
         else console.warn("Nao foi possivel ler os atendimentos em aberto:", error.message);
         return rows;
       }
@@ -564,8 +564,14 @@ function consultaFiltrada(filters: Omit<LeadFilters, "q">, somenteContar: boolea
   return query;
 }
 
-/** Tabela ou funcao que ainda nao existe no banco, e nao uma falha de rede. */
-function crmAusente(error: { code?: string; message?: string } | null): boolean {
+/**
+ * Tabela ou funcao que ainda nao existe no banco, e nao uma falha de rede.
+ *
+ * Exportada para o aviso do painel (crm-status.ts) usar a MESMA regra: um
+ * classificador proprio la acabaria discordando deste sobre o que e "falta a
+ * migration" e o que e so o banco fora do ar.
+ */
+export function isMissingLeadSchema(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   if (["PGRST202", "PGRST205", "42P01", "42883"].includes(error.code ?? "")) return true;
   return /could not find the (table|function)|does not exist|schema cache/i.test(error.message ?? "");

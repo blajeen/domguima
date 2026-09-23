@@ -228,7 +228,7 @@ export const institutionalPages: InstitutionalPage[] = [
         heading: "Para que usamos",
         paragraphs: [
           "Usamos os seus dados para processar e entregar o seu pedido, calcular o frete, emitir a nota fiscal, prestar atendimento, reconhecer quem já é cliente da loja e cumprir obrigações legais.",
-          "Para reconhecer quem volta, reunimos os pedidos feitos com o mesmo telefone ou CPF num histórico de compras: assim quem atende sabe que você já comprou com a gente, e a loja pode chamar você pelo WhatsApp algumas semanas depois de uma compra para saber se ficou tudo certo. Esse contato é feito por uma pessoa da loja, uma conversa de cada vez, nunca por envio automático. Se preferir não receber esse contato, é só nos avisar pelo próprio WhatsApp.",
+          "Para reconhecer quem volta, reunimos os pedidos feitos com o mesmo telefone ou CPF num histórico de compras: assim quem atende sabe que você já comprou com a gente, e a loja pode chamar você pelo WhatsApp algumas semanas depois de uma compra para saber se ficou tudo certo. Esse contato é feito por uma pessoa da loja, uma conversa de cada vez, nunca por envio automático. Se preferir não receber esse contato, é só nos avisar pelo próprio WhatsApp: a loja registra a sua recusa junto ao seu telefone e CPF e deixa de fazer esse contato.",
           "Não vendemos, alugamos nem cedemos os seus dados para terceiros com finalidade comercial.",
         ],
       },

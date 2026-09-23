@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { getDashboardData } from "@/lib/admin/data";
 import { formatPrice } from "@/lib/utils/format";
 
@@ -32,6 +33,9 @@ export default async function DashboardPage() {
         description="Acompanhe o catalogo sem inventar metricas de faturamento."
         actions={<Link href="/painel/produtos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 hover:bg-gold-300">+ Novo produto</Link>}
       />
+      {/* Sem as migrations do CRM os cards de atendimento abaixo ficam em zero:
+          o aviso diz por quê, em vez de parecer uma loja sem movimento. */}
+      <CrmMigrationNotice />
       {/* Nove cards: três colunas fecham a grade sem card sobrando. */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {stats.map((stat) => {

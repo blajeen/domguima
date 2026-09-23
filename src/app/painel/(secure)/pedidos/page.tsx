@@ -3,6 +3,7 @@ import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { AssignOrderForm } from "@/components/admin/AssignOrderForm";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
 import { ConfirmOrderForm } from "@/components/admin/ConfirmOrderForm";
+import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { bulkOrdersAction } from "@/app/painel/actions";
 import { InstallmentSimulator } from "@/components/admin/InstallmentSimulator";
 import { OrderBulkActions } from "@/components/admin/OrderBulkActions";
@@ -89,6 +90,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <Link href="/painel/pedidos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950">+ Novo pedido</Link>
         </div>}
       />
+      <CrmMigrationNotice />
       {created && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {created.number} finalizado.</strong> O estoque e a comissão foram atualizados.</div>}
       {confirmed && <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><strong>Pedido {confirmed.number} confirmado.</strong> O estoque e a comissão foram atualizados.</div>}
       {cancelled && <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Pedido cancelado.</div>}

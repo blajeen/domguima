@@ -233,6 +233,8 @@ export interface CustomerSummary {
   segment: CustomerSegment;
   /** Atendimentos em etapa aberta com o mesmo telefone/CPF. */
   openLeads: number;
+  /** Pediu para nao receber o recontato: fica fora das sugestoes e sem o botao de mensagem pronta. */
+  contactOptOut: boolean;
   lastOrderNumber: string;
   /** Produtos da ultima compra, na ordem do pedido. */
   lastProducts: string[];
@@ -430,6 +432,14 @@ export interface AdminOperationsState {
   sellers: SellerRecord[];
   orders: SalesOrderRecord[];
   product_meta: Record<string, ProductOperationalMeta>;
+  /**
+   * Telefones (sem o 55) e CPF/CNPJ, em digitos, de quem pediu para nao
+   * receber o recontato pos-compra — a recusa que a politica de privacidade
+   * promete atender. Todas as identidades do cliente entram: quem trocou de
+   * numero continua fora das sugestoes. Mora no JSONB privado de
+   * store_settings (sem acesso de anon/authenticated), como os atendentes.
+   */
+  contact_opt_outs: string[];
 }
 
 export interface AdminProductRow {

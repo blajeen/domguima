@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { customerContactAction } from "@/app/painel/actions";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { requireOwner } from "@/lib/admin/auth";
 import {
   customerMatches,
@@ -64,6 +66,16 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
   // pedido: o cliente vem pelo número de um pedido dele, nunca pelo telefone
   // ou CPF, que ficariam no histórico do navegador e nos registros de acesso.
   const clienteRef = texto(params.cliente).trim();
+  const feito = texto(params.feito);
+  const erro = texto(params.erro);
+
+  // Os filtros viajam na volta das ações (recontato recusado/permitido), senão
+  // cada clique jogaria o operador de volta para a lista cheia.
+  const filtros = new URLSearchParams();
+  for (const [chave, valor] of [["q", query], ["segmento", segmento], ["dias", dias], ["ordem", ordem === "recente" ? "" : ordem], ["cliente", clienteRef]] as const) {
+    if (valor) filtros.set(chave, valor);
+  }
+  const volta = filtros.toString() ? `/painel/clientes?${filtros.toString()}` : "/painel/clientes";
 
   const { book: livro, index: indice } = await getCustomers();
   const chaveDoLink = clienteRef ? indice.keyOfOrderNumber(clienteRef) : null;
@@ -83,6 +95,9 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         : b.lastOrderAt.localeCompare(a.lastOrderAt)));
   const visiveis = filtrados.slice(0, LIMITE_DA_TABELA);
   const sugestoes = repurchaseSuggestions(todos);
+  // Quem pediu para não ser chamado sai das sugestões; a conta aparece no card
+  // para a lista mais curta não parecer erro.
+  const recusaramNaFaixa = todos.filter((cliente) => cliente.contactOptOut && dentroDaJanela(cliente, "recontato")).length;
   const filtrando = Boolean(query || segmento || dias || clienteRef);
 
   return (
@@ -96,6 +111,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
           <Link href="/painel/pedidos" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Ver pedidos</Link>
         </>}
       />
+      {/* Sem a tabela de atendimentos o aviso de "atendimento em aberto" some
+          da lista sem explicação. */}
+      <CrmMigrationNotice />
+      {feito && <div role="status" className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{feito}</div>}
+      {erro && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{erro}</div>}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {CUSTOMER_SEGMENTS.map((valor) => (
@@ -128,6 +148,8 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         </div>
         <p className="mt-1 max-w-3xl text-xs leading-relaxed text-ink-500">
           Última compra entre {REPURCHASE_MIN_DAYS} e {REPURCHASE_MAX_DAYS} dias atrás, quem mais comprou primeiro. O botão abre o WhatsApp com uma mensagem pronta sobre a última compra, para você revisar antes de enviar — nada sai sozinho e a mensagem não oferece desconto nenhum.
+          {" "}Se o cliente disser que não quer esse contato, clique em “Não quer recontato”: ele sai desta lista, como a política de privacidade promete.
+          {recusaramNaFaixa > 0 && ` ${recusaramNaFaixa} cliente(s) desta faixa pediram para não ser chamados e ficam de fora.`}
         </p>
         {sugestoes.length ? (
           <ul className="mt-4 divide-y divide-ink-100">
@@ -143,7 +165,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                   </p>
                   {cliente.openLeads > 0 && <p className="mt-0.5 text-xs font-bold text-orange-700">Já tem {cliente.openLeads} atendimento(s) em aberto: combine com quem está atendendo antes de chamar.</p>}
                 </div>
-                <AcoesDoCliente cliente={cliente} />
+                <AcoesDoCliente cliente={cliente} volta={volta} />
               </li>
             ))}
           </ul>
@@ -202,6 +224,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                 <tr key={cliente.key} className="align-top">
                   <td className="py-3 pr-3">
                     <p className="font-bold text-ink-900">{cliente.name || "Cliente sem nome"}</p>
+                    {cliente.contactOptOut && <p className="text-xs font-bold text-red-700">Não quer recontato</p>}
                     {cliente.cpf && <p className="text-xs text-ink-500">{cliente.cpf.length === 14 ? "CNPJ" : "CPF"} {formatDocument(cliente.cpf)}</p>}
                     {/* Aponta o cliente pelo número do último pedido: o Atendimento
                         procura por todos os telefones e CPF/CNPJ dele. */}
@@ -222,7 +245,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                     <p className="text-xs text-ink-500">{haDias(cliente.daysSinceLastOrder)} · {cliente.lastOrderNumber}</p>
                   </td>
                   <td className="py-3 pr-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${COR_DO_SEGMENTO[cliente.segment]}`}>{CUSTOMER_SEGMENT_LABELS[cliente.segment]}</span></td>
-                  <td className="py-3"><AcoesDoCliente cliente={cliente} /></td>
+                  <td className="py-3"><AcoesDoCliente cliente={cliente} volta={volta} /></td>
                 </tr>
               ))}
             </tbody>
@@ -238,16 +261,41 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
   );
 }
 
-/** "Abrir WhatsApp" (quando há telefone) e "Ver pedidos" → lista de pedidos filtrada pelo cliente. */
-function AcoesDoCliente({ cliente }: { cliente: CustomerSummary }) {
+/**
+ * "Abrir WhatsApp" (quando há telefone), "Ver pedidos" → lista de pedidos
+ * filtrada pelo cliente, e a recusa de recontato.
+ *
+ * Quem pediu para não ser chamado perde o botão de mensagem pronta de
+ * recontato — a conversa com ele, se ele mesmo chamar, continua pelo
+ * Atendimento. A marca é reversível ("Permitir recontato").
+ */
+function AcoesDoCliente({ cliente, volta }: { cliente: CustomerSummary; volta: string }) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {cliente.phone
-        ? <a href={customerWhatsappLink(cliente.phone, recompraMessage(cliente))} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-[#25D366] px-3 py-2 text-xs font-extrabold text-white hover:bg-[#20bd5a]">Abrir WhatsApp</a>
-        : <span className="px-1 py-2 text-xs text-ink-400">Sem telefone</span>}
+      {cliente.contactOptOut
+        ? null
+        : cliente.phone
+          ? <a href={customerWhatsappLink(cliente.phone, recompraMessage(cliente))} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-[#25D366] px-3 py-2 text-xs font-extrabold text-white hover:bg-[#20bd5a]">Abrir WhatsApp</a>
+          : <span className="px-1 py-2 text-xs text-ink-400">Sem telefone</span>}
       {/* Pelo número do último pedido, não pelo telefone ou CPF: Pedidos acha o
           cliente dele e traz todos os pedidos, com qualquer telefone ou CPF. */}
       <Link href={`/painel/pedidos?cliente=${encodeURIComponent(cliente.lastOrderNumber)}`} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-xs font-extrabold text-ink-800 hover:border-gold-400">Ver pedidos</Link>
+      <form action={customerContactAction}>
+        <input type="hidden" name="cliente" value={cliente.lastOrderNumber} />
+        <input type="hidden" name="contato" value={cliente.contactOptOut ? "permitir" : "recusar"} />
+        <input type="hidden" name="volta" value={volta} />
+        <button
+          type="submit"
+          title={cliente.contactOptOut
+            ? "O cliente voltou a aceitar o contato pós-compra"
+            : "O cliente pediu para não receber o contato pós-compra: some das sugestões de recontato"}
+          className={cliente.contactOptOut
+            ? "rounded-lg border border-ink-300 bg-white px-3 py-2 text-xs font-extrabold text-ink-800 hover:border-gold-400"
+            : "rounded-lg border border-ink-300 bg-white px-3 py-2 text-xs font-extrabold text-red-700 hover:border-red-300"}
+        >
+          {cliente.contactOptOut ? "Permitir recontato" : "Não quer recontato"}
+        </button>
+      </form>
     </div>
   );
 }

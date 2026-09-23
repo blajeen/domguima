@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CampaignLinkBuilder, type LinkDestinationGroup } from "@/components/admin/CampaignLinkBuilder";
+import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { site } from "@/config/site";
 import { requireOwner } from "@/lib/admin/auth";
 import { readCatalogState } from "@/lib/admin/catalog-store";
@@ -98,9 +99,13 @@ export default async function TrafegoPage({ searchParams }: { searchParams: Prom
         </div>
       </PanelCard>
 
+      {/* Qual migration falta e o que ela quebra: sem a 202609210003 os pedidos
+          novos chegam sem origem, e a tabela "Por origem" só mostraria o
+          sintoma ("Não informado" crescendo). */}
+      <CrmMigrationNotice className="mt-5" />
       {trafego.unavailable && (
         <div role="status" className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Os atendimentos não puderam ser lidos (a tabela ainda não existe no banco ou a consulta falhou). Os números abaixo mostram só os pedidos. Aplique supabase/migrations/202609210002_atendimentos.sql se ainda não aplicou.
+          Os atendimentos não puderam ser lidos agora. Os números abaixo mostram só os pedidos. Se o aviso amarelo acima não aparece, foi uma falha passageira: atualize a página.
         </div>
       )}
       {trafego.truncated && (

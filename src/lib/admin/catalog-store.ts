@@ -169,7 +169,7 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
     // product_meta). Pedidos NAO vao mais aqui: eles moram em sales_orders,
     // gravados por INSERT. Mandar a lista junto faria o replace competir com
     // o livro-razao e reintroduzir a perda de pedido concorrente.
-    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta };
+    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs };
     const persistedState = {
       ...state,
       settings: { ...state.settings, __operations: operationsSemPedidos },
@@ -432,6 +432,7 @@ export function defaultOperationsState(): AdminOperationsState {
     sellers: defaultSellers(),
     orders: [],
     product_meta: {},
+    contact_opt_outs: [],
   };
 }
 
@@ -449,7 +450,16 @@ function normalizeOperations(value?: Partial<AdminOperationsState> | null): Admi
     // origem com o valor padrao ("nao informado").
     orders: canonicalizeOrderSellers((Array.isArray(value?.orders) ? value.orders : []).map(normalizeOrderOrigin), sellers),
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
+    // Gravado antes desta lista existir = ninguem pediu para sair. So digitos,
+    // sem repetir: e o formato das identidades de customers.ts.
+    contact_opt_outs: normalizeContactOptOuts(value?.contact_opt_outs),
   };
+}
+
+function normalizeContactOptOuts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const digitos = value.flatMap((item) => (typeof item === "string" && /^\d{10,14}$/.test(item.trim()) ? [item.trim()] : []));
+  return [...new Set(digitos)];
 }
 
 function normalizeCatalogState(value: Partial<CatalogState>): CatalogState {

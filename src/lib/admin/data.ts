@@ -93,7 +93,7 @@ export async function getSalesOrders() {
 export async function getCustomers(): Promise<{ book: CustomerBook; index: CustomerIndex }> {
   const [state, abertos] = await Promise.all([readCatalogState(), listOpenLeadKeys()]);
   const index = buildCustomerIndex(state.operations.orders);
-  return { book: customerSummaries(state.operations.orders, abertos, new Date(), index), index };
+  return { book: customerSummaries(state.operations.orders, abertos, new Date(), index, state.operations.contact_opt_outs), index };
 }
 
 /**
@@ -128,8 +128,10 @@ export async function getDashboardData() {
     ...atendentes.map((seller) => countLeads({ from: hoje, to: hoje, sellerId: seller.id })),
   ]);
 
-  // Clientes: calculados dos pedidos ja lidos, sem outra ida ao banco.
-  const clientes = customerSummaries(state.operations.orders).customers;
+  // Clientes: calculados dos pedidos ja lidos, sem outra ida ao banco. As
+  // recusas de recontato entram para o atalho "Recontatar N" bater com a lista
+  // de sugestoes da tela de Clientes.
+  const clientes = customerSummaries(state.operations.orders, [], new Date(), undefined, state.operations.contact_opt_outs).customers;
   const compraramNoPeriodo = recentBuyers(clientes);
 
   return {
@@ -175,7 +177,9 @@ export async function getAuditLogs(limit = 100) {
   // Atendimentos moram em tabela propria e nao estao no estado do catalogo:
   // em vez de despejar um uuid cru na coluna "Item", mostramos um rotulo curto
   // — o nome do cliente ja viaja em after_data e aparece nos detalhes.
-  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_type === "lead" ? `Atendimento ${log.entity_id.slice(0, 8)}` : log.entity_id }));
+  // Cliente nao tem cadastro nem id proprio: a auditoria o aponta pelo numero
+  // de um pedido dele, nunca pelo telefone ou CPF.
+  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_type === "lead" ? `Atendimento ${log.entity_id.slice(0, 8)}` : log.entity_type === "customer" ? `Cliente do pedido ${log.entity_id}` : log.entity_id }));
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {

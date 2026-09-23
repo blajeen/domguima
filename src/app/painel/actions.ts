@@ -6,12 +6,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
+import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
 import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
 import { assignLeadOfOrder, assignOrderOfLead, checkLeadStageChange, closeLeadsOfOrders, discardLeadsOfDeletedOrders, findOrderByNumber, linkLeadToOrder, orderLockForLead } from "@/lib/admin/lead-orders";
 import { createLead, findLead, LEAD_CRM_UNAVAILABLE_MESSAGE, updateLead } from "@/lib/admin/leads";
 import { assignPendingSalesOrder, cancelSalesOrder, confirmPendingSalesOrder, createChannelSalesOrder, createSalesOrder, OrderOperationError } from "@/lib/admin/orders";
-import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName } from "@/lib/admin/sellers";
+import { canonicalSellerId, normalizeLeadDistributionMode, normalizeSeller, RESERVED_SELLER_IDS, SELLER_ID_PATTERN, sellerIdFromName, UNLINKED_LOGIN_HINT } from "@/lib/admin/sellers";
 import { buildCategorySkuChoices } from "@/lib/admin/sku";
 import { BULK_CHANNELS } from "@/lib/admin/bulk-orders";
 import {
@@ -31,7 +32,7 @@ import {
 } from "@/lib/admin/types";
 import { isTrafficSource, trafficSourceLabel } from "@/lib/services/origem";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
-import { isValidCPF, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
+import { isValidCPF, isValidDocument, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
@@ -896,6 +897,72 @@ export async function linkLeadToOrderAction(formData: FormData) {
   redirect(destino);
 }
 
+const leadCustomerInput = z.object({
+  leadId: z.string().trim().min(1, "Atendimento não informado.").max(80),
+  customerName: z.string().trim().max(140, "O nome do cliente pode ter no máximo 140 caracteres."),
+  // Com ou sem o 55 e a pontuação; o que vale é sobrar um número com DDD.
+  customerPhone: z.string().transform(onlyDigits).refine((value) => value.length === 0 || [10, 11].includes(phoneKey(value).length), "Informe o telefone com DDD, como (34) 99999-9999, ou deixe em branco."),
+  customerDocument: z.string().transform(onlyDigits).refine((value) => value.length === 0 || isValidDocument(value), "CPF ou CNPJ inválido. Confira os números ou deixe em branco."),
+}).refine((value) => Boolean(value.customerName || value.customerPhone || value.customerDocument), { message: "Informe o telefone, o CPF/CNPJ ou o nome do cliente.", path: ["customerPhone"] });
+
+/**
+ * "Identificar cliente" de um atendimento: nome, telefone e/ou CPF/CNPJ que o
+ * atendente descobriu na conversa.
+ *
+ * O clique no WhatsApp do site nasce sem telefone — o número do cliente só
+ * aparece no aparelho de quem atende. Sem este passo, o atendimento mais comum
+ * da loja nunca ganhava a etiqueta "Recorrente", ficava fora do aviso de
+ * "atendimento em aberto" em Clientes e só era reconhecido se alguém o
+ * vinculasse a um pedido. A chave gravada segue a mesma regra dos pedidos
+ * (`customerKey`: telefone quando há, senão o documento); o documento não tem
+ * coluna própria no atendimento, só vira a chave quando não há telefone.
+ *
+ * A auditoria registra que o cliente foi identificado, não o telefone nem o
+ * CPF; a mensagem de volta vai na URL e também não os leva.
+ */
+export async function identifyLeadCustomerAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = leadCustomerInput.safeParse({
+    leadId: String(formData.get("leadId") ?? ""),
+    customerName: String(formData.get("customerName") ?? ""),
+    customerPhone: String(formData.get("customerPhone") ?? ""),
+    customerDocument: String(formData.get("customerDocument") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaAtendimento(volta, "erro", parsed.error.issues[0]?.message ?? "Revise os dados do cliente.");
+  } else {
+    const { leadId, customerName, customerPhone, customerDocument } = parsed.data;
+    const chave = customerKey({ phone: customerPhone, cpf: customerDocument });
+    try {
+      const { found, unavailable } = await updateLead(
+        leadId,
+        { customer_name: customerName, customer_phone: customerPhone, customer_key: chave },
+        {
+          actor_id: owner.id,
+          action: "lead.customer_updated",
+          after_data: { cliente: customerName || "(sem nome)", identificacao: customerPhone ? "telefone" : customerDocument ? "CPF/CNPJ" : "só o nome" },
+        },
+      );
+      destino = unavailable
+        ? voltaParaAtendimento(volta, "erro", CRM_INDISPONIVEL)
+        : !found
+          ? voltaParaAtendimento(volta, "erro", "Este atendimento não existe mais. Atualize a página.")
+          : voltaParaAtendimento(volta, "feito", chave ? "Cliente identificado no atendimento." : "Nome do cliente salvo no atendimento.");
+      revalidatePath("/painel/atendimento");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      console.error("Falha ao identificar o cliente do atendimento:", error);
+      destino = voltaParaAtendimento(volta, "erro", "Não foi possível salvar os dados do cliente agora. Tente novamente em instantes.");
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
 /**
  * Volta para a mesma lista de Atendimento (aba e filtros) com a faixa de
  * resultado. Só aceita caminhos do próprio painel de atendimento.
@@ -930,6 +997,79 @@ export async function customerPurchasesAction(input: unknown): Promise<CustomerP
   }
 }
 
+const customerContactInput = z.object({
+  // O cliente vem pelo número de um pedido dele (DG-…), como nos links entre
+  // as telas: telefone e CPF não viajam no formulário.
+  cliente: z.string().trim().min(3, "Cliente não informado.").max(40, "Número de pedido longo demais."),
+  contato: z.enum(["recusar", "permitir"], { error: "Escolha se o cliente aceita ou recusa o recontato." }),
+});
+
+/** Cliente do link não existe mais na lista de pedidos: aborta a gravação sem escrever nada. */
+class ClienteNaoEncontrado extends Error {}
+
+/**
+ * "Não quer recontato" / "Permitir recontato" da tela de Clientes.
+ *
+ * A política de privacidade promete que quem pedir pelo WhatsApp para não
+ * receber o contato pós-compra deixa de ser chamado. Sem esta marca, a lista de
+ * sugestões continuava oferecendo o cliente, com a mensagem pronta no botão.
+ *
+ * Todas as identidades do cliente (telefones e CPF/CNPJ, inclusive os antigos)
+ * entram na lista: quem trocou de número continua fora das sugestões. A lista
+ * mora no JSONB privado das configurações, ao lado dos atendentes.
+ */
+export async function customerContactAction(formData: FormData) {
+  const owner = await ownerOrThrow();
+  const volta = String(formData.get("volta") ?? "").trim();
+  const parsed = customerContactInput.safeParse({
+    cliente: String(formData.get("cliente") ?? ""),
+    contato: String(formData.get("contato") ?? ""),
+  });
+
+  let destino: string;
+  if (!parsed.success) {
+    destino = voltaParaClientes(volta, "erro", parsed.error.issues[0]?.message ?? "Revise o pedido do cliente.");
+  } else {
+    const { cliente, contato } = parsed.data;
+    try {
+      await mutateCatalogState((state) => {
+        const indice = buildCustomerIndex(state.operations.orders);
+        const chave = indice.keyOfOrderNumber(cliente);
+        if (!chave) throw new ClienteNaoEncontrado();
+        const identidades = indice.identitiesOf(chave);
+        const recusas = new Set(state.operations.contact_opt_outs);
+        for (const identidade of identidades.length ? identidades : [chave]) {
+          if (contato === "recusar") recusas.add(identidade);
+          else recusas.delete(identidade);
+        }
+        state.operations.contact_opt_outs = [...recusas];
+        // Só o número do pedido e a decisão: nada de telefone ou CPF no histórico.
+        audit(state, owner.id, contato === "recusar" ? "customer.contact_opt_out" : "customer.contact_opt_in", "customer", cliente, null, { recontato: contato === "recusar" ? "recusado pelo cliente" : "permitido de novo" });
+      });
+      destino = voltaParaClientes(volta, "feito", contato === "recusar"
+        ? "Anotado: este cliente não aparece mais nas sugestões de recontato."
+        : "Recontato permitido de novo para este cliente.");
+      revalidatePath("/painel/clientes");
+      revalidatePath("/painel");
+    } catch (error) {
+      if (error instanceof ClienteNaoEncontrado) {
+        destino = voltaParaClientes(volta, "erro", `Nenhum cliente encontrado para o pedido ${cliente}. Atualize a página.`);
+      } else {
+        console.error("Falha ao salvar a preferência de recontato:", error);
+        destino = voltaParaClientes(volta, "erro", "Não foi possível salvar agora. Tente novamente em instantes.");
+      }
+    }
+  }
+  // Fora do try: redirect() funciona lancando NEXT_REDIRECT e o catch o engoliria.
+  redirect(destino);
+}
+
+/** Volta para a mesma lista de Clientes (filtros) com a faixa de resultado. */
+function voltaParaClientes(volta: string, chave: "feito" | "erro", mensagem: string): string {
+  const base = volta.startsWith("/painel/clientes") ? volta : "/painel/clientes";
+  return `${base}${base.includes("?") ? "&" : "?"}${chave}=${encodeURIComponent(mensagem)}`;
+}
+
 /**
  * Traduz o valor do formulario ("me" | "" | id) no atendente de verdade.
  *
@@ -939,7 +1079,7 @@ export async function customerPurchasesAction(input: unknown): Promise<CustomerP
  */
 async function resolverAtendente(ownerSellerId: string | null, escolhido: string): Promise<{ seller: SellerRecord | null; message?: string }> {
   if (escolhido === "me") {
-    if (!ownerSellerId) return { seller: null, message: "Este login ainda não está vinculado a um atendente. Rode: npm run criar:usuario -- <usuario> --vendedor <atendente>." };
+    if (!ownerSellerId) return { seller: null, message: UNLINKED_LOGIN_HINT };
     const seller = await acharAtendenteAtivo(ownerSellerId);
     return seller ? { seller } : { seller: null, message: "O atendente vinculado a este login não está ativo." };
   }

@@ -27,6 +27,16 @@ export const SELLER_ID_PATTERN = /^[a-z0-9-]{2,40}$/;
 export const RESERVED_SELLER_IDS: readonly string[] = ["pending", "auto", "me"];
 
 /**
+ * O que dizer a quem entrou com um login sem atendente vinculado.
+ *
+ * O vinculo so existe pela CLI e vai dentro da sessao (JWT): sem o "saia e
+ * entre de novo", a pessoa roda o comando, atualiza a pagina e continua sem
+ * "Meus atendimentos". A CLI, com `--vendedor` e sem `--senha`, so grava o
+ * vinculo de quem ja existe — senha e nome ficam como estao.
+ */
+export const UNLINKED_LOGIN_HINT = "Este login ainda não está vinculado a um atendente. No terminal, rode npm run criar:usuario -- <usuario> --vendedor <atendente> (a senha e o nome não mudam) e depois saia e entre de novo no painel.";
+
+/**
  * Os dois atendentes atuais. Os numeros batem com `whatsappContacts` de
  * src/config/site.ts: o dono usa o numero principal da loja (por isso `null`),
  * o vendedor tem numero proprio informado pelo lojista em 11/09/2026.

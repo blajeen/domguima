@@ -1,6 +1,7 @@
 "use client";
 
 import { assignLeadAction } from "@/app/painel/actions";
+import { UNLINKED_LOGIN_HINT } from "@/lib/admin/sellers";
 import type { SellerRecord } from "@/lib/admin/types";
 
 interface LeadActionsProps {
@@ -35,7 +36,7 @@ export function LeadActions({ leadId, currentSellerId, sellers, ownerSellerId, v
           type="submit"
           disabled={!ownerSellerId || euMesmo}
           title={!ownerSellerId
-            ? "Este login ainda não está vinculado a um atendente. Rode: npm run criar:usuario -- <usuario> --vendedor <atendente>."
+            ? UNLINKED_LOGIN_HINT
             : euMesmo
               ? "Este atendimento já é seu."
               : undefined}

@@ -310,13 +310,19 @@ export function customerSegment(customer: Pick<CustomerSummary, "ordersCount" | 
  *
  * `leads` so precisa da chave e da etapa: conta os atendimentos em aberto de
  * cada cliente, para ninguem recontatar quem ja esta sendo atendido.
+ *
+ * `contactOptOuts` sao as identidades (telefone sem 55, CPF/CNPJ) de quem pediu
+ * para nao receber o recontato: basta UMA delas bater para o cliente inteiro
+ * ficar marcado — quem trocou de numero continua fora das sugestoes.
  */
 export function customerSummaries(
   orders: readonly SalesOrderRecord[],
   leads: ReadonlyArray<Pick<LeadRecord, "customer_key" | "stage">> = [],
   now: Date = new Date(),
   indice: CustomerIndex = buildCustomerIndex(orders),
+  contactOptOuts: readonly string[] = [],
 ): CustomerBook {
+  const recusas = new Set(contactOptOuts);
   const porCliente = new Map<string, SalesOrderRecord[]>();
   let unidentifiedOrders = 0;
   let unidentifiedTotalCents = 0;
@@ -342,12 +348,13 @@ export function customerSummaries(
   }
 
   const hoje = diaLocal(now.toISOString());
-  const customers = [...porCliente].map(([key, pedidos]) => resumir(key, pedidos, abertos.get(key) ?? 0, hoje, indice));
+  const customers = [...porCliente].map(([key, pedidos]) => resumir(key, pedidos, abertos.get(key) ?? 0, hoje, indice, recusas));
   customers.sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt));
   return { customers, unidentifiedOrders, unidentifiedTotalCents };
 }
 
-function resumir(key: string, pedidos: SalesOrderRecord[], openLeads: number, hoje: string, indice: CustomerIndex): CustomerSummary {
+function resumir(key: string, pedidos: SalesOrderRecord[], openLeads: number, hoje: string, indice: CustomerIndex, recusas: ReadonlySet<string>): CustomerSummary {
+  const identidades = indice.identitiesOf(key);
   const recentes = [...pedidos].sort((a, b) => b.created_at.localeCompare(a.created_at));
   const ultimo = recentes[0];
   const primeiro = recentes[recentes.length - 1];
@@ -362,7 +369,7 @@ function resumir(key: string, pedidos: SalesOrderRecord[], openLeads: number, ho
   const daysSinceLastOrder = diasEntre(diaDaUltima, hoje);
   const resumo = {
     key,
-    identities: indice.identitiesOf(key),
+    identities: identidades,
     name: nome,
     phone: telefone,
     cpf: documento,
@@ -373,6 +380,7 @@ function resumir(key: string, pedidos: SalesOrderRecord[], openLeads: number, ho
     daysSinceLastOrder,
     avgDaysBetween: pedidos.length > 1 ? Math.round(diasEntre(diaLocal(primeiro.created_at), diaDaUltima) / (pedidos.length - 1)) : null,
     openLeads,
+    contactOptOut: identidades.some((id) => recusas.has(id)) || recusas.has(key),
     lastOrderNumber: ultimo.number,
     lastProducts: ultimo.items.map((item) => (item.variant ? `${item.product_name} (${item.variant})` : item.product_name)),
   };
@@ -385,11 +393,11 @@ function resumir(key: string, pedidos: SalesOrderRecord[], openLeads: number, ho
  * Antes de 60 dias a compra ainda e recente; depois de 180 o contato ja esfriou
  * demais para uma mensagem de "tudo certo com a sua compra?". Os que mais
  * gastaram vem primeiro. Nada e enviado sozinho: a tela so abre o WhatsApp com
- * a mensagem pronta.
+ * a mensagem pronta. Quem pediu para nao receber esse contato nunca entra.
  */
 export function repurchaseSuggestions(customers: readonly CustomerSummary[]): CustomerSummary[] {
   return customers
-    .filter((customer) => customer.daysSinceLastOrder >= REPURCHASE_MIN_DAYS && customer.daysSinceLastOrder <= REPURCHASE_MAX_DAYS)
+    .filter((customer) => !customer.contactOptOut && customer.daysSinceLastOrder >= REPURCHASE_MIN_DAYS && customer.daysSinceLastOrder <= REPURCHASE_MAX_DAYS)
     .sort((a, b) => b.totalCents - a.totalCents || a.daysSinceLastOrder - b.daysSinceLastOrder);
 }
 

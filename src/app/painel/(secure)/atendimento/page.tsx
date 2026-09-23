@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { linkLeadToOrderAction } from "@/app/painel/actions";
+import { identifyLeadCustomerAction, linkLeadToOrderAction } from "@/app/painel/actions";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { LeadActions } from "@/components/admin/LeadActions";
 import { LeadForm } from "@/components/admin/LeadForm";
 import { LeadStageSelect } from "@/components/admin/LeadStageSelect";
 import { requireOwner } from "@/lib/admin/auth";
+import { adminConfig } from "@/lib/admin/config";
 import { buildCustomerIndex, recurrenceBadge, type CustomerIndex } from "@/lib/admin/customers";
 import { getAdminProducts, getSalesOrders, getSellers } from "@/lib/admin/data";
 import { countLeads, LEAD_LIST_LIMIT, leadCustomerKey, leadLocalDate, listLeadsPage, type LeadFilters, type LeadPage } from "@/lib/admin/leads";
@@ -23,7 +25,7 @@ import {
 } from "@/lib/admin/types";
 import { latestCampaign, trafficSourceLabel } from "@/lib/services/origem";
 import { customerWhatsappLink } from "@/lib/services/whatsapp";
-import { formatPhone, onlyDigits } from "@/lib/utils/validators";
+import { formatDocument, formatPhone, onlyDigits } from "@/lib/utils/validators";
 
 type Params = Record<string, string | string[] | undefined>;
 type Aba = "fila" | "meus" | "todos";
@@ -36,6 +38,7 @@ const ABAS: Array<{ id: Aba; label: string }> = [
 
 const FILTRO = "mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm";
 const BOTAO = "rounded-lg border border-ink-300 bg-white px-3 py-2 text-xs font-extrabold text-ink-800 transition-colors hover:border-gold-400";
+const CAMPO_PEQUENO = "mt-1 block rounded-lg border border-ink-200 bg-white px-2.5 py-2 text-xs font-normal text-ink-900";
 const PERCENTUAL = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
 
 /** Mesmos rótulos da lista de pedidos. */
@@ -171,6 +174,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   // esteja gravado (ou no filtro aplicado) — senão o select não o mostraria.
   const origens = [...new Set([...Object.keys(TRAFFIC_SOURCE_LABELS), ...leads.map((lead) => lead.source), ...(origem ? [origem] : [])])];
   const atendenteDesativado = aba !== "todos";
+  const contaDoAmbiente = Boolean(adminConfig.username) && owner.id.toLowerCase() === adminConfig.username.toLowerCase();
 
   return (
     <>
@@ -184,6 +188,9 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
         </>}
       />
 
+      {/* Sem a tabela de atendimentos a lista abaixo viria vazia, como se não
+          houvesse contato nenhum: o aviso diz que é o banco que falta. */}
+      <CrmMigrationNotice />
       {feito && <div role="status" className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{feito}</div>}
       {erro && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{erro}</div>}
       {clienteRef && (
@@ -234,8 +241,22 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
       </nav>
 
       {aba === "meus" && !owner.sellerId && (
-        <div role="alert" className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Este login ainda não está vinculado a um atendente, então “Meus atendimentos” fica vazio. Vincule com: <code>npm run criar:usuario -- {owner.id} --vendedor &lt;atendente&gt;</code>
+        <div role="alert" className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-800">
+          {/* A conta do ambiente (ADMIN_USERNAME) não mora na tabela de
+              usuários: vinculá-la cria a linha, e a senha do banco passa a
+              valer no lugar da do ambiente — por isso a CLI exige --senha. */}
+          {contaDoAmbiente ? (
+            <>
+              Este é o login do ambiente (ADMIN_USERNAME) e ele não tem atendente, então “Meus atendimentos” fica vazio. Para vincular, ele precisa virar usuário do banco, com a senha que vai valer dali em diante (pode ser a mesma de hoje):{" "}
+              <code className="break-all">npm run criar:usuario -- {owner.id} &quot;Seu nome&quot; --vendedor &lt;atendente&gt; --senha &quot;…&quot;</code>.
+            </>
+          ) : (
+            <>
+              Este login ainda não está vinculado a um atendente, então “Meus atendimentos” fica vazio. Vincule no terminal com{" "}
+              <code className="break-all">npm run criar:usuario -- {owner.id} --vendedor &lt;atendente&gt;</code> — a senha e o nome continuam os mesmos.
+            </>
+          )}{" "}
+          O vínculo vai dentro da sessão: depois do comando, saia e entre de novo no painel.
         </div>
       )}
 
@@ -394,6 +415,10 @@ function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSel
   const travado = pedidoConfirmado && lead.stage === "won" ? `Pedido ${pedidoConfirmado.number} confirmado: a etapa fica Ganho.` : undefined;
   const acertarParaGanho = pedidoConfirmado && lead.stage !== "won" ? `Pedido ${pedidoConfirmado.number} já confirmado: salve como Ganho.` : undefined;
   const podeVincular = !lead.order_id || !order || order.status === "cancelled";
+  // Chave gravada sem telefone = veio do CPF/CNPJ (é a regra de customerKey).
+  const documentoDoLead = !lead.customer_phone && lead.customer_key && (lead.customer_key.length === 11 || lead.customer_key.length === 14)
+    ? formatDocument(lead.customer_key)
+    : "";
   const podeLancar = podeVincular && lead.stage !== "lost";
 
   return (
@@ -480,6 +505,31 @@ function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSel
               </Link>
             )}
           </div>
+        )}
+        {/* Com pedido vinculado, quem o cliente é vem do pedido (e editar é lá):
+            copiar telefone e CPF para cá deixaria dados pessoais para trás
+            quando o pedido fosse excluído. */}
+        {!order && (
+          <details className="group">
+            <summary className="cursor-pointer text-xs font-extrabold text-blue-700 hover:underline">
+              {lead.customer_key ? "Corrigir dados do cliente" : "Identificar cliente (telefone ou CPF da conversa)"}
+            </summary>
+            <form action={identifyLeadCustomerAction} className="mt-2 flex flex-wrap items-end gap-2">
+              <input type="hidden" name="leadId" value={lead.id} />
+              <input type="hidden" name="volta" value={volta} />
+              <label className="text-[11px] font-bold text-ink-600">Nome
+                <input name="customerName" defaultValue={lead.customer_name} maxLength={140} autoComplete="off" className={`${CAMPO_PEQUENO} w-48`} />
+              </label>
+              <label className="text-[11px] font-bold text-ink-600">Telefone com DDD
+                <input name="customerPhone" defaultValue={telefone} inputMode="tel" maxLength={20} autoComplete="off" placeholder="(34) 99999-9999" className={`${CAMPO_PEQUENO} w-40`} />
+              </label>
+              <label className="text-[11px] font-bold text-ink-600">CPF/CNPJ (se não houver telefone)
+                <input name="customerDocument" defaultValue={documentoDoLead} inputMode="numeric" maxLength={20} autoComplete="off" className={`${CAMPO_PEQUENO} w-44`} />
+              </label>
+              <button type="submit" className={BOTAO}>Salvar</button>
+            </form>
+            <p className="mt-1.5 text-[11px] text-ink-500">Com o telefone ou o CPF, o atendimento passa a mostrar se o cliente já comprou e entra no aviso de atendimento em aberto em Clientes.</p>
+          </details>
         )}
       </div>
     </article>
