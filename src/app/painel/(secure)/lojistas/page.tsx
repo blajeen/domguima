@@ -11,8 +11,13 @@ import { getAdminProducts, getStoreSettings, getVendaLojistas } from "@/lib/admi
 import { formatarDesconto, linhasParaLojistas } from "@/lib/admin/lojistas";
 
 // O título da aba vira o nome sugerido do arquivo em "Salvar como PDF": sem o
-// modelo do painel, sai "Tabela para lojistas - Dom Guima.pdf".
-export const metadata: Metadata = { title: { absolute: "Tabela para lojistas - Dom Guima" } };
+// modelo do painel, sai "Tabela para lojistas - Dom Guima.pdf". Só para a
+// conta principal: o título sai no HTML mesmo quando a página manda para o
+// login ou dá 404, e nem o nome da área aparece para os outros.
+export async function generateMetadata(): Promise<Metadata> {
+  const owner = await getOwner();
+  return owner?.principal ? { title: { absolute: "Tabela para lojistas - Dom Guima" } } : {};
+}
 
 /**
  * Venda para lojistas: desconto geral, preço especial por item e o catálogo em
