@@ -39,13 +39,21 @@ export interface VendaLojistas {
   precos: Record<string, number>;
   /**
    * Mostrar o preço à vista do site ao lado do preço para lojista no
-   * catálogo. Nasce desligado: o pedido era um catálogo simples, e mostrar o
-   * preço de varejo a outra loja é decisão comercial do dono.
+   * catálogo. Nasce ligado por decisão do dono ("sim preço do site ao lado
+   * do lojista", 25/09/2026); ele desliga na aba.
    */
   mostrarPrecoSite: boolean;
+  /**
+   * Versão do registro. A 1ª versão publicada (63b1d46) gravava
+   * mostrarPrecoSite: false em TODA gravação do painel (produto, estoque...),
+   * porque o padrão era desligado: aquele false não é escolha do dono. Sem a
+   * versão 2, o valor gravado é ignorado e vale o padrão ligado; só um
+   * desligar feito daqui em diante vale.
+   */
+  versao: 2;
 }
 
-export const VENDA_LOJISTAS_PADRAO: VendaLojistas = { descontoPercent: DESCONTO_LOJISTA_PADRAO, condicoes: "", precos: {}, mostrarPrecoSite: false };
+export const VENDA_LOJISTAS_PADRAO: VendaLojistas = { descontoPercent: DESCONTO_LOJISTA_PADRAO, condicoes: "", precos: {}, mostrarPrecoSite: true, versao: 2 };
 
 /** Registro gravado antes (ou torto) vira o padrão, campo a campo. */
 export function normalizarVendaLojistas(valor: unknown): VendaLojistas {
@@ -63,7 +71,9 @@ export function normalizarVendaLojistas(valor: unknown): VendaLojistas {
     descontoPercent: desconto,
     condicoes: typeof v.condicoes === "string" ? v.condicoes.slice(0, CONDICOES_LOJISTA_MAXIMO) : "",
     precos,
-    mostrarPrecoSite: v.mostrarPrecoSite === true,
+    // Só vale o gravado na versão 2 (ver `versao`); antes dela, o padrão.
+    mostrarPrecoSite: v.versao === 2 && typeof v.mostrarPrecoSite === "boolean" ? v.mostrarPrecoSite : VENDA_LOJISTAS_PADRAO.mostrarPrecoSite,
+    versao: 2,
   };
 }
 
@@ -146,24 +156,30 @@ export interface LinhaLojista {
   finalCents: number;
 }
 
+/** Os itens de um produto: um por opção ativa (cada opção com o próprio preço), ou o próprio produto quando não há opção ativa. */
+function itensDoProduto(produto: AdminProductRow) {
+  const opcoes = (produto.product_variants ?? []).filter((opcao) => opcao.active);
+  return opcoes.length
+    ? opcoes.map((opcao) => ({ chave: `${produto.id}::${opcao.id}`, opcao: opcao.label as string | null, sku: opcao.sku, estoque: opcao.stock, varejo: opcao.price_cents }))
+    : [{ chave: produto.id, opcao: null as string | null, sku: produto.sku, estoque: produto.stock, varejo: produto.price_cents }];
+}
+
 /**
- * Todas as linhas do catálogo: todo produto PUBLICADO com estoque, uma linha
- * por opção com estoque quando há variações ativas (cada uma com o próprio
- * preço). Só publicado, a mesma regra da vitrine e do Catálogo PDF: rascunho
- * não está no site, pode estar incompleto, e não tem "preço no site" para
- * mostrar. Ordem: categoria, nome, opção.
+ * Todas as linhas do catálogo: todo produto PUBLICADO, com ou sem estoque
+ * ("todos produtos devem ir o catalogo inteiro", dono, 25/09/2026), uma
+ * linha por opção ativa quando há variações. Rascunho e arquivado ficam
+ * fora: não estão no site, podem estar incompletos e não têm "preço no site"
+ * para mostrar. Item sem preço à vista também fica fora (não há de onde
+ * tirar o desconto) e aparece em `itensSemPrecoParaLojistas`, para o painel
+ * avisar. Ordem: categoria, nome, opção.
  */
 export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: VendaLojistas): LinhaLojista[] {
   const linhas: LinhaLojista[] = [];
   for (const produto of produtos) {
     if (produto.status !== "active") continue;
     const categoria = produto.categories?.name ?? produto.category_id;
-    const opcoes = (produto.product_variants ?? []).filter((opcao) => opcao.active);
-    const itens = opcoes.length
-      ? opcoes.map((opcao) => ({ chave: `${produto.id}::${opcao.id}`, opcao: opcao.label, sku: opcao.sku, estoque: opcao.stock, varejo: opcao.price_cents }))
-      : [{ chave: produto.id, opcao: null, sku: produto.sku, estoque: produto.stock, varejo: produto.price_cents }];
-    for (const item of itens) {
-      if (item.estoque <= 0 || item.varejo <= 0) continue;
+    for (const item of itensDoProduto(produto)) {
+      if (item.varejo <= 0) continue;
       const comDesconto = precoComDesconto(item.varejo, venda.descontoPercent);
       const especial = venda.precos[item.chave] ?? null;
       const especialSemEfeito = especial !== null && especial >= comDesconto;
@@ -185,6 +201,14 @@ export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: 
   }
   return linhas.sort((a, b) =>
     a.categoria.localeCompare(b.categoria, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR") || (a.opcao ?? "").localeCompare(b.opcao ?? "", "pt-BR"));
+}
+
+/** Itens publicados que ficaram fora do catálogo por não ter preço à vista ("Nome · Opção"), para o painel avisar. */
+export function itensSemPrecoParaLojistas(produtos: readonly AdminProductRow[]): string[] {
+  return produtos
+    .filter((produto) => produto.status === "active")
+    .flatMap((produto) => itensDoProduto(produto).filter((item) => item.varejo <= 0).map((item) => (item.opcao ? `${produto.name} · ${item.opcao}` : produto.name)))
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 /** "10%" / "7,5%" */

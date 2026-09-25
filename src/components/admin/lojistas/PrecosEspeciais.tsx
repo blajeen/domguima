@@ -35,7 +35,7 @@ export function PrecosEspeciais({ linhas, descontoRotulo }: { linhas: LinhaLojis
         Só com preço especial ({especiais})
       </label>
     </div>
-    <p className="mt-2 text-xs text-ink-500" aria-live="polite">{visiveis.size} de {linhas.length} itens publicados com estoque.</p>
+    <p className="mt-2 text-xs text-ink-500" aria-live="polite">{visiveis.size} de {linhas.length} itens publicados.</p>
     <div className="mt-3 overflow-x-auto rounded-xl border border-ink-100">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="bg-ink-50 text-xs text-ink-500">
@@ -72,7 +72,7 @@ function textoDoPreco(cents: number | null): string {
  */
 function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; descontoRotulo: string; oculta: boolean }) {
   // Guarda o texto enviado junto com a resposta: a falha do servidor (item
-  // esgotou, desconto mudou em outra aba) fica na tela enquanto o campo
+  // saiu do site, desconto mudou em outra aba) fica na tela enquanto o campo
   // tiver o mesmo texto, em vez de sumir atrás da dica.
   const [state, action] = useActionState(async (anterior: EstadoLinha, dados: FormData): Promise<EstadoLinha> => {
     const resposta = await salvarPrecoLojistaAction(anterior, dados);
@@ -114,7 +114,9 @@ function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; de
         <span className="block text-[11px] text-ink-500 sm:text-xs">{linha.sku}<span className="hidden sm:inline"> · {linha.categoria}</span></span>
       </div>
     </td>
-    <td className="px-3 py-2 text-right tabular-nums text-ink-600">{linha.estoque}</td>
+    {/* Sem estoque também entra na tabela (catálogo inteiro); o painel marca
+        para o dono saber o que está oferecendo sem ter na loja. */}
+    <td className="px-3 py-2 text-right tabular-nums text-ink-600">{linha.estoque > 0 ? linha.estoque : <span className="whitespace-nowrap font-bold text-red-700">0 <span className="font-semibold">(sem estoque)</span></span>}</td>
     <td className="px-3 py-2 text-right tabular-nums text-ink-600">{formatPrice(linha.varejoCents)}</td>
     <td className="px-3 py-2 text-right tabular-nums text-ink-600">{formatPrice(linha.comDescontoCents)}</td>
     <td className="px-3 py-2">

@@ -1763,7 +1763,7 @@ export async function salvarVendaLojistasAction(_: ActionState, formData: FormDa
   return { ok: true, message: mudancas.join(" ") || "Nada mudou." };
 }
 
-/** A linha do catálogo de lojistas com esta chave, no estado dado (null: não existe mais ou ficou sem estoque). */
+/** A linha do catálogo de lojistas com esta chave, no estado dado (null: não existe mais, saiu do site ou ficou sem preço). */
 function linhaLojista(state: CatalogState, chave: string) {
   const categorias = new Map(state.categories.map((categoria) => [categoria.id, categoria.name]));
   const produtos = state.products.map((produto) => ({ ...produto, categories: { name: categorias.get(produto.category_id) ?? produto.category_id } }));
@@ -1781,7 +1781,7 @@ export async function salvarPrecoLojistaAction(_: ActionState, formData: FormDat
   if (!chave || chave.length > 250) return { message: "Produto inválido. Recarregue a página." };
   // "Tirar" chega como acao=tirar: vale como preço vazio.
   const texto = formData.get("acao") === "tirar" ? "" : String(formData.get("preco") ?? "");
-  const naoEncontrado: ActionState = { message: "Produto não encontrado, sem estoque ou não publicado. Recarregue a página." };
+  const naoEncontrado: ActionState = { message: "Produto não encontrado ou não publicado. Recarregue a página." };
   let resultado: ActionState = naoEncontrado;
   try {
     // Valida contra o catálogo lido agora ANTES de gravar: preço recusado,
