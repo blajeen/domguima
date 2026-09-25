@@ -3,10 +3,10 @@
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/admin/types";
 
-export function SubmitButton({ children = "Salvar", pendingLabel = "Salvando...", className = "" }: { children?: React.ReactNode; pendingLabel?: string; className?: string }) {
+export function SubmitButton({ children = "Salvar", pendingLabel = "Salvando...", className = "", disabled = false }: { children?: React.ReactNode; pendingLabel?: string; className?: string; /** Ex.: nada mudou no formulário. */ disabled?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={`rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 transition-colors hover:bg-gold-300 disabled:cursor-wait disabled:opacity-60 ${className}`}>
+    <button type="submit" disabled={pending || disabled} className={`rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 transition-colors hover:bg-gold-300 disabled:opacity-60 ${pending ? "disabled:cursor-wait" : "disabled:cursor-not-allowed"} ${className}`}>
       {pending ? pendingLabel : children}
     </button>
   );

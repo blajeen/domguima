@@ -208,3 +208,35 @@ body:has(.admin-app) {
     background: white !important;
   }
 }
+
+/* Catálogo para lojistas: página A4 nomeada, com o número de página no pé
+   (caixas de margem do @page, Chrome 131+). O fio dourado e o losango do
+   preço especial saem na cor mesmo com "economia de tinta". */
+@page lojistas {
+  size: A4;
+  margin: 12mm 12mm 14mm;
+
+  @bottom-center {
+    content: "Dom Guima · Tabela para lojistas · página " counter(page) " de " counter(pages);
+    color: #667085;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+    font-size: 8.5px;
+  }
+}
+
+@media print {
+  .catalogo-lojista {
+    page: lojistas;
+    print-color-adjust: exact;
+  }
+
+  .catalogo-lojista tr {
+    break-inside: avoid;
+  }
+
+  /* O <thead> (categoria + colunas) se repete em cada pedaço da tabela e
+     nunca fica sozinho no pé da coluna. */
+  .catalogo-lojista thead {
+    break-after: avoid;
+  }
+}

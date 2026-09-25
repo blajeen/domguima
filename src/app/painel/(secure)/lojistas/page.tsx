@@ -1,0 +1,69 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { PrintButton } from "@/components/admin/PrintButton";
+import { CatalogoLojista } from "@/components/admin/lojistas/CatalogoLojista";
+import { PrecosEspeciais } from "@/components/admin/lojistas/PrecosEspeciais";
+import { VendaLojistasForm } from "@/components/admin/lojistas/VendaLojistasForm";
+import { company, whatsapp } from "@/config/site";
+import { getOwner } from "@/lib/admin/auth";
+import { getAdminProducts, getStoreSettings, getVendaLojistas } from "@/lib/admin/data";
+import { formatarDesconto, linhasParaLojistas } from "@/lib/admin/lojistas";
+
+// O título da aba vira o nome sugerido do arquivo em "Salvar como PDF": sem o
+// modelo do painel, sai "Tabela para lojistas - Dom Guima.pdf".
+export const metadata: Metadata = { title: { absolute: "Tabela para lojistas - Dom Guima" } };
+
+/**
+ * Venda para lojistas: desconto geral, preço especial por item e o catálogo em
+ * PDF. Só a conta principal (domguima) entra; para as outras, a área nem
+ * existe (404), e as actions conferem de novo no servidor.
+ */
+export default async function LojistasPage() {
+  const owner = await getOwner();
+  if (!owner?.principal) notFound();
+
+  const [produtos, venda, settings] = await Promise.all([getAdminProducts(), getVendaLojistas(), getStoreSettings()]);
+  const linhas = linhasParaLojistas(produtos, venda);
+  const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const descontoRotulo = formatarDesconto(venda.descontoPercent);
+  const endereco = settings.fiscalAddress.trim() || `${company.address}, ${company.district}, ${company.cityState}`;
+
+  return <>
+    <div className="admin-no-print space-y-6">
+      <AdminPageHeader
+        title="Venda para lojistas"
+        description="Só a conta domguima vê esta área. Nada daqui aparece no site."
+        actions={<PrintButton />}
+      />
+      <PanelCard>
+        <h2 className="mb-4 text-lg font-black">Desconto geral</h2>
+        <VendaLojistasForm inicial={venda} />
+      </PanelCard>
+      <PanelCard>
+        <h2 className="text-lg font-black">Preço especial por produto</h2>
+        <p className="mb-4 mt-1 text-sm text-ink-500">Para baixar mais um item só: fica no lugar do preço com o desconto geral, e precisa ser menor que ele. Vazio volta ao desconto geral. Entram os produtos publicados com estoque (uma linha por opção nos que têm variação).</p>
+        <PrecosEspeciais linhas={linhas} descontoRotulo={descontoRotulo} />
+      </PanelCard>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black">Prévia do catálogo</h2>
+          <p className="mt-1 text-sm text-ink-500">É exatamente o que sai no PDF. Em &quot;Exportar / salvar PDF&quot;, escolha o destino &quot;Salvar como PDF&quot; e desmarque &quot;Cabeçalhos e rodapés&quot;.</p>
+        </div>
+        <PrintButton />
+      </div>
+    </div>
+    <div className="mt-4 print:mt-0">
+      <CatalogoLojista
+        linhas={linhas}
+        descontoPercent={venda.descontoPercent}
+        condicoes={venda.condicoes}
+        mostrarPrecoSite={venda.mostrarPrecoSite}
+        whatsapp={settings.whatsappDisplay || whatsapp.display}
+        cnpj={settings.cnpj || company.cnpj}
+        endereco={endereco}
+        data={data}
+      />
+    </div>
+  </>;
+}

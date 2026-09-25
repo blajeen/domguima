@@ -16,13 +16,19 @@ const nav = [
   { href: "/painel/historico", label: "Historico", icon: "H" },
   { href: "/painel/financeiro", label: "Relatórios", icon: "$" },
   { href: "/painel/trafego", label: "Trafego", icon: "↗" },
+  // Só a conta principal (domguima) vê. Esconder do menu não é a proteção: a
+  // página e as actions conferem no servidor (contaPrincipalOrThrow).
+  { href: "/painel/lojistas", label: "Venda p/ lojistas", icon: "L", soPrincipal: true },
   { href: "/painel/configuracoes", label: "Configuracoes", icon: "⚙" },
 ];
 
-export function AdminShell({ children, ownerName, ownerUsername }: { children: ReactNode; ownerName: string; ownerUsername: string }) {
+export function AdminShell({ children, ownerName, ownerUsername, contaPrincipal }: { children: ReactNode; ownerName: string; ownerUsername: string; contaPrincipal: boolean }) {
   const inicial = (ownerName.trim().charAt(0) || ownerUsername.charAt(0) || "?").toUpperCase();
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
+    // print:block: na impressão o menu some (admin-no-print) e, com a grade
+    // ligada, o conteúdo caía na coluna de 250px do menu. O catálogo para
+    // lojistas saía espremido em 13 páginas.
+    <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)] print:block">
       {/* Coluna em flex: no computador o menu rola por dentro e o bloco de quem
           está logado fica no fluxo, embaixo. Antes ele era absoluto e cobria os
           últimos itens do menu em telas mais baixas. No celular, quem está
@@ -54,7 +60,7 @@ export function AdminShell({ children, ownerName, ownerUsername }: { children: R
           </form>
         </div>
         <nav className="order-2 flex gap-1 overflow-x-auto px-3 py-3 lg:block lg:min-h-0 lg:flex-1 lg:space-y-0.5 lg:overflow-y-auto lg:px-4 lg:py-2 lg:[scrollbar-color:var(--color-ink-500)_transparent] lg:[scrollbar-width:thin]" aria-label="Painel">
-          {nav.map((item) => (
+          {nav.filter((item) => !("soPrincipal" in item) || contaPrincipal).map((item) => (
             <Link key={item.href} href={item.href} className="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-ink-300 transition-colors hover:bg-white/10 hover:text-white lg:py-2">
               <span className="flex h-6 min-w-6 items-center justify-center rounded-md bg-white/5 text-[10px] font-black text-gold-300">{item.icon}</span>
               {item.label}
@@ -64,7 +70,7 @@ export function AdminShell({ children, ownerName, ownerUsername }: { children: R
       </aside>
       {/* `div`, não `main`: o layout raiz já emite <main id="conteudo">, e dois
           landmarks `main` aninhados confundem leitores de tela. */}
-      <div className="min-w-0 p-4 sm:p-6 lg:p-8 xl:p-10">{children}</div>
+      <div className="min-w-0 p-4 sm:p-6 lg:p-8 xl:p-10 print:p-0">{children}</div>
     </div>
   );
 }

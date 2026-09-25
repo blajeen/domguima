@@ -7,6 +7,7 @@ import { normalizeOrderOrigin } from "@/lib/services/origem";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
+import { normalizarVendaLojistas } from "./lojistas";
 import { canonicalizeOrderSellers, defaultSellers, normalizeSellers } from "./sellers";
 import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, SellerRecord, StoreSettings } from "./types";
 
@@ -169,7 +170,9 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
     // product_meta). Pedidos NAO vao mais aqui: eles moram em sales_orders,
     // gravados por INSERT. Mandar a lista junto faria o replace competir com
     // o livro-razao e reintroduzir a perda de pedido concorrente.
-    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs };
+    // Toda chave nova de operations entra nesta lista: o que ficar de fora nao
+    // e gravado e some no proximo save (a venda para lojistas entrou aqui).
+    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs, lojistas: state.operations.lojistas };
     const persistedState = {
       ...state,
       settings: { ...state.settings, __operations: operationsSemPedidos },
@@ -433,6 +436,7 @@ export function defaultOperationsState(): AdminOperationsState {
     orders: [],
     product_meta: {},
     contact_opt_outs: [],
+    lojistas: normalizarVendaLojistas(null),
   };
 }
 
@@ -453,6 +457,9 @@ function normalizeOperations(value?: Partial<AdminOperationsState> | null): Admi
     // Gravado antes desta lista existir = ninguem pediu para sair. So digitos,
     // sem repetir: e o formato das identidades de customers.ts.
     contact_opt_outs: normalizeContactOptOuts(value?.contact_opt_outs),
+    // Gravado antes da venda para lojistas existir = desconto padrao (10%),
+    // sem condicoes e sem preco especial.
+    lojistas: normalizarVendaLojistas(value?.lojistas),
   };
 }
 

@@ -15,6 +15,15 @@ export interface AdminAccount {
   name: string;
   /** Atendente (SellerRecord.id) que este login representa; null = login sem vinculo. */
   sellerId: string | null;
+  /**
+   * E a conta principal da loja (ADMIN_USERNAME, a "domguima"): so ela ve a
+   * venda para lojistas. Vale pela conta do ambiente e tambem pela linha da
+   * tabela com o mesmo nome, porque o proprio painel manda a domguima virar
+   * usuario da tabela para usar "Meus atendimentos" (npm run criar:usuario --
+   * domguima). O username e a chave da tabela e so entra pelo CLI com a chave
+   * de servico, entao ninguem cria outra "domguima".
+   */
+  principal: boolean;
 }
 
 /** Quem esta logado no painel, como as paginas e actions enxergam. */
@@ -24,6 +33,8 @@ export interface AdminOwner {
   email: string;
   name: string;
   sellerId: string | null;
+  /** Ver AdminAccount.principal. */
+  principal: boolean;
 }
 
 /** Linha de public.admin_users. `seller_id` so existe apos 202609210001_atendentes.sql. */
@@ -75,7 +86,7 @@ export async function verifyAdminCredentials(username: string, password: string)
         .maybeSingle();
       const row = (data ?? null) as AdminUserRow | null;
       if (row?.active && senhaConfere(password, row.password_hash)) {
-        return { username: row.username, name: row.name, sellerId: typeof row.seller_id === "string" && row.seller_id.trim() ? row.seller_id.trim() : null };
+        return { username: row.username, name: row.name, sellerId: typeof row.seller_id === "string" && row.seller_id.trim() ? row.seller_id.trim() : null, principal: row.username.toLowerCase() === adminConfig.username.toLowerCase() };
       }
       // Usuario existe na tabela mas a senha errou: nao cai para o ambiente,
       // senao a senha do dono abriria qualquer nome de usuario cadastrado.
@@ -87,12 +98,12 @@ export async function verifyAdminCredentials(username: string, password: string)
 
   if (informado !== adminConfig.username.toLowerCase()) return null;
   return senhaConfere(password, adminConfig.passwordHash)
-    ? { username: adminConfig.username, name: "Dom Guima", sellerId: null }
+    ? { username: adminConfig.username, name: "Dom Guima", sellerId: null, principal: true }
     : null;
 }
 
 export async function createAdminSession(account: AdminAccount) {
-  const token = await new SignJWT({ role: "owner", username: account.username, name: account.name, sellerId: account.sellerId })
+  const token = await new SignJWT({ role: "owner", username: account.username, name: account.name, sellerId: account.sellerId, principal: account.principal })
     .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${SESSION_HOURS}h`)
     .sign(new TextEncoder().encode(adminConfig.sessionSecret));
   (await cookies()).set(COOKIE_NAME, token, {
@@ -128,6 +139,9 @@ export async function getOwner(): Promise<AdminOwner | null> {
       email: "",
       name: typeof payload.name === "string" ? payload.name : payload.username,
       sellerId: typeof payload.sellerId === "string" && payload.sellerId ? payload.sellerId : null,
+      // Sessao emitida antes desta marca existir nao e principal: basta sair e
+      // entrar de novo com a conta domguima. Mais seguro do que deduzir pelo nome.
+      principal: payload.principal === true,
     };
   } catch { return null; }
 }
@@ -135,6 +149,17 @@ export async function getOwner(): Promise<AdminOwner | null> {
 export async function ownerOrThrow() {
   const owner = await getOwner();
   if (!owner) throw new Error("Acesso nao autorizado.");
+  return owner;
+}
+
+/**
+ * Para o que so a conta principal da loja pode ver ou mudar (venda para
+ * lojistas). Esconder o item do menu nao protege: toda action e pagina da
+ * area confere aqui, no servidor.
+ */
+export async function contaPrincipalOrThrow() {
+  const owner = await ownerOrThrow();
+  if (!owner.principal) throw new Error("Esta area e so da conta principal da loja (domguima).");
   return owner;
 }
 

@@ -1,3 +1,5 @@
+import type { VendaLojistas } from "./lojistas";
+
 export type ActionState = {
   ok?: boolean;
   message?: string;
@@ -440,6 +442,12 @@ export interface AdminOperationsState {
    * store_settings (sem acesso de anon/authenticated), como os atendentes.
    */
   contact_opt_outs: string[];
+  /**
+   * Venda para lojistas (desconto, condições e preços especiais), só da conta
+   * principal. Mora aqui, no JSONB privado de store_settings, e não em
+   * `settings`: preço de atacado não pode chegar perto do que a loja lê.
+   */
+  lojistas: VendaLojistas;
 }
 
 export interface AdminProductRow {

@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
+import { contaPrincipalOrThrow, createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
+import { CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, formatarDesconto, lerDescontoDigitado, linhasParaLojistas, validarPrecoEspecial } from "@/lib/admin/lojistas";
+import { formatPrice } from "@/lib/utils/format";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
 import { getCustomerPurchases } from "@/lib/admin/data";
@@ -1717,4 +1719,97 @@ export async function registerProductImagesAction(productId: unknown, caminhos: 
 function publicImageUrl(storagePath: string): string {
   const base = process.env.SUPABASE_URL?.trim().replace(/\/$/, "") ?? "";
   return `${base}/storage/v1/object/public/ecommerce-products/${storagePath}`;
+}
+
+// ── Venda para lojistas (só a conta principal) ─────────────────────────────
+
+/**
+ * Desconto geral e condições da venda para lojistas. A validação é a mesma que
+ * o formulário roda antes de enviar (lib/admin/lojistas.ts); aqui ela segura
+ * form adulterado. Nada disso chega à loja: mora no JSONB privado.
+ */
+export async function salvarVendaLojistasAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await contaPrincipalOrThrow();
+  const desconto = lerDescontoDigitado(String(formData.get("descontoPercent") ?? ""));
+  if (desconto === null) return { message: `O desconto precisa ser um número de 0 a ${DESCONTO_LOJISTA_MAXIMO}, como 10 ou 12,5.`, errors: { descontoPercent: ["Desconto inválido."] } };
+  // O navegador envia a quebra de linha da textarea como \r\n; na tela ela
+  // conta 1 caractere. Grava com \n para o limite e a comparação baterem.
+  const condicoes = String(formData.get("condicoes") ?? "").replace(/\r\n?/g, "\n").trim();
+  if (condicoes.length > CONDICOES_LOJISTA_MAXIMO) return { message: `As condições podem ter no máximo ${CONDICOES_LOJISTA_MAXIMO} caracteres.`, errors: { condicoes: ["Texto longo demais."] } };
+  const mostrarPrecoSite = formData.get("mostrarPrecoSite") === "on";
+  // A mensagem diz o que mudou de fato: salvar só as condições não pode
+  // anunciar que o desconto e os preços mudaram.
+  const mudancas: string[] = [];
+  try {
+    // mutateCatalogState regrava o catálogo inteiro: sem mudança, nem chama.
+    const atual = (await readCatalogState(true)).operations.lojistas;
+    if (atual.descontoPercent === desconto && atual.condicoes === condicoes && atual.mostrarPrecoSite === mostrarPrecoSite) return { ok: true, message: "Nada mudou." };
+    await mutateCatalogState((state) => {
+      const antes = state.operations.lojistas;
+      if (antes.descontoPercent !== desconto) mudancas.push(`Desconto de ${formatarDesconto(desconto)} salvo; os preços do catálogo abaixo já mudaram.`);
+      if (antes.condicoes !== condicoes) mudancas.push(condicoes ? "Condições salvas." : "Condições tiradas do catálogo.");
+      if (antes.mostrarPrecoSite !== mostrarPrecoSite) mudancas.push(mostrarPrecoSite ? "O catálogo passa a mostrar o preço do site." : "O catálogo deixa de mostrar o preço do site.");
+      if (!mudancas.length) return;
+      state.operations.lojistas = { ...antes, descontoPercent: desconto, condicoes, mostrarPrecoSite };
+      audit(state, owner.id, "lojistas.config.updated", "lojistas", "config",
+        { descontoPercent: antes.descontoPercent, condicoes: antes.condicoes, mostrarPrecoSite: antes.mostrarPrecoSite },
+        { descontoPercent: desconto, condicoes, mostrarPrecoSite });
+    });
+  } catch (error) {
+    console.error("Venda para lojistas: falha ao salvar o desconto.", error);
+    return { message: "Não foi possível salvar agora. Tente de novo em instantes." };
+  }
+  revalidatePath("/painel/lojistas");
+  return { ok: true, message: mudancas.join(" ") || "Nada mudou." };
+}
+
+/** A linha do catálogo de lojistas com esta chave, no estado dado (null: não existe mais ou ficou sem estoque). */
+function linhaLojista(state: CatalogState, chave: string) {
+  const categorias = new Map(state.categories.map((categoria) => [categoria.id, categoria.name]));
+  const produtos = state.products.map((produto) => ({ ...produto, categories: { name: categorias.get(produto.category_id) ?? produto.category_id } }));
+  return linhasParaLojistas(produtos, state.operations.lojistas).find((item) => item.chave === chave) ?? null;
+}
+
+/**
+ * Preço especial de uma linha (produto, ou produto::opção). Vazio tira o
+ * especial e a linha volta ao desconto geral. O preço à vista usado na
+ * conferência vem do catálogo, lido agora, nunca do formulário.
+ */
+export async function salvarPrecoLojistaAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await contaPrincipalOrThrow();
+  const chave = String(formData.get("chave") ?? "").trim();
+  if (!chave || chave.length > 250) return { message: "Produto inválido. Recarregue a página." };
+  // "Tirar" chega como acao=tirar: vale como preço vazio.
+  const texto = formData.get("acao") === "tirar" ? "" : String(formData.get("preco") ?? "");
+  const naoEncontrado: ActionState = { message: "Produto não encontrado, sem estoque ou não publicado. Recarregue a página." };
+  let resultado: ActionState = naoEncontrado;
+  try {
+    // Valida contra o catálogo lido agora ANTES de gravar: preço recusado,
+    // linha que sumiu ou o mesmo preço de novo não regravam o catálogo inteiro.
+    const previa = linhaLojista(await readCatalogState(true), chave);
+    if (!previa) return naoEncontrado;
+    const conferido = validarPrecoEspecial(texto, previa.comDescontoCents);
+    if (!conferido.ok) return { message: conferido.mensagem, errors: { preco: [conferido.mensagem] } };
+    if (conferido.cents === previa.especialCents) return { ok: true, message: "Nada mudou." };
+    await mutateCatalogState((state) => {
+      // De novo dentro da gravação: o desconto ou o produto podem ter mudado
+      // entre a leitura acima e agora.
+      const linha = linhaLojista(state, chave);
+      if (!linha) return;
+      const preco = validarPrecoEspecial(texto, linha.comDescontoCents);
+      if (!preco.ok) { resultado = { message: preco.mensagem, errors: { preco: [preco.mensagem] } }; return; }
+      const antes = state.operations.lojistas.precos[chave] ?? null;
+      const precos = { ...state.operations.lojistas.precos };
+      if (preco.cents === null) delete precos[chave]; else precos[chave] = preco.cents;
+      state.operations.lojistas = { ...state.operations.lojistas, precos };
+      const rotulo = linha.opcao ? `${linha.nome} · ${linha.opcao}` : linha.nome;
+      audit(state, owner.id, preco.cents === null ? "lojistas.preco.removed" : "lojistas.preco.updated", "lojistas", chave, { especialCents: antes }, { especialCents: preco.cents, produto: rotulo });
+      resultado = { ok: true, message: preco.cents === null ? `${rotulo}: voltou ao desconto geral.` : `${rotulo}: preço para lojista de ${formatPrice(preco.cents)}.` };
+    });
+  } catch (error) {
+    console.error("Venda para lojistas: falha ao salvar o preço especial.", error);
+    return { message: "Não foi possível salvar agora. Tente de novo em instantes." };
+  }
+  if (resultado.ok) revalidatePath("/painel/lojistas");
+  return resultado;
 }

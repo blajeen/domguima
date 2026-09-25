@@ -4,6 +4,7 @@ import { readCatalogState } from "./catalog-store";
 import { buildCustomerIndex, customerSummaries, lookupCustomerPurchases, recentBuyers, RECENT_BUYERS_DAYS, repurchaseSuggestions, type CustomerIndex } from "./customers";
 import { lerParcelamento, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { defaultStoreSettings } from "./defaults";
+import type { VendaLojistas } from "./lojistas";
 import { countLeads, leadLocalDate, listOpenLeadKeys } from "./leads";
 import { canonicalSellerId, sortSellers } from "./sellers";
 import type { AdminCategoryRow, AdminProductRow, CustomerBook, CustomerPurchaseLookup, ProductAssistTemplate, ProductOperationalMeta, StoreSettings } from "./types";
@@ -170,7 +171,20 @@ export async function getInventoryMovements(limit = 30) {
   return state.inventoryMovements.slice(0, limit).map((movement) => ({ ...movement, products: products.get(movement.product_id) }));
 }
 
-export async function getAuditLogs(limit = 100) {
+/** "Venda para lojistas" (desconto e condições) ou o nome do produto do preço especial. */
+function nomeNaAuditoriaLojistas(entityId: string, after: unknown, products: Map<string, string>): string {
+  if (entityId === "config") return "Venda para lojistas";
+  const gravado = (after as { produto?: unknown } | null)?.produto;
+  return typeof gravado === "string" ? gravado : products.get(entityId.split("::")[0]) ?? entityId;
+}
+
+/**
+ * Últimas alterações para o Histórico. As da venda para lojistas (desconto,
+ * condições, preços especiais) só entram para a conta principal: o Histórico
+ * abre para todo login, e ele mostraria os preços que só a domguima pode ver.
+ * O filtro vem antes do corte, para os outros logins verem as 100 linhas deles.
+ */
+export async function getAuditLogs(limit = 100, { incluirLojistas = false }: { incluirLojistas?: boolean } = {}) {
   const state = await readCatalogState();
   const products = new Map(state.products.map((product) => [product.id, product.name]));
   const categories = new Map(state.categories.map((category) => [category.id, category.name]));
@@ -180,7 +194,13 @@ export async function getAuditLogs(limit = 100) {
   // — o nome do cliente ja viaja em after_data e aparece nos detalhes.
   // Cliente nao tem cadastro nem id proprio: a auditoria o aponta pelo numero
   // de um pedido dele, nunca pelo telefone ou CPF.
-  return state.auditLogs.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_type === "lead" ? `Atendimento ${log.entity_id.slice(0, 8)}` : log.entity_type === "customer" ? `Cliente do pedido ${log.entity_id}` : log.entity_id }));
+  const visiveis = incluirLojistas ? state.auditLogs : state.auditLogs.filter((log) => log.entity_type !== "lojistas");
+  return visiveis.slice(0, limit).map((log) => ({ ...log, entityName: log.entity_type === "lojistas" ? nomeNaAuditoriaLojistas(log.entity_id, log.after_data, products) : log.entity_type === "product" ? products.get(log.entity_id) ?? log.entity_id : log.entity_type === "category" ? categories.get(log.entity_id) ?? log.entity_id : log.entity_type === "order" ? orders.get(log.entity_id) ?? log.entity_id : log.entity_type === "lead" ? `Atendimento ${log.entity_id.slice(0, 8)}` : log.entity_type === "customer" ? `Cliente do pedido ${log.entity_id}` : log.entity_id }));
+}
+
+/** Desconto, condições e preços especiais da venda para lojistas (só a conta principal usa). */
+export async function getVendaLojistas(): Promise<VendaLojistas> {
+  return (await readCatalogState()).operations.lojistas;
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {
