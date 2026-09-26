@@ -24,6 +24,12 @@ export const DESCONTO_LOJISTA_PADRAO = 10;
 /** Teto do desconto geral: acima disso é quase dar o produto, e erro de digitação vira prejuízo. */
 export const DESCONTO_LOJISTA_MAXIMO = 90;
 export const CONDICOES_LOJISTA_MAXIMO = 400;
+/**
+ * O preço à vista do site, quando o dono ainda não escolheu: não aparece
+ * ("nao aparecer os preços praticados no site, so se eu ativar ... em tudo",
+ * dono, 26/09/2026). Vale para a tabela do painel e para o PDF.
+ */
+export const MOSTRAR_PRECO_SITE_PADRAO = false;
 
 /** O que o dono decide na aba (fica no JSONB privado de store_settings). */
 export interface VendaLojistas {
@@ -38,22 +44,30 @@ export interface VendaLojistas {
    */
   precos: Record<string, number>;
   /**
-   * Mostrar o preço à vista do site ao lado do preço para lojista no
-   * catálogo. Nasce ligado por decisão do dono ("sim preço do site ao lado
-   * do lojista", 25/09/2026); ele desliga na aba.
+   * O que o dono escolheu na caixa "mostrar o preço do site" (tabela do
+   * painel e PDF). null: ele não escolheu, e vale MOSTRAR_PRECO_SITE_PADRAO.
+   * Leia sempre com `mostraPrecoSite`.
+   *
+   * Guardar null em vez de copiar o padrão é o que deixa o padrão mudar sem
+   * pisar em escolha de ninguém: o estado inteiro é normalizado e regravado
+   * em toda gravação do painel (produto, estoque...), e um padrão escrito por
+   * extenso fica igual a uma escolha. Foi o que aconteceu nas versões 1 e 2.
    */
-  mostrarPrecoSite: boolean;
+  mostrarPrecoSite: boolean | null;
   /**
-   * Versão do registro. A 1ª versão publicada (63b1d46) gravava
-   * mostrarPrecoSite: false em TODA gravação do painel (produto, estoque...),
-   * porque o padrão era desligado: aquele false não é escolha do dono. Sem a
-   * versão 2, o valor gravado é ignorado e vale o padrão ligado; só um
-   * desligar feito daqui em diante vale.
+   * Versão do registro. Na 1 (63b1d46) e na 2 (3abc5c3), toda gravação do
+   * painel escrevia o padrão da época (false, depois true) como se fosse
+   * escolha do dono. Sem a versão 3, o valor gravado é descartado (null).
    */
-  versao: 2;
+  versao: 3;
 }
 
-export const VENDA_LOJISTAS_PADRAO: VendaLojistas = { descontoPercent: DESCONTO_LOJISTA_PADRAO, condicoes: "", precos: {}, mostrarPrecoSite: true, versao: 2 };
+export const VENDA_LOJISTAS_PADRAO: VendaLojistas = { descontoPercent: DESCONTO_LOJISTA_PADRAO, condicoes: "", precos: {}, mostrarPrecoSite: null, versao: 3 };
+
+/** Se o preço do site aparece (na tabela do painel e no PDF): a escolha do dono, ou o padrão. */
+export function mostraPrecoSite(venda: Pick<VendaLojistas, "mostrarPrecoSite">): boolean {
+  return venda.mostrarPrecoSite ?? MOSTRAR_PRECO_SITE_PADRAO;
+}
 
 /** Registro gravado antes (ou torto) vira o padrão, campo a campo. */
 export function normalizarVendaLojistas(valor: unknown): VendaLojistas {
@@ -71,9 +85,9 @@ export function normalizarVendaLojistas(valor: unknown): VendaLojistas {
     descontoPercent: desconto,
     condicoes: typeof v.condicoes === "string" ? v.condicoes.slice(0, CONDICOES_LOJISTA_MAXIMO) : "",
     precos,
-    // Só vale o gravado na versão 2 (ver `versao`); antes dela, o padrão.
-    mostrarPrecoSite: v.versao === 2 && typeof v.mostrarPrecoSite === "boolean" ? v.mostrarPrecoSite : VENDA_LOJISTAS_PADRAO.mostrarPrecoSite,
-    versao: 2,
+    // Só vale o gravado na versão 3 (ver `versao`); antes dela, "não escolheu".
+    mostrarPrecoSite: v.versao === 3 && typeof v.mostrarPrecoSite === "boolean" ? v.mostrarPrecoSite : null,
+    versao: 3,
   };
 }
 
@@ -115,9 +129,13 @@ export function validarPrecoEspecial(texto: string, comDescontoCents: number): R
   return { ok: true, cents };
 }
 
-/** Quanto um preço dá de desconto sobre o preço à vista, em % inteiro: pega erro de digitação ("1,99" em vez de "199"). */
-export function descontoEquivalente(cents: number, varejoCents: number): number {
-  return varejoCents > 0 ? Math.round((1 - cents / varejoCents) * 100) : 0;
+/**
+ * Quanto um preço fica abaixo de uma referência (o preço à vista do site, ou
+ * o preço com o desconto geral quando o do site está oculto), em % inteiro:
+ * pega erro de digitação ("1,99" em vez de "199").
+ */
+export function descontoEquivalente(cents: number, referenciaCents: number): number {
+  return referenciaCents > 0 ? Math.round((1 - cents / referenciaCents) * 100) : 0;
 }
 
 function formatarReais(cents: number): string {
@@ -165,13 +183,15 @@ function itensDoProduto(produto: AdminProductRow) {
 }
 
 /**
- * Todas as linhas do catálogo: todo produto PUBLICADO, com ou sem estoque
- * ("todos produtos devem ir o catalogo inteiro", dono, 25/09/2026), uma
- * linha por opção ativa quando há variações. Rascunho e arquivado ficam
- * fora: não estão no site, podem estar incompletos e não têm "preço no site"
- * para mostrar. Item sem preço à vista também fica fora (não há de onde
- * tirar o desconto) e aparece em `itensSemPrecoParaLojistas`, para o painel
- * avisar. Ordem: categoria, nome, opção.
+ * Todas as linhas do catálogo: todo produto PUBLICADO com estoque, uma linha
+ * por opção ativa com estoque quando há variações. Esgotado nunca aparece,
+ * nem na tabela do painel nem no PDF ("coloca pra nunca aparecer os produtos
+ * esgotados ... em tudo", dono, 26/09/2026; na véspera ele tinha pedido o
+ * catálogo inteiro). Rascunho e arquivado ficam fora: não estão no site,
+ * podem estar incompletos e não têm "preço no site". Item com estoque e sem
+ * preço à vista também fica fora (não há de onde tirar o desconto) e aparece
+ * em `itensSemPrecoParaLojistas`, para o painel avisar. Ordem: categoria,
+ * nome, opção.
  */
 export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: VendaLojistas): LinhaLojista[] {
   const linhas: LinhaLojista[] = [];
@@ -179,7 +199,7 @@ export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: 
     if (produto.status !== "active") continue;
     const categoria = produto.categories?.name ?? produto.category_id;
     for (const item of itensDoProduto(produto)) {
-      if (item.varejo <= 0) continue;
+      if (item.estoque <= 0 || item.varejo <= 0) continue;
       const comDesconto = precoComDesconto(item.varejo, venda.descontoPercent);
       const especial = venda.precos[item.chave] ?? null;
       const especialSemEfeito = especial !== null && especial >= comDesconto;
@@ -203,12 +223,51 @@ export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: 
     a.categoria.localeCompare(b.categoria, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR") || (a.opcao ?? "").localeCompare(b.opcao ?? "", "pt-BR"));
 }
 
-/** Itens publicados que ficaram fora do catálogo por não ter preço à vista ("Nome · Opção"), para o painel avisar. */
+/** Itens publicados com estoque que ficaram fora do catálogo por não ter preço à vista ("Nome · Opção"), para o painel avisar. Esgotado não entra na lista: ficaria fora de qualquer jeito. */
 export function itensSemPrecoParaLojistas(produtos: readonly AdminProductRow[]): string[] {
   return produtos
     .filter((produto) => produto.status === "active")
-    .flatMap((produto) => itensDoProduto(produto).filter((item) => item.varejo <= 0).map((item) => (item.opcao ? `${produto.name} · ${item.opcao}` : produto.name)))
+    .flatMap((produto) => itensDoProduto(produto).filter((item) => item.estoque > 0 && item.varejo <= 0).map((item) => (item.opcao ? `${produto.name} · ${item.opcao}` : produto.name)))
     .sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export interface EspecialForaDaTabela {
+  chave: string;
+  /** "Nome · Opção", ou "Item removido do cadastro". */
+  rotulo: string;
+  /** Por que o item não está na tabela: "esgotado", "fora do site"... */
+  motivo: string;
+  cents: number;
+}
+
+/**
+ * Preços especiais guardados de itens que não estão na tabela agora (esgotou,
+ * saiu do site, perdeu o preço, foi apagado). O especial fica guardado e
+ * volta a valer quando o item voltar; o painel lista estes para o dono ver e
+ * poder tirar, em vez de o preço antigo voltar sozinho no PDF.
+ */
+export function especiaisForaDaTabela(produtos: readonly AdminProductRow[], venda: VendaLojistas, linhas: readonly LinhaLojista[]): EspecialForaDaTabela[] {
+  const naTabela = new Set(linhas.map((linha) => linha.chave));
+  return Object.entries(venda.precos)
+    .filter(([chave]) => !naTabela.has(chave))
+    .map(([chave, cents]) => ({ chave, cents, ...descreverItem(produtos, chave) }))
+    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+}
+
+/** Nome e situação do item de uma chave de `VendaLojistas.precos` ("produto" ou "produto::opção"). */
+export function descreverItem(produtos: readonly AdminProductRow[], chave: string): { rotulo: string; motivo: string } {
+  const [produtoId, opcaoId] = chave.split("::");
+  const produto = produtos.find((item) => item.id === produtoId);
+  const opcao = opcaoId ? produto?.product_variants?.find((item) => item.id === opcaoId) : undefined;
+  if (!produto || (opcaoId && !opcao)) return { rotulo: "Item removido do cadastro", motivo: "não existe mais" };
+  const rotulo = opcao ? `${produto.name} · ${opcao.label}` : produto.name;
+  if (produto.status !== "active") return { rotulo, motivo: "fora do site" };
+  if (opcao && !opcao.active) return { rotulo, motivo: "opção desativada" };
+  // Produto que ganhou opções ativas depois do especial gravado na chave dele.
+  if (!opcao && (produto.product_variants ?? []).some((item) => item.active)) return { rotulo, motivo: "agora tem opções" };
+  if ((opcao ? opcao.stock : produto.stock) <= 0) return { rotulo, motivo: "esgotado" };
+  if ((opcao ? opcao.price_cents : produto.price_cents) <= 0) return { rotulo, motivo: "sem preço à vista" };
+  return { rotulo, motivo: "fora da tabela" };
 }
 
 /** "10%" / "7,5%" */

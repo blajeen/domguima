@@ -2,12 +2,12 @@
 
 import { useActionState, useState } from "react";
 import { salvarVendaLojistasAction } from "@/app/painel/actions";
-import { CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, lerDescontoDigitado, precoComDesconto, type VendaLojistas } from "@/lib/admin/lojistas";
+import { CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, lerDescontoDigitado, mostraPrecoSite, precoComDesconto, type VendaLojistas } from "@/lib/admin/lojistas";
 import { formatPrice } from "@/lib/utils/format";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "../FormControls";
 
 /**
- * Desconto geral, condições e o preço do site no catálogo para lojistas.
+ * Desconto geral, condições e o preço do site na tabela e no PDF para lojistas.
  *
  * Campos controlados e a mesma validação da action antes do envio: o React
  * reinicia o formulário a cada envio, e um erro vindo do servidor apagaria o
@@ -24,13 +24,14 @@ export function VendaLojistasForm({ inicial }: { inicial: VendaLojistas }) {
   // formato salvo: "12.5" digitado vira "12,5".
   const [base, setBase] = useState(descontoInicial);
   if (base !== descontoInicial) { setBase(descontoInicial); setDesconto(descontoInicial); }
-  const [mostrarPrecoSite, setMostrarPrecoSite] = useState(inicial.mostrarPrecoSite);
+  const mostraInicial = mostraPrecoSite(inicial);
+  const [mostrarPrecoSite, setMostrarPrecoSite] = useState(mostraInicial);
   const valor = lerDescontoDigitado(desconto);
   const erroDesconto = valor === null ? `Use um número de 0 a ${DESCONTO_LOJISTA_MAXIMO}, como 10 ou 12,5.` : "";
   const erroCondicoes = condicoes.length > CONDICOES_LOJISTA_MAXIMO ? `No máximo ${CONDICOES_LOJISTA_MAXIMO} caracteres (agora ${condicoes.length}).` : "";
   // Compara o valor, não o texto: "12.5" com 12,5 salvo não é mudança. A
   // action grava as condições sem espaço nas pontas.
-  const mudou = valor !== inicial.descontoPercent || condicoes.trim() !== inicial.condicoes || mostrarPrecoSite !== inicial.mostrarPrecoSite;
+  const mudou = valor !== inicial.descontoPercent || condicoes.trim() !== inicial.condicoes || mostrarPrecoSite !== mostraInicial;
 
   return <form action={action} className="space-y-4">
     <div className="grid gap-4 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
@@ -73,7 +74,7 @@ export function VendaLojistasForm({ inicial }: { inicial: VendaLojistas }) {
         ref={(caixa) => { if (caixa) caixa.defaultChecked = mostrarPrecoSite; }}
         className="h-4 w-4 accent-gold-500"
       />
-      Mostrar no catálogo o preço à vista do site, ao lado do preço para lojista
+      Mostrar o preço à vista do site na tabela e no PDF, ao lado do preço para lojista
     </label>
     <div className="flex flex-wrap items-center gap-3">
       <SubmitButton pendingLabel="Salvando..." disabled={!mudou}>Salvar</SubmitButton>

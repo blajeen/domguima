@@ -12,7 +12,7 @@ import { formatPrice } from "@/lib/utils/format";
  * O cabeçalho de cada tabela (categoria e nomes das colunas) fica no <thead>:
  * quando uma categoria quebra de coluna ou de página, o navegador repete o
  * <thead> no pedaço seguinte, e o lojista não fica com preços soltos sem saber
- * de qual categoria são. O preço do site aparece por padrão; o dono desliga na aba.
+ * de qual categoria são. O preço do site só aparece se o dono ligar na aba.
  */
 export function CatalogoLojista({ linhas, descontoPercent, condicoes, mostrarPrecoSite, whatsapp, cnpj, endereco, data }: {
   linhas: LinhaLojista[];
@@ -31,7 +31,10 @@ export function CatalogoLojista({ linhas, descontoPercent, condicoes, mostrarPre
   const temEspecial = linhas.some((linha) => linha.especialCents !== null && !linha.especialSemEfeito);
   const colunas = mostrarPrecoSite ? 3 : 2;
   const legenda = [mostrarPrecoSite && "em cada linha, o preço no site e o preço para lojista", temEspecial && "◆ marca preço especial"].filter(Boolean).join("; ");
-  const introducao = `${linhas.length} ${linhas.length === 1 ? "item" : "itens"} do catálogo, com ${formatarDesconto(descontoPercent)} de desconto sobre o preço à vista do site.`
+  // Com o preço do site oculto, a abertura também não fala dele: "10% sobre
+  // o preço do site" ao lado do preço para lojista entrega o preço do site.
+  const itens = `${linhas.length} ${linhas.length === 1 ? "item" : "itens"} em estoque`;
+  const introducao = (mostrarPrecoSite ? `${itens}, com ${formatarDesconto(descontoPercent)} de desconto sobre o preço à vista do site.` : `${itens}, com preço para lojista.`)
     + (legenda ? ` ${legenda[0].toUpperCase()}${legenda.slice(1)}.` : "");
 
   return <article aria-label="Catálogo para lojistas" className="catalogo-lojista mx-auto max-w-[210mm] bg-white px-6 py-7 text-ink-900 shadow-card sm:px-10 sm:py-9 print:max-w-none print:p-0 print:shadow-none">
@@ -52,7 +55,7 @@ export function CatalogoLojista({ linhas, descontoPercent, condicoes, mostrarPre
     <p className="mt-3 text-[10px] leading-relaxed text-ink-700">{introducao}</p>
 
     {linhas.length === 0
-      ? <p className="py-16 text-center text-sm text-ink-500">Nenhum produto publicado agora.</p>
+      ? <p className="py-16 text-center text-sm text-ink-500">Nenhum produto com estoque agora.</p>
       : <div className="mt-4 gap-8 sm:columns-2 print:columns-2">
         {[...grupos].map(([categoria, itens]) => <table key={categoria} className="mb-4 w-full border-collapse text-[9.5px] leading-snug">
           <thead>

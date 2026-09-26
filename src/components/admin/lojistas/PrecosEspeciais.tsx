@@ -3,7 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { salvarPrecoLojistaAction } from "@/app/painel/actions";
-import { descontoEquivalente, lerDinheiroDigitado, validarPrecoEspecial, type LinhaLojista } from "@/lib/admin/lojistas";
+import { descontoEquivalente, lerDinheiroDigitado, validarPrecoEspecial, type EspecialForaDaTabela, type LinhaLojista } from "@/lib/admin/lojistas";
 import type { ActionState } from "@/lib/admin/types";
 import { formatPrice, normalize } from "@/lib/utils/format";
 
@@ -15,7 +15,12 @@ import { formatPrice, normalize } from "@/lib/utils/format";
  * A busca esconde as linhas (atributo hidden) em vez de tirá-las da tela: um
  * preço digitado e ainda não salvo continua lá quando a busca muda.
  */
-export function PrecosEspeciais({ linhas, descontoRotulo }: { linhas: LinhaLojista[]; descontoRotulo: string }) {
+export function PrecosEspeciais({ linhas, descontoRotulo, mostrarPrecoSite }: {
+  linhas: LinhaLojista[];
+  descontoRotulo: string;
+  /** Com o preço do site oculto (padrão), ele some também desta tabela: o dono pode mostrar a tela a outro lojista. */
+  mostrarPrecoSite: boolean;
+}) {
   const [busca, setBusca] = useState("");
   const [soEspeciais, setSoEspeciais] = useState(false);
   const visiveis = useMemo(() => {
@@ -35,7 +40,7 @@ export function PrecosEspeciais({ linhas, descontoRotulo }: { linhas: LinhaLojis
         Só com preço especial ({especiais})
       </label>
     </div>
-    <p className="mt-2 text-xs text-ink-500" aria-live="polite">{visiveis.size} de {linhas.length} itens publicados.</p>
+    <p className="mt-2 text-xs text-ink-500" aria-live="polite">{visiveis.size} de {linhas.length} itens publicados com estoque.</p>
     <div className="mt-3 overflow-x-auto rounded-xl border border-ink-100">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="bg-ink-50 text-xs text-ink-500">
@@ -44,14 +49,14 @@ export function PrecosEspeciais({ linhas, descontoRotulo }: { linhas: LinhaLojis
                 celular, quem edita o preço continua vendo de qual produto é. */}
             <th scope="col" className="sticky left-0 z-10 bg-ink-50 px-3 py-2 font-bold">Produto</th>
             <th scope="col" className="px-3 py-2 text-right font-bold">Estoque</th>
-            <th scope="col" className="px-3 py-2 text-right font-bold">À vista no site</th>
+            {mostrarPrecoSite && <th scope="col" className="px-3 py-2 text-right font-bold">À vista no site</th>}
             <th scope="col" className="px-3 py-2 text-right font-bold">Com {descontoRotulo}</th>
             <th scope="col" className="px-3 py-2 font-bold">Preço especial</th>
             <th scope="col" className="px-3 py-2 text-right font-bold">No catálogo</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-100">
-          {linhas.map((linha) => <LinhaPreco key={linha.chave} linha={linha} descontoRotulo={descontoRotulo} oculta={!visiveis.has(linha.chave)} />)}
+          {linhas.map((linha) => <LinhaPreco key={linha.chave} linha={linha} descontoRotulo={descontoRotulo} mostrarPrecoSite={mostrarPrecoSite} oculta={!visiveis.has(linha.chave)} />)}
         </tbody>
       </table>
       {visiveis.size === 0 && <p className="px-3 py-6 text-center text-sm text-ink-500">Nenhum item encontrado.</p>}
@@ -59,7 +64,31 @@ export function PrecosEspeciais({ linhas, descontoRotulo }: { linhas: LinhaLojis
   </div>;
 }
 
-type EstadoLinha = ActionState & { enviado?: string };
+type EstadoLinha = ActionState & { enviado?: string; tirou?: boolean };
+
+/** Chama a action e guarda junto o que foi enviado (texto e se foi um Tirar). */
+async function enviarPreco(anterior: EstadoLinha, dados: FormData): Promise<EstadoLinha> {
+  const resposta = await salvarPrecoLojistaAction(anterior, dados);
+  const tirou = dados.get("acao") === "tirar";
+  return { ...resposta, tirou, enviado: tirou ? "" : String(dados.get("preco") ?? "") };
+}
+
+/**
+ * Dica ao digitar um preço especial válido. Com o preço do site à vista,
+ * diz quanto fica abaixo dele em %. Com ele oculto, não cita o preço do site:
+ * diz quanto fica abaixo do preço com o desconto geral em reais (um preço só
+ * arredondado para baixo daria "0%"). A partir de 50% abaixo, pede para
+ * conferir: pega "1,99" digitado no lugar de "199".
+ */
+function dicaDoPreco(cents: number, linha: LinhaLojista, mostrarPrecoSite: boolean, descontoRotulo: string): { texto: string; alerta: boolean } {
+  if (mostrarPrecoSite) {
+    const abaixo = descontoEquivalente(cents, linha.varejoCents);
+    return { texto: `${abaixo >= 50 ? "Confira: dá" : "Dá"} ${abaixo}% abaixo do preço no site.`, alerta: abaixo >= 50 };
+  }
+  const abaixo = descontoEquivalente(cents, linha.comDescontoCents);
+  const porcento = abaixo >= 1 ? ` (${abaixo}%)` : "";
+  return { texto: `${abaixo >= 50 ? "Confira: fica" : "Fica"} ${formatPrice(linha.comDescontoCents - cents)} abaixo do preço com ${descontoRotulo}${porcento}.`, alerta: abaixo >= 50 };
+}
 
 function textoDoPreco(cents: number | null): string {
   return cents !== null ? (cents / 100).toFixed(2).replace(".", ",") : "";
@@ -70,14 +99,12 @@ function textoDoPreco(cents: number | null): string {
  * foco fica no botão e a confirmação aparece. Quando o valor salvo muda, o
  * campo acompanha (estado derivado ajustado durante o render).
  */
-function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; descontoRotulo: string; oculta: boolean }) {
+function LinhaPreco({ linha, descontoRotulo, mostrarPrecoSite, oculta }: { linha: LinhaLojista; descontoRotulo: string; mostrarPrecoSite: boolean; oculta: boolean }) {
   // Guarda o texto enviado junto com a resposta: a falha do servidor (item
-  // saiu do site, desconto mudou em outra aba) fica na tela enquanto o campo
-  // tiver o mesmo texto, em vez de sumir atrás da dica.
-  const [state, action] = useActionState(async (anterior: EstadoLinha, dados: FormData): Promise<EstadoLinha> => {
-    const resposta = await salvarPrecoLojistaAction(anterior, dados);
-    return { ...resposta, enviado: dados.get("acao") === "tirar" ? "" : String(dados.get("preco") ?? "") };
-  }, {});
+  // esgotou ou saiu do site, desconto mudou em outra aba) fica na tela
+  // enquanto o campo tiver o mesmo texto, em vez de sumir atrás da dica. A
+  // falha de um Tirar aparece sempre (o campo continua com o preço).
+  const [state, action] = useActionState(enviarPreco, {});
   const salvo = textoDoPreco(linha.especialCents);
   const [base, setBase] = useState(salvo);
   const [texto, setTexto] = useState(salvo);
@@ -89,8 +116,7 @@ function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; de
   const mudou = texto.trim() ? cents === null || cents !== linha.especialCents : linha.especialCents !== null;
   const validacao = validarPrecoEspecial(texto, linha.comDescontoCents);
   const erro = mudou && !validacao.ok ? validacao.mensagem : "";
-  const equivalente = mudou && validacao.ok && validacao.cents !== null ? descontoEquivalente(validacao.cents, linha.varejoCents) : null;
-  const falhou = !state.ok && state.message && state.enviado === texto ? state.message : "";
+  const falhou = !state.ok && state.message && (state.tirou || state.enviado === texto) ? state.message : "";
   const idAjuda = `preco-${linha.chave.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const rotulo = linha.opcao ? `${linha.nome} · ${linha.opcao}` : linha.nome;
   const ativo = linha.especialCents !== null && !linha.especialSemEfeito;
@@ -98,7 +124,7 @@ function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; de
   // Uma mensagem por vez, na ordem do que importa agora.
   const ajuda: { texto: string; alerta: boolean } | null = erro ? { texto: erro, alerta: true }
     : falhou ? { texto: falhou, alerta: true }
-    : equivalente !== null ? { texto: equivalente >= 50 ? `Confira: dá ${equivalente}% abaixo do preço no site.` : `Dá ${equivalente}% abaixo do preço no site.`, alerta: equivalente >= 50 }
+    : mudou && validacao.ok && validacao.cents !== null ? dicaDoPreco(validacao.cents, linha, mostrarPrecoSite, descontoRotulo)
     : !mudou && linha.especialSemEfeito ? { texto: `Não está abaixo do preço com ${descontoRotulo}: sem efeito até você baixar ou tirar.`, alerta: true }
     : state.ok && state.message ? { texto: state.message, alerta: false }
     : null;
@@ -114,10 +140,8 @@ function LinhaPreco({ linha, descontoRotulo, oculta }: { linha: LinhaLojista; de
         <span className="block text-[11px] text-ink-500 sm:text-xs">{linha.sku}<span className="hidden sm:inline"> · {linha.categoria}</span></span>
       </div>
     </td>
-    {/* Sem estoque também entra na tabela (catálogo inteiro); o painel marca
-        para o dono saber o que está oferecendo sem ter na loja. */}
-    <td className="px-3 py-2 text-right tabular-nums text-ink-600">{linha.estoque > 0 ? linha.estoque : <span className="whitespace-nowrap font-bold text-red-700">0 <span className="font-semibold">(sem estoque)</span></span>}</td>
-    <td className="px-3 py-2 text-right tabular-nums text-ink-600">{formatPrice(linha.varejoCents)}</td>
+    <td className="px-3 py-2 text-right tabular-nums text-ink-600">{linha.estoque}</td>
+    {mostrarPrecoSite && <td className="px-3 py-2 text-right tabular-nums text-ink-600">{formatPrice(linha.varejoCents)}</td>}
     <td className="px-3 py-2 text-right tabular-nums text-ink-600">{formatPrice(linha.comDescontoCents)}</td>
     <td className="px-3 py-2">
       <form action={action} className="flex flex-nowrap items-center gap-2">
@@ -157,4 +181,38 @@ function BotaoDaLinha({ secundario = false, children, disabled, ...props }: Reac
   >
     {pending ? "Salvando..." : children}
   </button>;
+}
+
+/**
+ * Preços especiais guardados de itens que não estão na tabela agora (esgotou,
+ * saiu do site...). Eles voltam a valer quando o item voltar; aqui o dono vê
+ * quais são e tira os que não servem mais, em vez de um preço antigo voltar
+ * sozinho no PDF.
+ */
+export function EspeciaisForaDaTabela({ itens }: { itens: EspecialForaDaTabela[] }) {
+  if (!itens.length) return null;
+  return <div className="mb-4 rounded-lg border border-ink-200 bg-ink-50 px-3 py-3 text-sm">
+    <p className="font-bold text-ink-900">{itens.length === 1 ? "1 preço especial guardado" : `${itens.length} preços especiais guardados`} de itens que não estão na tabela</p>
+    <p className="mt-0.5 text-xs text-ink-600">Voltam a valer quando o item voltar (por exemplo, quando você repor o estoque). Tire os que não servem mais.</p>
+    <ul className="mt-2 divide-y divide-ink-200">
+      {itens.map((item) => <EspecialGuardado key={item.chave} item={item} />)}
+    </ul>
+  </div>;
+}
+
+function EspecialGuardado({ item }: { item: EspecialForaDaTabela }) {
+  const [state, action] = useActionState(enviarPreco, {});
+  return <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+    <span>
+      {/* data-dado-do-dono: nome como o dono cadastrou (o smoke ignora travessão e caixa alta nele). */}
+      <span data-dado-do-dono className="font-semibold text-ink-900">{item.rotulo}</span>
+      <span className="text-xs text-ink-600"> ({item.motivo}): </span>
+      <span className="font-bold tabular-nums text-ink-900">{formatPrice(item.cents)}</span>
+    </span>
+    <form action={action}>
+      <input type="hidden" name="chave" value={item.chave} />
+      <BotaoDaLinha secundario name="acao" value="tirar" aria-label={`Tirar o preço especial guardado de ${item.rotulo}`}>Tirar</BotaoDaLinha>
+    </form>
+    {state.message && !state.ok && <p role="status" className="w-full text-xs font-bold text-red-700">{state.message}</p>}
+  </li>;
 }
