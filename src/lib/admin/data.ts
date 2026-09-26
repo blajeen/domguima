@@ -171,7 +171,7 @@ export async function getInventoryMovements(limit = 30) {
   return state.inventoryMovements.slice(0, limit).map((movement) => ({ ...movement, products: products.get(movement.product_id) }));
 }
 
-/** "Venda para lojistas" (desconto e condições) ou o nome do produto do preço especial. */
+/** "Venda para lojistas" (desconto e condições), o nome do produto do preço especial, ou "N itens" no Salvar todos (vem gravado em after.produto). */
 function nomeNaAuditoriaLojistas(entityId: string, after: unknown, products: Map<string, string>): string {
   if (entityId === "config") return "Venda para lojistas";
   const gravado = (after as { produto?: unknown } | null)?.produto;

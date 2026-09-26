@@ -7,8 +7,9 @@ import { EspeciaisForaDaTabela, PrecosEspeciais } from "@/components/admin/lojis
 import { VendaLojistasForm } from "@/components/admin/lojistas/VendaLojistasForm";
 import { company, whatsapp } from "@/config/site";
 import { getOwner } from "@/lib/admin/auth";
+import { formatPrice } from "@/lib/utils/format";
 import { getAdminProducts, getStoreSettings, getVendaLojistas } from "@/lib/admin/data";
-import { especiaisForaDaTabela, formatarDesconto, itensSemPrecoParaLojistas, linhasParaLojistas, mostraPrecoSite } from "@/lib/admin/lojistas";
+import { especiaisAcimaDoDesconto, especiaisForaDaTabela, formatarDesconto, itensSemPrecoParaLojistas, linhasParaLojistas, mostraPrecoSite } from "@/lib/admin/lojistas";
 
 // O título da aba vira o nome sugerido do arquivo em "Salvar como PDF": sem o
 // modelo do painel, sai "Tabela para lojistas - Dom Guima.pdf". Só para a
@@ -32,6 +33,7 @@ export default async function LojistasPage() {
   const linhas = linhasParaLojistas(produtos, venda);
   const semPreco = itensSemPrecoParaLojistas(produtos);
   const guardados = especiaisForaDaTabela(produtos, venda, linhas);
+  const acima = especiaisAcimaDoDesconto(linhas);
   const data = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date());
   const descontoRotulo = formatarDesconto(venda.descontoPercent);
   const mostrarPrecoSite = mostraPrecoSite(venda);
@@ -50,10 +52,15 @@ export default async function LojistasPage() {
       </PanelCard>
       <PanelCard>
         <h2 className="text-lg font-black">Preço especial por produto</h2>
-        <p className="mb-4 mt-1 text-sm text-ink-500">Para baixar mais um item só: fica no lugar do preço com o desconto geral, e precisa ser menor que ele. Vazio volta ao desconto geral. Entram os produtos publicados com estoque (uma linha por opção nos que têm variação); esgotado não aparece aqui nem no PDF.</p>
+        <p className="mb-4 mt-1 text-sm text-ink-500">O preço fixo de um item para lojista, no lugar do preço com o desconto geral: pode ser menor ou maior (por exemplo, para arredondar) e não muda quando o desconto geral muda. Vazio volta ao desconto geral. Salve linha por linha ou todos juntos no fim da tabela. Entram os produtos publicados com estoque (uma linha por opção nos que têm variação); esgotado não aparece aqui nem no PDF.</p>
         {semPreco.length > 0 && (
           <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             {semPreco.length === 1 ? "1 item publicado e com estoque ficou fora" : `${semPreco.length} itens publicados e com estoque ficaram fora`} por não ter preço à vista no cadastro: <span data-dado-do-dono>{semPreco.join("; ")}</span>.
+          </p>
+        )}
+        {acima.length > 0 && (
+          <p role="status" className="mb-4 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-800">
+            Preço fixo acima do preço com {descontoRotulo} em {acima.length === 1 ? "1 item" : `${acima.length} itens`}: <span data-dado-do-dono>{acima.map((linha) => `${linha.opcao ? `${linha.nome} · ${linha.opcao}` : linha.nome} (${formatPrice(linha.especialCents ?? 0)})`).join("; ")}</span>. Assim saem no PDF; o desconto geral não mexe neles.
           </p>
         )}
         <EspeciaisForaDaTabela itens={guardados} />

@@ -28,13 +28,16 @@ export function CatalogoLojista({ linhas, descontoPercent, condicoes, mostrarPre
 }) {
   const grupos = new Map<string, LinhaLojista[]>();
   for (const linha of linhas) grupos.set(linha.categoria, [...(grupos.get(linha.categoria) ?? []), linha]);
-  const temEspecial = linhas.some((linha) => linha.especialCents !== null && !linha.especialSemEfeito);
+  const temEspecial = linhas.some((linha) => linha.especialAbaixo);
   const colunas = mostrarPrecoSite ? 3 : 2;
   const legenda = [mostrarPrecoSite && "em cada linha, o preço no site e o preço para lojista", temEspecial && "◆ marca preço especial"].filter(Boolean).join("; ");
   // Com o preço do site oculto, a abertura também não fala dele: "10% sobre
   // o preço do site" ao lado do preço para lojista entrega o preço do site.
   const itens = `${linhas.length} ${linhas.length === 1 ? "item" : "itens"} em estoque`;
-  const introducao = (mostrarPrecoSite ? `${itens}, com ${formatarDesconto(descontoPercent)} de desconto sobre o preço à vista do site.` : `${itens}, com preço para lojista.`)
+  // Item com preço especial (fixo) não segue o desconto geral: a frase diz
+  // isso, em vez de prometer o desconto para todos.
+  const temPrecoProprio = linhas.some((linha) => linha.especialCents !== null);
+  const introducao = (mostrarPrecoSite ? `${itens}, com ${formatarDesconto(descontoPercent)} de desconto sobre o preço à vista do site${temPrecoProprio ? ", fora os de preço especial" : ""}.` : `${itens}, com preço para lojista.`)
     + (legenda ? ` ${legenda[0].toUpperCase()}${legenda.slice(1)}.` : "");
 
   return <article aria-label="Catálogo para lojistas" className="catalogo-lojista mx-auto max-w-[210mm] bg-white px-6 py-7 text-ink-900 shadow-card sm:px-10 sm:py-9 print:max-w-none print:p-0 print:shadow-none">
@@ -70,7 +73,7 @@ export function CatalogoLojista({ linhas, descontoPercent, condicoes, mostrarPre
           </thead>
           <tbody>
             {itens.map((linha) => {
-              const especial = linha.especialCents !== null && !linha.especialSemEfeito;
+              const especial = linha.especialAbaixo;
               return <tr key={linha.chave} className="break-inside-avoid border-b border-ink-100">
                 <td className="py-1 pr-2 align-baseline">
                   <span data-dado-do-dono>{linha.nome}{linha.opcao ? ` · ${linha.opcao}` : ""}</span>

@@ -11,8 +11,8 @@
  * O preço de lojista é derivado: sai do preço à vista do produto (ou da
  * opção) menos o desconto, calculado na leitura. Só se grava o que o dono
  * decide: o desconto, as condições e o preço especial de cada linha. Mudou o
- * preço no cadastro, o preço de lojista acompanha; o especial fica, e a tela
- * avisa quando ele passou a ficar acima do novo preço à vista.
+ * preço no cadastro ou o desconto, o preço de lojista acompanha; o especial
+ * é o preço fixo daquele item e não muda sozinho.
  *
  * Sem "server-only" e sem zod: o mesmo módulo valida no navegador (antes do
  * envio) e na action, e monta as linhas no painel e no PDF.
@@ -116,16 +116,15 @@ export type ResultadoPrecoEspecial = { ok: true; cents: number | null } | { ok: 
 
 /**
  * Preço especial digitado para uma linha. Vazio = tirar o preço especial.
- * O especial é para baixar mais que o desconto geral ("abaixar o preço mais
- * ainda", dono): precisa ficar abaixo do preço com o desconto geral da linha.
- * Um especial acima dele faria o lojista pagar mais justo no item marcado
- * como especial.
+ * Qualquer preço vale, acima ou abaixo do preço com o desconto geral: é o
+ * preço fixo do item para lojista ("sem essa trava", 26/09/2026; ele queria
+ * arredondar R$ 179,91 para R$ 180,00 e não conseguia). O painel avisa, sem
+ * travar, quando fica acima do desconto geral ou do preço do site.
  */
-export function validarPrecoEspecial(texto: string, comDescontoCents: number): ResultadoPrecoEspecial {
+export function validarPrecoEspecial(texto: string): ResultadoPrecoEspecial {
   if (!texto.trim()) return { ok: true, cents: null };
   const cents = lerDinheiroDigitado(texto);
   if (cents === null) return { ok: false, mensagem: "Digite o preço em reais, como 89,90." };
-  if (cents >= comDescontoCents) return { ok: false, mensagem: `Para baixar mais, fique abaixo de ${formatarReais(comDescontoCents)} (o preço com o desconto geral).` };
   return { ok: true, cents };
 }
 
@@ -136,10 +135,6 @@ export function validarPrecoEspecial(texto: string, comDescontoCents: number): R
  */
 export function descontoEquivalente(cents: number, referenciaCents: number): number {
   return referenciaCents > 0 ? Math.round((1 - cents / referenciaCents) * 100) : 0;
-}
-
-function formatarReais(cents: number): string {
-  return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 /** Preço com o desconto geral, arredondado para o centavo mais próximo. */
@@ -161,16 +156,15 @@ export interface LinhaLojista {
   varejoCents: number;
   /** Com o desconto geral. */
   comDescontoCents: number;
-  /** Preço especial gravado para a linha, ou null. */
+  /** Preço especial gravado para a linha (o preço fixo dela), ou null. */
   especialCents: number | null;
   /**
-   * O especial gravado não está abaixo do preço com o desconto geral (o
-   * desconto subiu ou o preço do cadastro baixou depois): ele não vale, a
-   * linha fica com o desconto geral (o menor) e o painel avisa até o dono
-   * corrigir.
+   * O especial fica abaixo do preço com o desconto geral: só esses levam o ◆
+   * de "preço especial" no PDF. Um especial acima (arredondar R$ 179,91 para
+   * R$ 180,00) vale igual, mas não é oferta para destacar.
    */
-  especialSemEfeito: boolean;
-  /** O que o catálogo mostra: o especial válido ou o com desconto. */
+  especialAbaixo: boolean;
+  /** O que o catálogo mostra: o especial, se houver, ou o com desconto. */
   finalCents: number;
 }
 
@@ -202,7 +196,6 @@ export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: 
       if (item.estoque <= 0 || item.varejo <= 0) continue;
       const comDesconto = precoComDesconto(item.varejo, venda.descontoPercent);
       const especial = venda.precos[item.chave] ?? null;
-      const especialSemEfeito = especial !== null && especial >= comDesconto;
       linhas.push({
         chave: item.chave,
         produtoId: produto.id,
@@ -214,13 +207,83 @@ export function linhasParaLojistas(produtos: readonly AdminProductRow[], venda: 
         varejoCents: item.varejo,
         comDescontoCents: comDesconto,
         especialCents: especial,
-        especialSemEfeito,
-        finalCents: especial !== null && !especialSemEfeito ? especial : comDesconto,
+        especialAbaixo: especial !== null && especial < comDesconto,
+        finalCents: especial ?? comDesconto,
       });
     }
   }
   return linhas.sort((a, b) =>
     a.categoria.localeCompare(b.categoria, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR") || (a.opcao ?? "").localeCompare(b.opcao ?? "", "pt-BR"));
+}
+
+/**
+ * Linhas com preço especial (fixo) acima do preço com o desconto geral. Não
+ * é erro (arredondar para cima vale), mas o dono precisa ver: o desconto
+ * geral não mexe nelas, e especiais gravados antes, quando o acima era
+ * descartado ("sem efeito"), passaram a valer em 26/09/2026.
+ */
+export function especiaisAcimaDoDesconto(linhas: readonly LinhaLojista[]): LinhaLojista[] {
+  return linhas.filter((linha) => linha.especialCents !== null && linha.especialCents > linha.comDescontoCents);
+}
+
+/** Teto de itens num "Salvar todos": acima disso a lista veio torta. */
+export const LOTE_PRECOS_MAXIMO = 2000;
+
+export interface ItemDoLote {
+  chave: string;
+  /** O que o dono digitou; vazio = tirar o especial. */
+  texto: string;
+}
+
+/** A lista do "Salvar todos" (JSON do formulário) em itens; null se veio torta (formato, tamanho ou chave repetida). */
+export function lerLoteDePrecos(json: string): ItemDoLote[] | null {
+  let bruto: unknown;
+  try { bruto = JSON.parse(json); } catch { return null; }
+  if (!Array.isArray(bruto) || bruto.length > LOTE_PRECOS_MAXIMO) return null;
+  const vistas = new Set<string>();
+  const itens: ItemDoLote[] = [];
+  for (const item of bruto) {
+    const { chave, texto } = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    if (typeof chave !== "string" || !chave || chave.length > 250 || typeof texto !== "string" || texto.length > 50 || vistas.has(chave)) return null;
+    vistas.add(chave);
+    itens.push({ chave, texto });
+  }
+  return itens;
+}
+
+export interface ResultadoDoLote {
+  precos: Record<string, number>;
+  /** O que mudou de fato (null = sem especial). */
+  mudancas: { chave: string; antes: number | null; depois: number | null }[];
+  /** Chaves que ficaram como o dono digitou (mudadas ou que já estavam iguais). */
+  salvas: string[];
+  /** Chaves com preço digitado que não estão mais na tabela (esgotou, saiu do site): não gravam. */
+  fora: string[];
+  /** Chaves com texto que não vira preço. */
+  invalidas: string[];
+}
+
+/**
+ * Aplica o "Salvar todos" sobre os preços gravados. Tirar (texto vazio) vale
+ * mesmo fora da tabela, como no Tirar de uma linha; pôr preço, só em item que
+ * está na tabela agora.
+ */
+export function aplicarLoteDePrecos(precosAtuais: Record<string, number>, linhas: readonly LinhaLojista[], itens: readonly ItemDoLote[]): ResultadoDoLote {
+  const naTabela = new Set(linhas.map((linha) => linha.chave));
+  const precos = { ...precosAtuais };
+  const resultado: ResultadoDoLote = { precos, mudancas: [], salvas: [], fora: [], invalidas: [] };
+  for (const { chave, texto } of itens) {
+    const lido = validarPrecoEspecial(texto);
+    if (!lido.ok) { resultado.invalidas.push(chave); continue; }
+    if (lido.cents !== null && !naTabela.has(chave)) { resultado.fora.push(chave); continue; }
+    const antes = precos[chave] ?? null;
+    if (antes !== lido.cents) {
+      if (lido.cents === null) delete precos[chave]; else precos[chave] = lido.cents;
+      resultado.mudancas.push({ chave, antes, depois: lido.cents });
+    }
+    resultado.salvas.push(chave);
+  }
+  return resultado;
 }
 
 /** Itens publicados com estoque que ficaram fora do catálogo por não ter preço à vista ("Nome · Opção"), para o painel avisar. Esgotado não entra na lista: ficaria fora de qualquer jeito. */

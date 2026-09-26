@@ -5,7 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { contaPrincipalOrThrow, createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
-import { CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, descreverItem, formatarDesconto, lerDescontoDigitado, linhasParaLojistas, mostraPrecoSite, validarPrecoEspecial, type VendaLojistas } from "@/lib/admin/lojistas";
+import { aplicarLoteDePrecos, CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, descreverItem, especiaisAcimaDoDesconto, formatarDesconto, lerDescontoDigitado, lerLoteDePrecos, linhasParaLojistas, mostraPrecoSite, validarPrecoEspecial, type VendaLojistas } from "@/lib/admin/lojistas";
 import { formatPrice } from "@/lib/utils/format";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
@@ -1750,7 +1750,14 @@ export async function salvarVendaLojistasAction(_: ActionState, formData: FormDa
     if (atual.descontoPercent === desconto && atual.condicoes === condicoes && mostraPrecoSite(atual) === marcado) return { ok: true, message: "Nada mudou." };
     await mutateCatalogState((state) => {
       const antes = state.operations.lojistas;
-      if (antes.descontoPercent !== desconto) mudancas.push(`Desconto de ${formatarDesconto(desconto)} salvo; os preços do catálogo abaixo já mudaram.`);
+      if (antes.descontoPercent !== desconto) {
+        // O especial é preço fixo: o desconto novo não mexe nele. Diz quais
+        // ficaram acima do preço com o desconto novo, para o dono decidir.
+        const acima = especiaisAcimaDoDesconto(linhasParaLojistas(produtosDoEstado(state), { ...antes, descontoPercent: desconto }));
+        const nomes = acima.map((linha) => (linha.opcao ? `${linha.nome} · ${linha.opcao}` : linha.nome));
+        mudancas.push(`Desconto de ${formatarDesconto(desconto)} salvo; os preços do catálogo abaixo já mudaram${acima.length ? ", menos os de preço especial (fixo)" : ""}.`);
+        if (acima.length) mudancas.push(`${acima.length === 1 ? "1 item com preço especial ficou" : `${acima.length} itens com preço especial ficaram`} acima do preço com ${formatarDesconto(desconto)}: ${nomes.slice(0, 5).join("; ")}${nomes.length > 5 ? ` e mais ${nomes.length - 5}` : ""}.`);
+      }
       if (antes.condicoes !== condicoes) mudancas.push(condicoes ? "Condições salvas." : "Condições tiradas do catálogo.");
       if (mostraPrecoSite(antes) !== marcado) mudancas.push(marcado ? "A tabela e o PDF passam a mostrar o preço do site." : "A tabela e o PDF deixam de mostrar o preço do site.");
       if (!mudancas.length) return;
@@ -1780,8 +1787,9 @@ function produtosDoEstado(state: CatalogState) {
 
 /**
  * Preço especial de uma linha (produto, ou produto::opção). Vazio tira o
- * especial e a linha volta ao desconto geral. O preço à vista usado na
- * conferência vem do catálogo, lido agora, nunca do formulário.
+ * especial e a linha volta ao desconto geral. Qualquer preço vale (acima ou
+ * abaixo do desconto geral: é o preço fixo do item). A linha conferida vem do
+ * catálogo, lido agora, nunca do formulário.
  */
 export async function salvarPrecoLojistaAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await contaPrincipalOrThrow();
@@ -1807,23 +1815,25 @@ export async function salvarPrecoLojistaAction(_: ActionState, formData: FormDat
     return true;
   };
   try {
-    // Valida contra o catálogo lido agora ANTES de gravar: preço recusado,
+    // Confere contra o catálogo lido agora ANTES de gravar: texto que não é preço,
     // linha que sumiu ou o mesmo preço de novo não regravam o catálogo inteiro.
     const lido = await readCatalogState(true);
     const previa = linhaLojista(lido, chave);
     if (!previa) {
       if (texto || lido.operations.lojistas.precos[chave] === undefined) return naoEncontrado;
     } else {
-      const conferido = validarPrecoEspecial(texto, previa.comDescontoCents);
+      const conferido = validarPrecoEspecial(texto);
       if (!conferido.ok) return { message: conferido.mensagem, errors: { preco: [conferido.mensagem] } };
-      if (conferido.cents === previa.especialCents) return { ok: true, message: "Nada mudou." };
+      // Mesmo sem mudança, revalida: outra aba pode ter gravado este preço, e a
+      // tela desta ainda mostraria o antigo.
+      if (conferido.cents === previa.especialCents) { revalidatePath("/painel/lojistas"); return { ok: true, message: "Nada mudou." }; }
     }
     await mutateCatalogState((state) => {
       // De novo dentro da gravação: o desconto ou o produto podem ter mudado
       // entre a leitura acima e agora.
       const linha = linhaLojista(state, chave);
       if (!linha) { tirarForaDaTabela(state); return; }
-      const preco = validarPrecoEspecial(texto, linha.comDescontoCents);
+      const preco = validarPrecoEspecial(texto);
       if (!preco.ok) { resultado = { message: preco.mensagem, errors: { preco: [preco.mensagem] } }; return; }
       const antes = state.operations.lojistas.precos[chave] ?? null;
       const precos = { ...state.operations.lojistas.precos };
@@ -1839,4 +1849,57 @@ export async function salvarPrecoLojistaAction(_: ActionState, formData: FormDat
   }
   if (resultado.ok) revalidatePath("/painel/lojistas");
   return resultado;
+}
+
+/** Resposta do "Salvar todos": as chaves gravadas voltam para a tela limpar o que foi digitado nelas. */
+export type ResultadoLoteLojistas = ActionState & { salvas?: string[] };
+
+/**
+ * "Salvar todos": grava de uma vez os preços especiais digitados em várias
+ * linhas ("coloca uma opção pra salvar todos", 26/09/2026). Uma gravação só,
+ * e uma entrada só no Histórico (com cada item e o preço antes e depois),
+ * para um lote grande não empurrar o resto do Histórico para fora da tela.
+ */
+export async function salvarPrecosLojistaEmLoteAction(_: ResultadoLoteLojistas, formData: FormData): Promise<ResultadoLoteLojistas> {
+  const owner = await contaPrincipalOrThrow();
+  const itens = lerLoteDePrecos(String(formData.get("itens") ?? ""));
+  if (!itens) return { message: "Lista de preços inválida. Recarregue a página." };
+  if (!itens.length) return { ok: true, message: "Nada para salvar.", salvas: [] };
+  let aplicado: ReturnType<typeof aplicarLoteDePrecos> | null = null;
+  let nomes = new Map<string, { rotulo: string; motivo: string }>();
+  try {
+    // Confere antes de gravar: texto que não é preço volta sem gravar nada, e
+    // um lote sem mudança real não regrava o catálogo inteiro.
+    const lido = await readCatalogState(true);
+    const produtosLidos = produtosDoEstado(lido);
+    const previa = aplicarLoteDePrecos(lido.operations.lojistas.precos, linhasParaLojistas(produtosLidos, lido.operations.lojistas), itens);
+    nomes = new Map(previa.fora.map((chave) => [chave, descreverItem(produtosLidos, chave)]));
+    if (previa.invalidas.length) return { message: `${previa.invalidas.length === 1 ? "1 preço não está" : `${previa.invalidas.length} preços não estão`} em reais (ex.: 89,90). Corrija e salve de novo.` };
+    if (!previa.mudancas.length) aplicado = previa;
+    else {
+      await mutateCatalogState((state) => {
+        const produtos = produtosDoEstado(state);
+        const lote = aplicarLoteDePrecos(state.operations.lojistas.precos, linhasParaLojistas(produtos, state.operations.lojistas), itens);
+        aplicado = lote;
+        nomes = new Map([...lote.mudancas.map((m) => m.chave), ...lote.fora].map((chave) => [chave, descreverItem(produtos, chave)]));
+        if (!lote.mudancas.length || lote.invalidas.length) return;
+        state.operations.lojistas = { ...state.operations.lojistas, precos: lote.precos };
+        const item = (chave: string, cents: number | null) => ({ produto: nomes.get(chave)?.rotulo ?? chave, especialCents: cents });
+        audit(state, owner.id, "lojistas.precos.lote", "lojistas", "lote",
+          { itens: lote.mudancas.map((m) => item(m.chave, m.antes)) },
+          { produto: `${lote.mudancas.length} ${lote.mudancas.length === 1 ? "item" : "itens"}`, itens: lote.mudancas.map((m) => item(m.chave, m.depois)) });
+      });
+    }
+  } catch (error) {
+    console.error("Venda para lojistas: falha ao salvar os preços em lote.", error);
+    return { message: "Não foi possível salvar agora. Tente de novo em instantes." };
+  }
+  const lote = aplicado as ReturnType<typeof aplicarLoteDePrecos> | null;
+  if (!lote) return { message: "Não foi possível salvar agora. Tente de novo em instantes." };
+  // Revalida sempre que houve item: o que mudou por outra aba e a linha que
+  // saiu da tabela aparecem certos sem recarregar a página.
+  if (lote.salvas.length || lote.fora.length) revalidatePath("/painel/lojistas");
+  const partes = [lote.mudancas.length ? `${lote.mudancas.length === 1 ? "1 preço salvo" : `${lote.mudancas.length} preços salvos`}.` : "Nada mudou."];
+  if (lote.fora.length) partes.push(`${lote.fora.length === 1 ? "1 item não está mais na tabela e ficou sem salvar" : `${lote.fora.length} itens não estão mais na tabela e ficaram sem salvar`}: ${lote.fora.map((chave) => { const d = nomes.get(chave); return d ? `${d.rotulo} (${d.motivo})` : chave; }).join("; ")}.`);
+  return { ok: !lote.fora.length, message: partes.join(" "), salvas: lote.salvas };
 }
