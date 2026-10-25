@@ -11,6 +11,8 @@ export interface ProductResearchResult {
   model: string;
   /** GTIN em digitos: o informado ou o encontrado na pesquisa. */
   gtin: string;
+  /** Pagina de loja onde o GTIN foi achado e conferido; vazio quando veio de fonte oficial, do Cosmos ou do lojista. */
+  gtinSource: string;
   description: string;
   ncm: string;
   ncmConfidence: "high" | "medium" | "low";

@@ -3,10 +3,13 @@ import "server-only";
 import { z } from "zod";
 import { isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 import { lookupCosmos, type CosmosLookup, type CosmosProduct } from "./cosmos";
+import { fetchPublic } from "./remote-fetch";
 import type { ProductResearchResult, ProductResearchSource } from "./product-research-types";
 
 /** Prazo total da pesquisa, abaixo do maxDuration de 60s da rota. */
-const RESEARCH_DEADLINE_MS = 55_000;
+// Sobra prazo para conferir o GTIN achado em loja (GTIN_CHECK_MS) dentro dos 60s da rota.
+const RESEARCH_DEADLINE_MS = 47_000;
+const GTIN_CHECK_MS = 6_000;
 const MIN_WEB_TIMEOUT_MS = 15_000;
 
 /** Numero que o modelo nao confirmou vem null; zero ou negativo tambem vira null. */
@@ -39,6 +42,7 @@ const webResultSchema = z.object({
   packageLengthCm: positiveOrNull,
   packageWidthCm: positiveOrNull,
   packageHeightCm: positiveOrNull,
+  gtinCandidates: z.array(z.object({ gtin: z.string().max(60), sourceUrl: z.string().max(1_000) })).transform((items) => items.slice(0, 6)),
 });
 
 type WebResult = z.infer<typeof webResultSchema> & { sources: ProductResearchSource[] };
@@ -118,14 +122,39 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
 
   const result = cosmosProduct ? mergeWithCosmos(web, cosmosProduct, gtin) : fromWeb(web, hasGtin ? gtin : "");
   if (cosmosNote) result.notes = joinNotes(result.notes, cosmosNote);
+  if (!result.gtin) {
+    const achado = await gtinFromStores(web.gtinCandidates);
+    if (achado) { result.gtin = achado.gtin; result.gtinSource = achado.sourceUrl; }
+  }
+  result.name = formatTitle(result.name);
   return result;
 }
 
+/**
+ * GTIN que a pesquisa viu em loja (o fabricante quase nunca publica o EAN).
+ * So entra o que tem digito verificador valido E aparece de fato na pagina
+ * da loja, aberta aqui; senao fica vazio. A tela mostra de onde veio.
+ */
+async function gtinFromStores(candidates: Array<{ gtin: string; sourceUrl: string }>): Promise<{ gtin: string; sourceUrl: string } | null> {
+  const validos = candidates
+    .map((item) => ({ gtin: pickGtin(item.gtin), sourceUrl: safeHttpUrl(item.sourceUrl) }))
+    .filter((item, indice, todos) => item.gtin && item.sourceUrl && todos.findIndex((outro) => outro.gtin === item.gtin && outro.sourceUrl === item.sourceUrl) === indice);
+  const conferidos = await Promise.all(validos.map(async (item) => {
+    try {
+      const pagina = await fetchPublic(item.sourceUrl, { maxBytes: 4 * 1024 * 1024, timeoutMs: GTIN_CHECK_MS, accept: (type) => type === "text/html" || type === "application/xhtml+xml" });
+      return pagina.buffer.toString("utf8").replace(/[\s.-]/g, "").includes(item.gtin) ? item : null;
+    } catch { return null; }
+  }));
+  return conferidos.find(Boolean) ?? null;
+}
+
 function fromWeb(web: WebResult, gtin: string): ProductResearchResult {
-  const { packageWeightGrams, packageLengthCm, packageWidthCm, packageHeightCm, ...rest } = web;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- gtinCandidates e conferido em gtinFromStores, nao vai para a tela
+  const { packageWeightGrams, packageLengthCm, packageWidthCm, packageHeightCm, gtinCandidates, ...rest } = web;
   return {
     ...rest,
     gtin: gtin || web.gtin,
+    gtinSource: "",
     weightGrams: packageWeightGrams === null ? null : Math.round(packageWeightGrams),
     productWeightGrams: web.productWeightGrams === null ? null : Math.round(web.productWeightGrams),
     packageDimensions: packageLengthCm && packageWidthCm && packageHeightCm ? { length: packageLengthCm, width: packageWidthCm, height: packageHeightCm } : null,
@@ -150,6 +179,7 @@ function fromCosmos(product: CosmosProduct, gtin: string, note: string): Product
     confidence: "medium",
     notes: note,
     providers: [COSMOS_LABEL],
+    gtinSource: "",
     productWeightGrams: null,
     packageDimensions: null,
     category: "",
@@ -232,6 +262,38 @@ function tidyCatalogText(value: string): string {
   }).join(" ");
 }
 
+/** Unidade depois do numero, como se escreve: 350W, 600ml, 110V, 5000mAh, 4K. */
+const UNIDADES: Record<string, string> = {
+  w: "W", kw: "kW", v: "V", a: "A", l: "L", ml: "ml", k: "K", mah: "mAh", gb: "GB", tb: "TB", mb: "MB", hz: "Hz", khz: "kHz",
+  cm: "cm", mm: "mm", m: "m", kg: "kg", g: "g", pol: "pol", btu: "BTU", btus: "BTUs", rpm: "RPM", x: "x", p: "P", pcs: "pçs", un: "un",
+};
+
+/**
+ * Titulo do produto no padrao do dono: "Soundbar Samsung B-SERIES HW-B450F".
+ * Palavra comum com inicial maiuscula; codigo (com numero, ou com hifen e
+ * parte de 1 letra) todo maiusculo; siglas conhecidas maiusculas; medidas
+ * na grafia certa; "de", "com", "para" minusculas. Regra fixa, nao depende
+ * de como a pesquisa escreveu.
+ */
+export function formatTitle(value: string): string {
+  const maiuscula = (palavra: string) => palavra.toLocaleLowerCase("pt-BR").replace(/\p{L}/u, (letra) => letra.toLocaleUpperCase("pt-BR"));
+  return value.trim().replace(/\s+/g, " ").split(" ").filter(Boolean).map((palavra, indice) => {
+    const lower = palavra.toLocaleLowerCase("pt-BR");
+    const upper = palavra.toLocaleUpperCase("pt-BR");
+    if (indice > 0 && LOWERCASE_WORDS.has(lower)) return lower;
+    if (KEEP_UPPERCASE.has(upper)) return upper;
+    const medida = lower.match(/^(\d+(?:[.,]\d+)?)([a-zç]+)$/);
+    if (medida && UNIDADES[medida[2]]) return `${medida[1]}${UNIDADES[medida[2]]}`;
+    if (!/\p{L}/u.test(palavra)) return palavra;
+    if (/\d/.test(palavra)) return upper;
+    if (palavra.includes("-")) {
+      const partes = palavra.split("-");
+      return partes.some((parte) => /^\p{L}$/u.test(parte)) ? upper : partes.map(maiuscula).join("-");
+    }
+    return maiuscula(palavra);
+  }).join(" ");
+}
+
 function tidyBrand(value: string): string {
   const brand = value.trim();
   return brand.length > 3 && brand === brand.toUpperCase() ? tidyCatalogText(brand) : brand;
@@ -252,7 +314,7 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
         max_output_tokens: 3_500,
         // Uma busca a mais que antes: com so o GTIN, a primeira serve para
         // descobrir marca e modelo.
-        max_tool_calls: 6,
+        max_tool_calls: 7,
         reasoning: { effort: "none" },
         tools: [{
           type: "web_search_preview",
@@ -272,8 +334,9 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
               "Pesquise o código do modelo exatamente como foi informado, incluindo letras, números e sufixos. Se a primeira consulta não localizar o item, tente uma variação sem espaços, hífens ou pontuação antes de concluir que não há resultado. Um código curto como LES11 ainda deve ser pesquisado literalmente junto da categoria e das palavras produto e fabricante.",
               "A fonte oficial do fabricante prevalece sobre todas as outras. Marketplace, anúncio, blog, comparador e varejista nunca são fonte oficial. Quando não localizar o modelo exato em uma fonte oficial, registre isso em notes e use confidence low ou medium, conforme a evidência disponível.",
               "Não invente, não complete por intuição e não transfira características de um modelo semelhante. Letras, números e sufixos do modelo precisam coincidir. Em caso de divergência, prefira o manual ou a página oficial; se o conflito continuar, deixe o dado vazio e explique em notes.",
-              "Preencha model com o código de modelo exato confirmado e gtin com o código de barras confirmado (só dígitos); deixe vazios quando não tiver certeza.",
-              "Escreva name como o título de vitrine em português do Brasil: tipo de produto, marca, linha e o dado que diferencia (tamanho, capacidade, voltagem), sem caixa alta e sem repetir palavras.",
+              "Preencha model com o código de modelo exato confirmado e gtin com o código de barras confirmado em fonte oficial (só dígitos); deixe vazios quando não tiver certeza.",
+              "Quando gtin ficar vazio, pesquise o modelo exato junto de EAN e de código de barras em varejistas brasileiros (as páginas de produto costumam mostrar o EAN na ficha técnica) e liste em gtinCandidates cada código que aparece na página DESSE modelo, com a URL da página. Considere a versão vendida no Brasil (ex.: sufixo /ZD da Samsung). Só códigos que você viu escritos na página; não monte nem complete números. Cada código será conferido abrindo a página.",
+              "Escreva name como o título de vitrine em português do Brasil: tipo de produto, marca, linha, modelo e o dado que diferencia (tamanho, capacidade, voltagem), sem repetir palavras.",
               "Escreva description em português do Brasil para marketplace, com até 1.000 caracteres, clara e comercial, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo ou desempenho não comprovado.",
               "advantages: até cinco vantagens curtas (até 60 caracteres cada), fáceis de entender, tiradas só de características confirmadas; sem exageros.",
               "category: o tipo de produto em uma ou duas palavras, como uma loja de varejo chamaria (ex.: Eletroportáteis, Ferramentas, Smart TV).",
@@ -329,8 +392,9 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
                 packageLengthCm: { type: ["number", "null"] },
                 packageWidthCm: { type: ["number", "null"] },
                 packageHeightCm: { type: ["number", "null"] },
+                gtinCandidates: { type: "array", items: { type: "object", additionalProperties: false, required: ["gtin", "sourceUrl"], properties: { gtin: { type: "string" }, sourceUrl: { type: "string" } } } },
               },
-              required: ["name", "brand", "model", "gtin", "description", "ncm", "ncmConfidence", "ncmNote", "specifications", "primarySourceUrl", "confidence", "notes", "category", "color", "voltage", "warranty", "packageContents", "advantages", "productWeightGrams", "packageWeightGrams", "packageLengthCm", "packageWidthCm", "packageHeightCm"],
+              required: ["name", "brand", "model", "gtin", "description", "ncm", "ncmConfidence", "ncmNote", "specifications", "primarySourceUrl", "confidence", "notes", "category", "color", "voltage", "warranty", "packageContents", "advantages", "productWeightGrams", "packageWeightGrams", "packageLengthCm", "packageWidthCm", "packageHeightCm", "gtinCandidates"],
             },
           },
         },

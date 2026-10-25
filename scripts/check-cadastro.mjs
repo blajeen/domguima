@@ -26,4 +26,14 @@ for (const ip of ["8.8.8.8", "172.15.0.1", "2606:4700::1"]) assert.equal(r.isPri
 await assert.rejects(r.fetchPublic("http://169.254.169.254/", { maxBytes: 10, accept: () => true }));
 await assert.rejects(r.fetchPublic("http://localhost:3000/", { maxBytes: 10, accept: () => true }));
 await assert.rejects(r.fetchPublic("file:///etc/passwd", { maxBytes: 10, accept: () => true }));
+const t = await jiti.import(path.join(root, "src/lib/admin/product-research.ts"));
+const titulos = {
+  "soundbar samsung b-series hw-b450f": "Soundbar Samsung B-SERIES HW-B450F",
+  "mixer britânia 2 em 1 350w bmx360": "Mixer Britânia 2 em 1 350W BMX360",
+  "smart tv lg 50 polegadas 4k uhd": "Smart TV LG 50 Polegadas 4K UHD",
+  "guarda-roupa de casal 6 portas": "Guarda-Roupa de Casal 6 Portas",
+  "AIR FRYER MONDIAL 4L 1500W 127V": "Air Fryer Mondial 4L 1500W 127V",
+  "power bank 10000mah com usb-c": "Power Bank 10000mAh com USB-C",
+};
+for (const [entrada, esperado] of Object.entries(titulos)) assert.equal(t.formatTitle(entrada), esperado);
 console.log("cadastro ok");

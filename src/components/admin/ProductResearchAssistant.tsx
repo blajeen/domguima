@@ -217,6 +217,7 @@ export function ProductResearchAssistant({ name, brand, model, gtin, category, a
           </li>)}</ul>
         </div>}
 
+        {result.gtinSource && <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900"><strong>GTIN/EAN {result.gtin}</strong> achado e conferido na página de uma loja (<a href={result.gtinSource} target="_blank" rel="noopener noreferrer" className="underline">{(() => { try { return new URL(result.gtinSource).hostname.replace(/^www\./, ""); } catch { return "loja"; } })()}</a>), não no fabricante. Confira com a caixa do produto.</p>}
         {pendingFields(result).length > 0 && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900"><strong>Pendente (não confirmado, preencha se souber):</strong> {pendingFields(result).join(", ")}.</p>}
         <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900"><strong>Sugerido, confira:</strong> categoria e NCM são sugestões — o NCM não é confirmação fiscal.</p>
 
