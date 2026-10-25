@@ -64,10 +64,10 @@ export function ProductPurchase({
   const estoque = opcao ? opcao.stock : product.stock;
   const outOfStock = estoque <= 0;
   const linhas = linhasDoPreco(product, opcao);
-  // O preço "de" é do preço-base do produto (o mesmo que o card mostra com o
-  // −X%). Vale para a opção com esse preço; opção com preço próprio fica sem
-  // desconto. O parcelado não tem essa regra: é calculado sobre cada preço.
-  const precoAnterior = !opcao || opcao.price === product.price ? product.oldPrice : undefined;
+  // O preço "de": o da própria opção, quando o lojista cadastrou um. Sem ele,
+  // vale o do produto (o mesmo que o card mostra com o −X%), só para a opção
+  // com o preço-base. O parcelado não tem essa regra: é calculado sobre cada preço.
+  const precoAnterior = opcao?.oldPrice ?? (!opcao || opcao.price === product.price ? product.oldPrice : undefined);
 
   useEffect(() => {
     return () => {

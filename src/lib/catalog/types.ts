@@ -46,6 +46,8 @@ export interface ProductVariantOption {
   sku: string;
   /** Centavos. */
   price: number;
+  /** Preco "de" desta opcao, em centavos; so existe quando e maior que o preco. */
+  oldPrice?: number;
   stock: number;
   /** Foto desta opcao. Ausente = usa a imagem principal do produto. */
   image?: string;

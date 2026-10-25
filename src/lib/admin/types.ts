@@ -342,7 +342,7 @@ export interface ProductOperationalMeta {
   gtin: string;
   /**
    * Custo e preco anterior de cada variacao, por id da opcao.
-   * shortcut: mora no JSON de product_meta para nao exigir migracao; o site nao mostra preco anterior por opcao (usa o da opcao mais barata no produto). Mover para colunas de product_variants se a vitrine precisar.
+   * shortcut: mora no JSON de product_meta para nao exigir migracao; a loja le o preco anterior daqui (lib/catalog/database.ts), porque tambem le pelo readCatalogState. Mover para colunas de product_variants se a loja passar a ler o banco direto.
    */
   variant_prices?: Record<string, VariantPriceMeta>;
 }

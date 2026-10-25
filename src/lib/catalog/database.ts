@@ -10,7 +10,7 @@ import { categories as fallbackCategories } from "./categories";
 import { lerParcelamento, parcelamentoMaximo, PARCELAMENTO_PADRAO, type ParcelamentoDaLoja } from "./parcelamento";
 import { products as fallbackProducts } from "./products";
 import type { Category, Product, ProductImage } from "./types";
-import type { LeadDistributionMode, StoreSettings } from "@/lib/admin/types";
+import type { LeadDistributionMode, StoreSettings, VariantPriceMeta } from "@/lib/admin/types";
 
 export interface PublicAttendants {
   /** Quem o cliente pode escolher no dialogo do WhatsApp, na ordem configurada. */
@@ -24,7 +24,7 @@ export async function loadCatalogProducts(): Promise<Product[]> {
     const parcelamento = lerParcelamento(state.settings);
     if (!state.catalogEnabled) return fallbackProducts.map((product) => comParcelamento(product, parcelamento));
     const products = state.products.filter((product) => product.status === "active");
-    return (products.length ? products.map((row) => toProduct(row as unknown as Record<string, unknown>)) : fallbackProducts)
+    return (products.length ? products.map((row) => toProduct(row as unknown as Record<string, unknown>, state.operations?.product_meta?.[row.id]?.variant_prices)) : fallbackProducts)
       .map((product) => comParcelamento(product, parcelamento));
   } catch { return fallbackProducts.map((product) => comParcelamento(product, PARCELAMENTO_PADRAO)); }
 }
@@ -96,7 +96,8 @@ export async function loadPublicAttendants(): Promise<PublicAttendants> {
   }
 }
 
-function toProduct(row: Record<string, unknown>): Product {
+/** `variantPrices`: preco "de" de cada opcao. So o preco anterior sai daqui; o custo, no mesmo registro, nunca chega a loja. */
+function toProduct(row: Record<string, unknown>, variantPrices?: Record<string, VariantPriceMeta>): Product {
   const imageRows = (Array.isArray(row.product_images) ? row.product_images : []) as Array<Record<string, unknown>>;
   // Só as opcoes ativas chegam na loja: opcao desligada e cor que saiu de
   // linha, nao pode aparecer para o cliente escolher.
@@ -107,6 +108,7 @@ function toProduct(row: Record<string, unknown>): Product {
     .map((item) => ({
       id: String(item.id), label: String(item.label), sku: String(item.sku),
       price: Number(item.price_cents), stock: Number(item.stock),
+      ...(Number(variantPrices?.[String(item.id)]?.old_price_cents) > Number(item.price_cents) ? { oldPrice: Number(variantPrices?.[String(item.id)]?.old_price_cents) } : {}),
       // So aponta para foto que ainda existe no produto: imagem removida
       // depois de marcada cairia num link morto na vitrine.
       ...(item.image_src && imageRows.some((img) => img.src === item.image_src) ? { image: String(item.image_src) } : {}),
