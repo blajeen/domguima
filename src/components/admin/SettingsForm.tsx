@@ -7,6 +7,7 @@ import { formatPrice } from "@/lib/utils/format";
 import { normalizeLeadDistributionMode } from "@/lib/admin/sellers";
 import { LEAD_DISTRIBUTION_MODE_LABELS, type LeadDistributionMode, type StoreSettings } from "@/lib/admin/types";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
+import { AI_IMAGE_PROMPT_PADRAO } from "@/lib/admin/ai-image-prompt";
 
 const distributionModes = Object.keys(LEAD_DISTRIBUTION_MODE_LABELS) as LeadDistributionMode[];
 
@@ -14,6 +15,10 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
   const [state, action] = useActionState(saveSettingsAction, {});
   return <form action={action} className="space-y-5"><div className="grid gap-4 sm:grid-cols-2">
     <Field name="supportEmail" label="E-mail de atendimento" value={settings.supportEmail} type="email" />
+    <label className={`${labelClass} sm:col-span-2`}>Padrão das imagens geradas por IA
+      <textarea name="aiImagePrompt" defaultValue={settings.aiImagePrompt || AI_IMAGE_PROMPT_PADRAO} rows={6} maxLength={3000} className={fieldClass} />
+      <span className="mt-1 block font-normal text-ink-400">Vai junto em toda foto que a IA gerar, antes dos dados do produto, para manter o mesmo estilo do site. Deixe vazio para voltar ao padrão da loja.</span>
+    </label>
     <Field name="supportHours" label="Horario de atendimento" value={settings.supportHours} placeholder="Seg a sex, 9h as 18h" />
     <Field name="cnpj" label="CNPJ" value={settings.cnpj} />
     <Field name="fiscalAddress" label="Endereco fiscal" value={settings.fiscalAddress} />

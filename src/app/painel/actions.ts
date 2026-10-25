@@ -12,6 +12,8 @@ import { OpenAIWebError } from "@/lib/admin/openai-web";
 import { composeCover, composeExplainer, downloadPhoto, findOfficialPhotos, type OfficialPhoto } from "@/lib/admin/product-art";
 import { RemoteFetchError } from "@/lib/admin/remote-fetch";
 import { findMarketPrice, type MarketPriceResult } from "@/lib/admin/market-price";
+import { generateProductPhotos } from "@/lib/admin/ai-image";
+import { AI_IMAGE_PROMPT_PADRAO } from "@/lib/admin/ai-image-prompt";
 import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
 import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
@@ -565,6 +567,7 @@ export async function saveSettingsAction(_: ActionState, formData: FormData): Pr
     for (const key of keys) state.settings[key] = String(formData.get(key) ?? "").trim();
     state.settings.cardFeeTable = taxasParaTexto(parcelamento.taxas);
     state.settings.cardInstallmentsHeadline = String(parcelamento.anunciarAte);
+    state.settings.aiImagePrompt = String(formData.get("aiImagePrompt") ?? "").trim().slice(0, 3_000);
     // Valor fora da lista (form adulterado ou versao antiga) volta ao padrao.
     state.settings.leadDistributionMode = normalizeLeadDistributionMode(state.settings.leadDistributionMode);
     audit(state, owner.id, "settings.updated", "settings", "store", before, state.settings);
@@ -1801,6 +1804,54 @@ export async function marketPriceAction(input: unknown): Promise<{ ok: boolean; 
     console.error("Falha no comparativo de preços:", error);
     return { ok: false, message: "Não foi possível comparar os preços agora. Tente de novo." };
   }
+}
+
+const aiPhotoQuery = z.object({
+  name: z.string().trim().min(3).max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
+  color: z.string().trim().max(60), details: z.array(z.string().trim().max(120)).max(8),
+});
+
+/**
+ * Sem foto real: a IA desenha duas fotos do produto (frente e outro angulo),
+ * guardadas no Storage para entrar na mesma escolha de capa e outro angulo.
+ * Recebe o id de um produto salvo ou os dados do cadastro ainda nao salvo.
+ */
+export async function aiProductPhotosAction(input: unknown): Promise<{ ok: boolean; message?: string; photos?: OfficialPhoto[] }> {
+  await ownerOrThrow();
+  let consulta: z.infer<typeof aiPhotoQuery>;
+  let pasta = "ia-rascunho";
+  const state = await readCatalogState();
+  // O padrao de Configuracoes vai em toda geracao; vazio volta ao da loja.
+  const padrao = state.settings.aiImagePrompt?.trim() || AI_IMAGE_PROMPT_PADRAO;
+  if (typeof input === "string") {
+    const product = state.products.find((item) => item.id === input.trim());
+    if (!product) return { ok: false, message: "Produto não encontrado." };
+    const meta = state.operations.product_meta[product.id];
+    const cor = product.specifications.find((item) => normalizeText(item.label) === "cor")?.value ?? "";
+    consulta = { name: product.name, brand: product.brand ?? "", model: meta?.model ?? "", color: cor, details: product.specifications.slice(0, 8).map((item) => `${item.label}: ${item.value}`.slice(0, 120)) };
+    pasta = product.id;
+  } else {
+    const parsed = aiPhotoQuery.safeParse(input);
+    if (!parsed.success) return { ok: false, message: "Preencha o nome do produto para gerar as imagens." };
+    consulta = parsed.data;
+  }
+  try {
+    const { front, angle } = await generateProductPhotos(consulta, padrao);
+    const [frente, lado] = await Promise.all([
+      uploadProductImage(pasta, front, "jpg", "image/jpeg"),
+      uploadProductImage(pasta, angle, "jpg", "image/jpeg"),
+    ]);
+    const foto = (url: string): OfficialPhoto => ({ url, pageUrl: "", domain: "Gerada por IA", width: 1024, height: 1024, manufacturer: false, ai: true });
+    return { ok: true, photos: [foto(frente.src), foto(lado.src)] };
+  } catch (error) {
+    if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
+    console.error("Falha ao gerar fotos com IA:", error);
+    return { ok: false, message: "Não foi possível gerar as imagens agora. Tente de novo." };
+  }
+}
+
+function normalizeText(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
 }
 
 const artBenefits = z.array(z.string().trim().min(1).max(70)).min(1).max(5);

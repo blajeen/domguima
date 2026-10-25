@@ -3,6 +3,7 @@ import { categories as fallbackCategories } from "@/lib/catalog/categories";
 import { ANUNCIAR_ATE_PADRAO, TAXAS_PADRAO, taxasParaTexto } from "@/lib/catalog/parcelamento";
 import { products as fallbackProducts } from "@/lib/catalog/products";
 import type { AdminCategoryRow, AdminProductRow, StoreSettings } from "./types";
+import { AI_IMAGE_PROMPT_PADRAO } from "./ai-image-prompt";
 
 export const defaultStoreSettings: StoreSettings = {
   catalogEnabled: false,
@@ -24,6 +25,7 @@ export const defaultStoreSettings: StoreSettings = {
   cardFeeTable: taxasParaTexto(TAXAS_PADRAO),
   cardInstallmentsHeadline: String(ANUNCIAR_ATE_PADRAO),
   leadDistributionMode: "customer_choice",
+  aiImagePrompt: AI_IMAGE_PROMPT_PADRAO,
 };
 
 export function initialProducts(): AdminProductRow[] { return fallbackProducts.map(fallbackProductRow); }

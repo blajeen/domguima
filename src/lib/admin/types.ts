@@ -629,4 +629,10 @@ export interface StoreSettings {
    * devolve o valor tipado com fallback para "customer_choice".
    */
   leadDistributionMode: string;
+  /**
+   * Padrao visual que a IA segue em TODA foto gerada (Configuracoes). Vai na
+   * frente dos dados do produto, para o catalogo manter um estilo so.
+   * Vazio = AI_IMAGE_PROMPT_PADRAO.
+   */
+  aiImagePrompt: string;
 }

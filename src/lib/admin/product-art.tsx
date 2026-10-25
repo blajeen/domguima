@@ -21,6 +21,8 @@ export interface OfficialPhoto {
   domain: string;
   width: number;
   height: number;
+  /** Desenhada pela IA (nao e foto real do produto). */
+  ai?: boolean;
   /** A pagina e do fabricante (dominio oficial), segundo a pesquisa. */
   manufacturer: boolean;
 }
