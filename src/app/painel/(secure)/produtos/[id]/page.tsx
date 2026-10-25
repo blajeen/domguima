@@ -13,13 +13,13 @@ export const maxDuration = 60;
 
 type EditProductPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ created?: string; duplicado?: string }>;
+  searchParams: Promise<{ created?: string; duplicado?: string; arte?: string }>;
 };
 
 export default async function EditProductPage({ params, searchParams }: EditProductPageProps) {
   await requireOwner();
   const { id } = await params;
-  const { created, duplicado } = await searchParams;
+  const { created, duplicado, arte } = await searchParams;
   const [product, categories, operationalMeta, templates, parcelamento] = await Promise.all([getAdminProduct(id), getAdminCategories(), getProductOperationalMeta(id), getProductAssistTemplates(id), getParcelamento()]);
   if (!product) notFound();
   return <>
@@ -33,7 +33,10 @@ export default async function EditProductPage({ params, searchParams }: EditProd
       <strong>Cópia criada como rascunho, com o SKU {product.sku}.</strong> Estoque zerado e avaliações não vieram junto — são do produto original. Revise o nome e publique quando estiver pronto.
     </div>}
     {created === "1" && <div role="status" className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-      <strong>Produto criado e publicado com sucesso.</strong> Agora você já pode adicionar todas as fotos de uma vez abaixo.
+      <strong>Produto criado e publicado com sucesso.</strong>{" "}
+      {arte === "ok" ? "A capa e a imagem explicativa já estão nas fotos abaixo; a capa é a foto principal."
+        : arte === "falhou" ? "As duas imagens não puderam ser criadas agora. Monte pelo quadro “Capa e imagem explicativa”, lá embaixo."
+        : "Agora você já pode adicionar todas as fotos de uma vez abaixo."}
     </div>}
     <ProductForm variantsSupported={areVariantsSupported()} parcelamento={parcelamento} product={product} categories={categories} operationalMeta={operationalMeta} templates={templates} />
     <ProductImages productId={product.id} images={product.product_images ?? []} />

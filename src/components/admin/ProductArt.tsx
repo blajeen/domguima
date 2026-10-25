@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { findOfficialPhotosAction, productArtAction } from "@/app/painel/actions";
 import type { OfficialPhoto } from "@/lib/admin/product-art";
 import type { AdminProductImage } from "@/lib/admin/types";
@@ -15,10 +15,15 @@ interface Escolha { url: string; rotulo: string; origem: string; detalhe: string
  * nas paginas do fabricante/lojas, ou as que o lojista ja enviou. Nada e
  * redesenhado; a montagem so recorta a borda, centraliza e poe fundo.
  */
-export function ProductArt({ productId, images, defaultBenefits }: { productId: string; images: AdminProductImage[]; defaultBenefits: string[] }) {
+/** Cadastro ainda nao salvo: busca as fotos sozinho e manda as escolhas junto com o formulario. */
+export interface DraftArtQuery { name: string; brand: string; model: string; gtin: string; sourceUrl: string }
+
+export function ProductArt({ productId = "", images = [], defaultBenefits, draft }: { productId?: string; images?: AdminProductImage[]; defaultBenefits: string[]; draft?: DraftArtQuery }) {
   const router = useRouter();
   const [oficiais, setOficiais] = useState<OfficialPhoto[]>([]);
-  const [buscando, setBuscando] = useState(false);
+  const [buscando, setBuscando] = useState(Boolean(draft));
+  // No cadastro novo as imagens vao junto ao salvar; o lojista pode desligar.
+  const [criarAoSalvar, setCriarAoSalvar] = useState(true);
   const [capa, setCapa] = useState("");
   const [lado, setLado] = useState("");
   const [beneficios, setBeneficios] = useState(defaultBenefits.slice(0, 5).join("\n"));
@@ -30,7 +35,26 @@ export function ProductArt({ productId, images, defaultBenefits }: { productId: 
     ...oficiais.map((foto) => ({ url: foto.url, rotulo: foto.domain, origem: foto.manufacturer ? "Fabricante" : "Loja", detalhe: `${foto.width} × ${foto.height}` })),
     ...images.map((foto, indice) => ({ url: foto.src, rotulo: `Sua foto ${indice + 1}`, origem: "Enviada", detalhe: "" })),
   ];
-  const listaDeBeneficios = beneficios.split("\n").map((linha) => linha.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
+  const listaDeBeneficios = beneficios.split("\n").map((linha) => linha.replace(/^[-•*]\s*/, "").trim().slice(0, 70)).filter(Boolean).slice(0, 5);
+
+  // Cadastro novo: o componente e recriado a cada busca (key no formulario),
+  // entao a busca de fotos roda uma vez por produto pesquisado.
+  useEffect(() => {
+    if (!draft) return;
+    let vivo = true;
+    findOfficialPhotosAction(draft).then((resposta) => {
+      if (!vivo) return;
+      const fotos = resposta.photos ?? [];
+      setOficiais(fotos);
+      setCapa(fotos[0]?.url ?? "");
+      setLado(fotos[1]?.url ?? fotos[0]?.url ?? "");
+      setMensagem(resposta.message ?? (fotos.length ? "Fotos encontradas: a capa e o outro ângulo já foram escolhidos. Troque se quiser." : ""));
+    }).catch(() => { if (vivo) setMensagem("Não foi possível buscar as fotos agora. Depois de salvar, tente pelo quadro de imagens."); })
+      .finally(() => { if (vivo) setBuscando(false); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- uma busca por montagem
+  }, []);
+  const vaiCriar = Boolean(draft) && criarAoSalvar && Boolean(capa && lado) && listaDeBeneficios.length > 0;
 
   async function buscar() {
     setBuscando(true); setMensagem("");
@@ -56,12 +80,14 @@ export function ProductArt({ productId, images, defaultBenefits }: { productId: 
   }
 
   return <section className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
+    {vaiCriar && <><input type="hidden" name="artCover" value={capa} /><input type="hidden" name="artSide" value={lado} /><input type="hidden" name="artBenefits" value={JSON.stringify(listaDeBeneficios)} /></>}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="text-base font-black">Capa e imagem explicativa</h2>
         <p className="mt-1 max-w-2xl text-xs text-ink-500">Duas imagens quadradas em JPG (2000 × 2000) feitas com foto real do produto: a capa limpa e outra com um segundo ângulo e as vantagens. O aparelho não é redesenhado nem alterado.</p>
       </div>
-      <button type="button" onClick={buscar} disabled={buscando} className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-black text-white hover:bg-blue-600 disabled:cursor-wait disabled:opacity-60">{buscando ? "Buscando fotos… (até 1 min)" : "Buscar fotos oficiais"}</button>
+      {!draft && <button type="button" onClick={buscar} disabled={buscando} className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-black text-white hover:bg-blue-600 disabled:cursor-wait disabled:opacity-60">{buscando ? "Buscando fotos… (até 1 min)" : "Buscar fotos oficiais"}</button>}
+      {draft && buscando && <p className="text-xs font-bold text-blue-700">Buscando fotos oficiais… (até 1 min)</p>}
     </div>
 
     {escolhas.length === 0
@@ -83,7 +109,8 @@ export function ProductArt({ productId, images, defaultBenefits }: { productId: 
 
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" onClick={() => montar("preview")} disabled={Boolean(trabalhando)} className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-xs font-black text-ink-800 disabled:opacity-50">{trabalhando === "preview" ? "Montando prévia…" : "Ver prévia"}</button>
-      <button type="button" onClick={() => montar("save")} disabled={Boolean(trabalhando)} className="rounded-lg bg-gold-500 px-4 py-2.5 text-xs font-black text-ink-900 disabled:opacity-50">{trabalhando === "save" ? "Salvando…" : "Salvar as 2 imagens no produto"}</button>
+      {!draft && <button type="button" onClick={() => montar("save")} disabled={Boolean(trabalhando)} className="rounded-lg bg-gold-500 px-4 py-2.5 text-xs font-black text-ink-900 disabled:opacity-50">{trabalhando === "save" ? "Salvando…" : "Salvar as 2 imagens no produto"}</button>}
+      {draft && <label className="flex items-center gap-2 text-xs font-bold text-ink-800"><input type="checkbox" checked={criarAoSalvar} onChange={(event) => setCriarAoSalvar(event.target.checked)} className="h-4 w-4" />Criar as 2 imagens ao salvar o produto</label>}
     </div>
 
     {mensagem && <p role="status" className="mt-3 rounded-lg border border-gold-200 bg-gold-50 px-3 py-2 text-xs text-gold-900">{mensagem}</p>}

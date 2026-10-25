@@ -253,7 +253,21 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
     return catalogStorageError(error);
   }
   refreshCatalog();
-  if (created) redirect(`/painel/produtos/${encodeURIComponent(id)}?created=1`);
+  if (created) {
+    // As imagens nao seguram o produto: se a arte falhar, ele ja esta salvo e a
+    // pagina de edicao avisa para montar pelo quadro de imagens.
+    let arte = "";
+    const capaUrl = String(formData.get("artCover") ?? "").trim();
+    const ladoUrl = String(formData.get("artSide") ?? "").trim();
+    if (capaUrl && ladoUrl) {
+      let lidas: unknown = null;
+      try { lidas = JSON.parse(String(formData.get("artBenefits") ?? "[]")); } catch { lidas = null; }
+      const vantagens = artBenefits.safeParse(lidas);
+      const urls = z.string().url().max(1_000);
+      arte = vantagens.success && urls.safeParse(capaUrl).success && urls.safeParse(ladoUrl).success && (await attachProductArt(owner.id, id, capaUrl, ladoUrl, vantagens.data)).ok ? "&arte=ok" : "&arte=falhou";
+    }
+    redirect(`/painel/produtos/${encodeURIComponent(id)}?created=1${arte}`);
+  }
   return { ok: true, message: "Produto salvo com sucesso." };
 }
 
@@ -1736,18 +1750,33 @@ export async function registerProductImagesAction(productId: unknown, caminhos: 
 
 // ── Fotos oficiais e artes do produto ──────────────────────────────────────
 
-/** Procura fotos do modelo exato nas paginas do fabricante e de lojas grandes. */
-export async function findOfficialPhotosAction(productId: unknown): Promise<{ ok: boolean; message?: string; photos?: OfficialPhoto[] }> {
+const photoQuery = z.object({
+  name: z.string().trim().max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
+  gtin: z.string().trim().max(14), sourceUrl: z.string().trim().max(1_000),
+}).refine((value) => value.model.length >= 2 || value.name.length >= 3 || isValidGTIN(value.gtin));
+
+/**
+ * Procura fotos do modelo exato nas paginas do fabricante e de lojas grandes.
+ * Recebe o id de um produto salvo, ou os dados do cadastro ainda nao salvo
+ * (o produto novo ja sai com as imagens).
+ */
+export async function findOfficialPhotosAction(input: unknown): Promise<{ ok: boolean; message?: string; photos?: OfficialPhoto[] }> {
   await ownerOrThrow();
-  const id = z.string().trim().min(1).max(200).safeParse(productId);
-  if (!id.success) return { ok: false, message: "Produto inválido." };
-  const state = await readCatalogState();
-  const product = state.products.find((item) => item.id === id.data);
-  if (!product) return { ok: false, message: "Produto não encontrado." };
-  const meta = state.operations.product_meta[id.data];
+  let consulta: z.infer<typeof photoQuery>;
+  if (typeof input === "string") {
+    const state = await readCatalogState();
+    const product = state.products.find((item) => item.id === input.trim());
+    if (!product) return { ok: false, message: "Produto não encontrado." };
+    const meta = state.operations.product_meta[product.id];
+    consulta = { name: product.name, brand: product.brand ?? "", model: meta?.model ?? "", gtin: meta?.gtin ?? "", sourceUrl: product.source_url ?? "" };
+  } else {
+    const parsed = photoQuery.safeParse(input);
+    if (!parsed.success) return { ok: false, message: "Preencha o nome, o modelo ou o GTIN para buscar fotos." };
+    consulta = parsed.data;
+  }
   try {
-    const photos = await findOfficialPhotos({ name: product.name, brand: product.brand ?? "", model: meta?.model ?? "", gtin: meta?.gtin ?? "", sourceUrl: product.source_url });
-    return photos.length ? { ok: true, photos } : { ok: true, photos: [], message: "Nenhuma foto confiável do modelo exato foi encontrada. Envie as fotos manualmente acima." };
+    const photos = await findOfficialPhotos({ ...consulta, sourceUrl: /^https?:\/\//.test(consulta.sourceUrl) ? consulta.sourceUrl : null });
+    return photos.length ? { ok: true, photos } : { ok: true, photos: [], message: "Nenhuma foto confiável do modelo exato foi encontrada. Envie as fotos manualmente." };
   } catch (error) {
     if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
     console.error("Falha ao buscar fotos oficiais:", error);
@@ -1774,46 +1803,38 @@ export async function marketPriceAction(input: unknown): Promise<{ ok: boolean; 
   }
 }
 
+const artBenefits = z.array(z.string().trim().min(1).max(70)).min(1).max(5);
 const productArtInput = z.object({
-  productId: z.string().trim().min(1).max(200),
+  // Vazio so na previa do cadastro novo, quando o produto ainda nao existe.
+  productId: z.string().trim().max(200),
   coverUrl: z.string().trim().url().max(1_000),
   sideUrl: z.string().trim().url().max(1_000),
-  benefits: z.array(z.string().trim().min(1).max(70)).min(1).max(5),
+  benefits: artBenefits,
   mode: z.enum(["preview", "save"]),
 });
 
-/**
- * Monta a capa e a imagem explicativa. "preview" devolve as duas pequenas
- * para conferir; "save" monta em 2000 × 2000, envia ao Storage e poe no
- * produto, com a capa como foto principal.
- */
-export async function productArtAction(input: unknown): Promise<{ ok: boolean; message?: string; cover?: string; explainer?: string; enlarged?: boolean }> {
-  const owner = await ownerOrThrow();
-  const parsed = productArtInput.safeParse(input);
-  if (!parsed.success) return { ok: false, message: "Escolha a capa, o outro ângulo e escreva de 1 a 5 vantagens (até 70 caracteres cada)." };
-  const { productId, coverUrl, sideUrl, benefits, mode } = parsed.data;
-  const state = await readCatalogState();
-  if (!state.products.some((item) => item.id === productId)) return { ok: false, message: "Produto não encontrado." };
-  const size = mode === "save" ? 2000 : 700;
-  let cover: Awaited<ReturnType<typeof composeCover>>;
-  let explainer: Awaited<ReturnType<typeof composeExplainer>>;
+type ArtResult = { ok: true; cover: { jpeg: Buffer; enlarged: boolean }; explainer: { jpeg: Buffer; enlarged: boolean } } | { ok: false; message: string };
+
+async function buildArt(coverUrl: string, sideUrl: string, benefits: string[], size: number): Promise<ArtResult> {
   try {
     const [fotoCapa, fotoLado] = await Promise.all([downloadPhoto(coverUrl), coverUrl === sideUrl ? null : downloadPhoto(sideUrl)]);
-    [cover, explainer] = await Promise.all([composeCover(fotoCapa, size), composeExplainer(fotoLado ?? fotoCapa, benefits, size)]);
+    const [cover, explainer] = await Promise.all([composeCover(fotoCapa, size), composeExplainer(fotoLado ?? fotoCapa, benefits, size)]);
+    return { ok: true, cover, explainer };
   } catch (error) {
     if (error instanceof RemoteFetchError) return { ok: false, message: `Não foi possível baixar uma das fotos (${error.message}). Escolha outra.` };
     console.error("Falha ao montar as artes do produto:", error);
     return { ok: false, message: "Não foi possível montar as imagens agora." };
   }
-  const enlarged = cover.enlarged || explainer.enlarged;
-  if (mode === "preview") {
-    return { ok: true, enlarged, cover: `data:image/jpeg;base64,${cover.jpeg.toString("base64")}`, explainer: `data:image/jpeg;base64,${explainer.jpeg.toString("base64")}` };
-  }
+}
 
+/** Monta em 2000 × 2000, envia ao Storage e poe no produto, com a capa como foto principal. */
+async function attachProductArt(ownerId: string, productId: string, coverUrl: string, sideUrl: string, benefits: string[]): Promise<{ ok: boolean; message: string; enlarged?: boolean }> {
+  const arte = await buildArt(coverUrl, sideUrl, benefits, 2000);
+  if (!arte.ok) return arte;
   try {
     const [capa, explicativa] = await Promise.all([
-      uploadProductImage(productId, cover.jpeg, "jpg", "image/jpeg"),
-      uploadProductImage(productId, explainer.jpeg, "jpg", "image/jpeg"),
+      uploadProductImage(productId, arte.cover.jpeg, "jpg", "image/jpeg"),
+      uploadProductImage(productId, arte.explainer.jpeg, "jpg", "image/jpeg"),
     ]);
     await mutateCatalogState((draft) => {
       const product = draft.products.find((item) => item.id === productId);
@@ -1825,14 +1846,32 @@ export async function productArtAction(input: unknown): Promise<{ ok: boolean; m
       );
       product.product_images = images;
       product.updated_at = new Date().toISOString();
-      audit(draft, owner.id, "product.art_generated", "product", productId, null, { coverUrl, sideUrl, benefits, paths: [capa.storagePath, explicativa.storagePath] });
+      audit(draft, ownerId, "product.art_generated", "product", productId, null, { coverUrl, sideUrl, benefits, paths: [capa.storagePath, explicativa.storagePath] });
     });
     refreshCatalog();
-    return { ok: true, enlarged, message: "Capa e imagem explicativa salvas no produto. A capa virou a foto principal." };
+    return { ok: true, enlarged: arte.cover.enlarged || arte.explainer.enlarged, message: "Capa e imagem explicativa salvas no produto. A capa virou a foto principal." };
   } catch (error) {
     console.error("Falha ao salvar as artes do produto:", error);
-    return catalogStorageError(error) as { ok: false; message?: string };
+    return { ok: false, message: catalogStorageError(error).message ?? "Não foi possível salvar as imagens agora." };
   }
+}
+
+/**
+ * Monta a capa e a imagem explicativa. "preview" devolve as duas pequenas
+ * para conferir; "save" poe as duas no produto (ver attachProductArt).
+ */
+export async function productArtAction(input: unknown): Promise<{ ok: boolean; message?: string; cover?: string; explainer?: string; enlarged?: boolean }> {
+  const owner = await ownerOrThrow();
+  const parsed = productArtInput.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Escolha a capa, o outro ângulo e escreva de 1 a 5 vantagens (até 70 caracteres cada)." };
+  const { productId, coverUrl, sideUrl, benefits, mode } = parsed.data;
+  if (mode === "save") {
+    if (!(await readCatalogState()).products.some((item) => item.id === productId)) return { ok: false, message: "Produto não encontrado." };
+    return attachProductArt(owner.id, productId, coverUrl, sideUrl, benefits);
+  }
+  const arte = await buildArt(coverUrl, sideUrl, benefits, 700);
+  if (!arte.ok) return arte;
+  return { ok: true, enlarged: arte.cover.enlarged || arte.explainer.enlarged, cover: `data:image/jpeg;base64,${arte.cover.jpeg.toString("base64")}`, explainer: `data:image/jpeg;base64,${arte.explainer.jpeg.toString("base64")}` };
 }
 
 /** Mesma URL publica que o Storage devolve, montada sem outra ida ao servidor. */
