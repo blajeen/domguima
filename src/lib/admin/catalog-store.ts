@@ -769,6 +769,17 @@ export async function createImageUploadTarget(productId: string, extension: stri
   return { storagePath, signedUrl: data.signedUrl, src: storage.getPublicUrl(storagePath).data.publicUrl };
 }
 
+/** Envio feito pelo proprio servidor (artes geradas aqui, nunca vindas do navegador). */
+export async function uploadProductImage(productId: string, data: Buffer, extension: string, contentType: string): Promise<{ storagePath: string; src: string }> {
+  if (!hasSupabaseConfig()) throw new Error("Configure o Supabase para enviar imagens.");
+  const safeProduct = productId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const storagePath = `products/${safeProduct}/${Date.now()}-${randomUUID()}.${extension}`;
+  const storage = createSupabaseAdminClient().storage.from(PRODUCT_BUCKET);
+  const { error } = await storage.upload(storagePath, data, { contentType, upsert: false });
+  if (error) throw new Error(`Nao foi possivel enviar a imagem: ${error.message}`);
+  return { storagePath, src: storage.getPublicUrl(storagePath).data.publicUrl };
+}
+
 /**
  * Confirma que o arquivo chegou mesmo ao Storage.
  *

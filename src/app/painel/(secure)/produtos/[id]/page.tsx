@@ -2,10 +2,14 @@ import { notFound } from "next/navigation";
 import { duplicateProductAction } from "@/app/painel/actions";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { ProductForm } from "@/components/admin/ProductForm";
+import { ProductArt } from "@/components/admin/ProductArt";
 import { ProductImages } from "@/components/admin/ProductImages";
 import { requireOwner } from "@/lib/admin/auth";
 import { areVariantsSupported } from "@/lib/admin/catalog-store";
 import { getAdminCategories, getAdminProduct, getParcelamento, getProductAssistTemplates, getProductOperationalMeta } from "@/lib/admin/data";
+
+// Busca de fotos e montagem das artes rodam como Server Actions desta pagina.
+export const maxDuration = 60;
 
 type EditProductPageProps = {
   params: Promise<{ id: string }>;
@@ -33,5 +37,12 @@ export default async function EditProductPage({ params, searchParams }: EditProd
     </div>}
     <ProductForm variantsSupported={areVariantsSupported()} parcelamento={parcelamento} product={product} categories={categories} operationalMeta={operationalMeta} templates={templates} />
     <ProductImages productId={product.id} images={product.product_images ?? []} />
+    <ProductArt productId={product.id} images={product.product_images ?? []} defaultBenefits={destaquesDaDescricao(product.description)} />
   </>;
+}
+
+/** As vantagens que a busca escreveu no fim da descricao ("Destaques:" e uma por linha). */
+function destaquesDaDescricao(description: string): string[] {
+  const bloco = description.split(/\n\s*Destaques:\s*\n/)[1] ?? "";
+  return bloco.split("\n").map((linha) => linha.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
 }
