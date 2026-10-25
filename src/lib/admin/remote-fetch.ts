@@ -31,7 +31,8 @@ export async function fetchPublic(rawUrl: string, { maxBytes, timeoutMs = 12_000
       const response = await fetch(url, {
         redirect: "manual",
         signal: controller.signal,
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; DomGuimaCadastro/1.0)", Accept: "text/html,image/avif,image/webp,image/*,*/*;q=0.8" },
+        // Cabecalhos de navegador comum: varias lojas recusam robo declarado.
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", Accept: "text/html,application/xhtml+xml,image/avif,image/webp,image/*,*/*;q=0.8", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8" },
       });
       if (response.status >= 300 && response.status < 400) {
         const destino = response.headers.get("location");

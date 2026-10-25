@@ -29,12 +29,17 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MIN_SIDE = 500;
 const isImage = (type: string) => type === "image/jpeg" || type === "image/png" || type === "image/webp";
 
-const pagesSchema = z.object({ pages: z.array(z.object({ url: z.string(), manufacturer: z.boolean() })).max(6) });
+const pagesSchema = z.object({
+  pages: z.array(z.object({ url: z.string(), manufacturer: z.boolean() })).max(6),
+  images: z.array(z.object({ url: z.string(), pageUrl: z.string() })).transform((items) => items.slice(0, 8)),
+});
 
 /**
- * A pesquisa so aponta as PAGINAS do produto; as fotos saem do HTML dessas
- * paginas (JSON-LD de produto e og:image), baixadas e medidas aqui. Uma URL
- * de imagem "lembrada" pelo modelo de linguagem nao entra.
+ * Duas fontes de foto: o HTML das paginas do produto (JSON-LD e og:image) e
+ * os enderecos de imagem que a pesquisa viu nessas paginas. A segunda existe
+ * porque as lojas grandes bloqueiam quem abre a pagina pelo servidor, mas o
+ * CDN das fotos nao. Toda foto e baixada e medida aqui: endereco que nao
+ * devolve imagem de verdade, ou imagem pequena, nao entra.
  */
 export async function findOfficialPhotos(input: { name: string; brand: string; model: string; gtin: string; sourceUrl: string | null }): Promise<OfficialPhoto[]> {
   const resposta = pagesSchema.parse(await askWithWebSearch({
@@ -44,22 +49,27 @@ export async function findOfficialPhotos(input: { name: string; brand: string; m
     instructions: [
       "Encontre as páginas do produto EXATO informado (mesma marca, mesmo modelo, mesma variante), priorizando a página oficial do fabricante e, depois, varejistas grandes e autorizados do Brasil.",
       "Só inclua páginas que mostrem esse mesmo modelo; letras, números e sufixos precisam coincidir. Não inclua páginas de modelos parecidos, buscas, categorias ou comparadores.",
-      "Retorne até 4 URLs completas e marque manufacturer=true só quando o domínio for do fabricante.",
+      "Em pages, retorne até 4 URLs completas e marque manufacturer=true só quando o domínio for do fabricante.",
+      "Em images, liste até 8 URLs DIRETAS de arquivos de foto (jpg, png ou webp) desse mesmo produto que aparecem nessas páginas, de preferência em alta resolução e com fundo branco, com a pageUrl de onde veio cada uma. Só endereços que você viu na página; não monte nem adivinhe URLs.",
     ].join(" "),
     input,
-    schema: { type: "object", additionalProperties: false, required: ["pages"], properties: { pages: { type: "array", items: { type: "object", additionalProperties: false, required: ["url", "manufacturer"], properties: { url: { type: "string" }, manufacturer: { type: "boolean" } } } } } },
+    schema: { type: "object", additionalProperties: false, required: ["pages", "images"], properties: { pages: { type: "array", items: { type: "object", additionalProperties: false, required: ["url", "manufacturer"], properties: { url: { type: "string" }, manufacturer: { type: "boolean" } } } }, images: { type: "array", items: { type: "object", additionalProperties: false, required: ["url", "pageUrl"], properties: { url: { type: "string" }, pageUrl: { type: "string" } } } } } },
   }));
 
   const paginas = [...(input.sourceUrl ? [{ url: input.sourceUrl, manufacturer: false }] : []), ...resposta.pages]
     .filter((page, indice, todas) => /^https?:\/\//.test(page.url) && todas.findIndex((item) => item.url === page.url) === indice)
     .slice(0, 5);
 
-  const candidatas = (await Promise.allSettled(paginas.map(async (pagina) => {
+  const doFabricante = new Set(paginas.filter((pagina) => pagina.manufacturer).map((pagina) => hostOf(pagina.url)));
+  const vistasPelaPesquisa = resposta.images
+    .filter((imagem) => /^https?:\/\//.test(imagem.url) && /^https?:\/\//.test(imagem.pageUrl))
+    .map((imagem) => ({ url: imagem.url, pageUrl: imagem.pageUrl, manufacturer: doFabricante.has(hostOf(imagem.pageUrl)) }));
+  const candidatas = [...(await Promise.allSettled(paginas.map(async (pagina) => {
     const html = (await fetchPublic(pagina.url, { maxBytes: 3 * 1024 * 1024, timeoutMs: 10_000, accept: (type) => type === "text/html" || type === "application/xhtml+xml" })).buffer.toString("utf8");
     return imageUrlsFromHtml(html, pagina.url, input.model).map((url) => ({ url, pageUrl: pagina.url, manufacturer: pagina.manufacturer }));
-  }))).flatMap((item) => item.status === "fulfilled" ? item.value : [])
+  }))).flatMap((item) => item.status === "fulfilled" ? item.value : []), ...vistasPelaPesquisa]
     .filter((item, indice, todas) => todas.findIndex((outra) => outra.url === item.url) === indice)
-    .slice(0, 16);
+    .slice(0, 24);
 
   const medidas = await Promise.allSettled(candidatas.map(async (candidata) => {
     const arquivo = await fetchPublic(candidata.url, { maxBytes: MAX_IMAGE_BYTES, timeoutMs: 8_000, accept: isImage });
@@ -69,6 +79,10 @@ export async function findOfficialPhotos(input: { name: string; brand: string; m
   return medidas.flatMap((item) => item.status === "fulfilled" && Math.min(item.value.width, item.value.height) >= MIN_SIDE ? [item.value] : [])
     .sort((a, b) => Number(b.manufacturer) - Number(a.manufacturer) || b.width * b.height - a.width * a.height)
     .slice(0, 8);
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
 /** Fotos de produto declaradas na pagina: JSON-LD, og:image e <img> que citam o modelo. */
