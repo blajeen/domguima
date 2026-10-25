@@ -9,6 +9,9 @@ import type { ProductResearchResult, ProductResearchSource } from "./product-res
 const RESEARCH_DEADLINE_MS = 55_000;
 const MIN_WEB_TIMEOUT_MS = 15_000;
 
+/** Numero que o modelo nao confirmou vem null; zero ou negativo tambem vira null. */
+const positiveOrNull = z.number().nullable().transform((value) => value !== null && Number.isFinite(value) && value > 0 ? value : null);
+
 const webResultSchema = z.object({
   name: z.string().trim().max(180),
   brand: z.string().trim().max(100),
@@ -24,6 +27,18 @@ const webResultSchema = z.object({
   primarySourceUrl: z.string().trim().max(500),
   confidence: z.enum(["high", "medium", "low"]),
   notes: z.string().trim().max(500),
+  category: z.string().trim().max(80),
+  color: z.string().trim().max(60),
+  voltage: z.string().trim().max(40),
+  warranty: z.string().trim().max(200),
+  packageContents: z.string().trim().max(300),
+  // Tolerante: vantagem a mais ou longa demais e cortada, nao derruba a pesquisa.
+  advantages: z.array(z.string()).transform((items) => items.map((item) => item.trim().slice(0, 90)).filter(Boolean).slice(0, 5)),
+  productWeightGrams: positiveOrNull,
+  packageWeightGrams: positiveOrNull,
+  packageLengthCm: positiveOrNull,
+  packageWidthCm: positiveOrNull,
+  packageHeightCm: positiveOrNull,
 });
 
 type WebResult = z.infer<typeof webResultSchema> & { sources: ProductResearchSource[] };
@@ -38,7 +53,7 @@ const researchInputSchema = z.object({
   model: z.string().trim().max(100),
   gtin: z.string().trim().max(14),
   category: z.string().trim().max(100),
-}).refine((value) => value.model.length >= 2 || isValidGTIN(value.gtin), { message: "Informe o código de barras ou o modelo." });
+}).refine((value) => value.model.length >= 2 || value.name.length >= 3 || isValidGTIN(value.gtin), { message: "Informe o código de barras, o nome ou o modelo." });
 
 export type ProductResearchInput = z.infer<typeof researchInputSchema>;
 
@@ -107,10 +122,13 @@ export async function researchProduct(input: ProductResearchInput): Promise<Prod
 }
 
 function fromWeb(web: WebResult, gtin: string): ProductResearchResult {
+  const { packageWeightGrams, packageLengthCm, packageWidthCm, packageHeightCm, ...rest } = web;
   return {
-    ...web,
+    ...rest,
     gtin: gtin || web.gtin,
-    weightGrams: null,
+    weightGrams: packageWeightGrams === null ? null : Math.round(packageWeightGrams),
+    productWeightGrams: web.productWeightGrams === null ? null : Math.round(web.productWeightGrams),
+    packageDimensions: packageLengthCm && packageWidthCm && packageHeightCm ? { length: packageLengthCm, width: packageWidthCm, height: packageHeightCm } : null,
     providers: [WEB_LABEL],
   };
 }
@@ -132,6 +150,14 @@ function fromCosmos(product: CosmosProduct, gtin: string, note: string): Product
     confidence: "medium",
     notes: note,
     providers: [COSMOS_LABEL],
+    productWeightGrams: null,
+    packageDimensions: null,
+    category: "",
+    color: "",
+    voltage: "",
+    warranty: "",
+    packageContents: "",
+    advantages: [],
   };
 }
 
@@ -145,15 +171,16 @@ function mergeWithCosmos(web: WebResult, product: CosmosProduct, gtin: string): 
   const divergentNcm = ncmFromCosmos && web.ncm && web.ncm !== product.ncm
     ? ` A pesquisa na web sugeriu ${web.ncm}; mantivemos o do cadastro.`
     : "";
+  const base = fromWeb(web, gtin);
   return {
-    ...web,
+    ...base,
     name: web.name || tidyCatalogText(product.description),
     brand: web.brand || tidyBrand(product.brand),
     gtin,
     ncm: ncmFromCosmos ? product.ncm : web.ncm,
     ncmConfidence: ncmFromCosmos ? "medium" : web.ncmConfidence,
     ncmNote: ncmFromCosmos ? `${cosmosNcmNote(product)}${divergentNcm}` : web.ncmNote,
-    weightGrams: product.weightGrams,
+    weightGrams: product.weightGrams ?? base.weightGrams,
     // O cadastro do GTIN confirmou a identidade: mesmo que a web nao tenha
     // achado a pagina do fabricante, nome/marca/NCM nao sao chute.
     confidence: web.confidence === "high" ? "high" : "medium",
@@ -222,10 +249,10 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
       body: JSON.stringify({
         model,
         store: false,
-        max_output_tokens: 1_800,
+        max_output_tokens: 3_500,
         // Uma busca a mais que antes: com so o GTIN, a primeira serve para
         // descobrir marca e modelo.
-        max_tool_calls: 5,
+        max_tool_calls: 6,
         reasoning: { effort: "none" },
         tools: [{
           type: "web_search_preview",
@@ -238,6 +265,7 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
             role: "developer",
             content: [{ type: "input_text", text: [
               "Você é um pesquisador de cadastro de produtos para uma loja brasileira. Sua prioridade é confirmar a identidade exata do produto antes de preencher qualquer dado.",
+              "Quando gtin e modelo vierem vazios, produtoInformado é o nome digitado pelo lojista (ex.: Mixer Britânia 350W): use-o para descobrir marca e modelo exatos; se ele servir para mais de um modelo ou variante, escolha só quando houver um único produto compatível e explique a dúvida em notes, com confidence low.",
               "Quando o gtin vier preenchido e o modelo vier vazio, comece pesquisando o número exato do gtin entre aspas: lojas brasileiras exibem o EAN ou código de barras na página do produto. Use esses resultados apenas para descobrir marca e modelo exatos; um resultado só vale se mostrar o mesmo número de gtin. Depois siga o protocolo abaixo com o modelo descoberto.",
               "Quando cadastroCodigoDeBarras vier preenchido, ele é o cadastro oficial do gtin: trate descrição e marca dele como a identidade confirmada do produto e use a web para achar o modelo exato, a descrição e as especificações desse mesmo produto.",
               "Siga obrigatoriamente este protocolo, nesta ordem: 1) normalize marca, modelo, EAN/GTIN e categoria; 2) quando a marca estiver informada, pesquise primeiro o modelo exato no domínio oficial do fabricante; 3) quando a marca estiver vazia, faça uma única busca de descoberta usando o modelo exato entre aspas junto de produto e da categoria para identificar o fabricante provável; 4) depois pesquise a página oficial do produto, manual, ficha técnica ou suporte no domínio desse fabricante; 5) por último complemente e valide na internet geral, priorizando fontes técnicas confiáveis e varejistas autorizados.",
@@ -246,7 +274,12 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
               "Não invente, não complete por intuição e não transfira características de um modelo semelhante. Letras, números e sufixos do modelo precisam coincidir. Em caso de divergência, prefira o manual ou a página oficial; se o conflito continuar, deixe o dado vazio e explique em notes.",
               "Preencha model com o código de modelo exato confirmado e gtin com o código de barras confirmado (só dígitos); deixe vazios quando não tiver certeza.",
               "Escreva name como o título de vitrine em português do Brasil: tipo de produto, marca, linha e o dado que diferencia (tamanho, capacidade, voltagem), sem caixa alta e sem repetir palavras.",
-              "Escreva description em português do Brasil com 2 a 4 frases curtas, claras e comerciais, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo, garantia ou desempenho não comprovado.",
+              "Escreva description em português do Brasil para marketplace, com até 1.000 caracteres, clara e comercial, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo ou desempenho não comprovado.",
+              "advantages: até cinco vantagens curtas (até 60 caracteres cada), fáceis de entender, tiradas só de características confirmadas; sem exageros.",
+              "category: o tipo de produto em uma ou duas palavras, como uma loja de varejo chamaria (ex.: Eletroportáteis, Ferramentas, Smart TV).",
+              "color e voltage: só quando confirmados para a variante exata (gtin ou modelo com sufixo); produto bivolt escreva Bivolt. Na dúvida deixe vazio.",
+              "warranty: prazo e condição da garantia do fabricante (ex.: 12 meses contra defeitos de fabricação), só quando confirmado. packageContents: itens que vêm na caixa.",
+              "productWeightGrams é o peso do produto sem embalagem; packageWeightGrams e packageLengthCm/WidthCm/HeightCm são da embalagem. Nunca troque um pelo outro; use null quando a fonte não distinguir.",
               "Preencha specifications apenas com fatos confirmados, sem duplicatas, usando rótulos curtos e valores objetivos. primarySourceUrl deve apontar para a melhor fonte encontrada e, quando existir, para a página oficial do fabricante.",
               "Para NCM, trate o resultado apenas como sugestão fiscal. Não derive NCM somente da categoria nem de produto semelhante. Informe os 8 dígitos apenas quando houver evidência razoável para o produto exato; caso contrário, deixe ncm vazio, use ncmConfidence low e explique em ncmNote que é necessária conferência contábil/fiscal.",
               "Se o produto exato não puder ser identificado com segurança, preserve somente os dados confirmados, deixe o restante vazio e explique a limitação. Retorne apenas o JSON que respeita estritamente o schema solicitado, sem Markdown ou texto adicional.",
@@ -285,8 +318,19 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
                 primarySourceUrl: { type: "string" },
                 confidence: { type: "string", enum: ["high", "medium", "low"] },
                 notes: { type: "string" },
+                category: { type: "string" },
+                color: { type: "string" },
+                voltage: { type: "string" },
+                warranty: { type: "string" },
+                packageContents: { type: "string" },
+                advantages: { type: "array", items: { type: "string" } },
+                productWeightGrams: { type: ["number", "null"] },
+                packageWeightGrams: { type: ["number", "null"] },
+                packageLengthCm: { type: ["number", "null"] },
+                packageWidthCm: { type: ["number", "null"] },
+                packageHeightCm: { type: ["number", "null"] },
               },
-              required: ["name", "brand", "model", "gtin", "description", "ncm", "ncmConfidence", "ncmNote", "specifications", "primarySourceUrl", "confidence", "notes"],
+              required: ["name", "brand", "model", "gtin", "description", "ncm", "ncmConfidence", "ncmNote", "specifications", "primarySourceUrl", "confidence", "notes", "category", "color", "voltage", "warranty", "packageContents", "advantages", "productWeightGrams", "packageWeightGrams", "packageLengthCm", "packageWidthCm", "packageHeightCm"],
             },
           },
         },

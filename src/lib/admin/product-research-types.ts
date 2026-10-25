@@ -16,8 +16,21 @@ export interface ProductResearchResult {
   ncmConfidence: "high" | "medium" | "low";
   ncmNote: string;
   specifications: Array<{ label: string; value: string }>;
-  /** Peso bruto em gramas, quando o cadastro do codigo de barras informa. */
+  /** Peso COM embalagem em gramas (vai para o envio). */
   weightGrams: number | null;
+  /** Peso do produto sem embalagem, em gramas. */
+  productWeightGrams: number | null;
+  /** Medidas da EMBALAGEM em cm (vao para o envio); null quando nao confirmadas. */
+  packageDimensions: { length: number; width: number; height: number } | null;
+  /** Nome de categoria sugerido; o formulario casa com as categorias da loja. */
+  category: string;
+  /** Vazios quando nao confirmados para a variante exata. */
+  color: string;
+  voltage: string;
+  warranty: string;
+  packageContents: string;
+  /** Ate cinco vantagens curtas, so com fatos confirmados. */
+  advantages: string[];
   primarySourceUrl: string;
   sources: ProductResearchSource[];
   confidence: "high" | "medium" | "low";

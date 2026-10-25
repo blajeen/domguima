@@ -114,8 +114,9 @@ export function simularParcela(cents: number, vezes: number, taxas: TaxasDoCarta
   // Sem juros: o total é o preço, e a parcela é a divisão (a maquininha
   // acerta o centavo na última).
   if (taxa <= 0) return { vezes, taxa: 0, total: cents, parcela: Math.round(cents / vezes) };
-  const repassado = Math.round(cents / (1 - taxa / 100));
-  const parcela = Math.ceil(repassado / vezes);
+  // Conta pedida pelo dono (25/10/2026): preço / (1 - taxa) / vezes, arredondado
+  // ao centavo. R$ 699,90 em 12x a 11,51% → R$ 65,91.
+  const parcela = Math.round(cents / (1 - taxa / 100) / vezes);
   return { vezes, taxa, total: parcela * vezes, parcela };
 }
 

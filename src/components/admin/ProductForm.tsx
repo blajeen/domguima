@@ -8,7 +8,7 @@ import type { ProductResearchResult } from "@/lib/admin/product-research-types";
 import { formatPrice, normalize, paymentLines } from "@/lib/utils/format";
 import { onlyDigits } from "@/lib/utils/validators";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
-import { parcelamentoMaximo, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
+import { parcelamentoMaximo, simularParcela, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { InstallmentSimulator } from "./InstallmentSimulator";
 import { ProductResearchAssistant, type ResearchFillReport, type ResearchLookup } from "./ProductResearchAssistant";
 import { VariantEditor } from "./VariantEditor";
@@ -56,6 +56,8 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
   const [templateQuery, setTemplateQuery] = useState("");
   const [assistMessage, setAssistMessage] = useState("");
   const [fillSnapshot, setFillSnapshot] = useState<FillSnapshot | null>(null);
+  // Ultimo resultado da busca: alimenta o texto promocional (vantagens, cor, voltagem).
+  const [lastResult, setLastResult] = useState<ProductResearchResult | null>(null);
   // Valor que a ultima busca gravou em cada campo. Enquanto o campo continua
   // com esse valor, ele e "da busca" e nao do lojista: escanear outro codigo
   // pode troca-lo sem perguntar.
@@ -107,7 +109,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
    */
   function applyResearch(result: ProductResearchResult, lookup: ResearchLookup, replace: string[] | null): ResearchFillReport {
     const replacing = replace ? new Set(replace) : null;
-    if (!replacing) setFillSnapshot({ name, slug, automaticSlug, brand, model, gtin, ncm, description, specs, tags, sourceUrl, weight: shipping.weight, autoFilled });
+    if (!replacing) setFillSnapshot({ name, slug, automaticSlug, brand, model, gtin, ncm, description, specs, tags, sourceUrl, shipping, categoryId, sku, automaticSku, autoFilled });
     const filled: string[] = [];
     const kept: string[] = [];
     const written: Record<string, string> = {};
@@ -126,12 +128,25 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     const finalModel = decide("Modelo", model, lookup.kind === "model" ? lookup.value : result.model, setModel, lookup.kind === "model");
     decide("EAN/GTIN", gtin, lookup.kind === "gtin" ? lookup.value : result.gtin, setGtin, lookup.kind === "gtin");
     decide("NCM", ncm, result.ncm, setNcm);
-    decide("Descrição", description, result.description, setDescription);
-    decide("Especificações", specs, result.specifications.map((item) => `${item.label}: ${item.value}`).join("\n"), setSpecs);
+    const destaques = result.advantages.length ? `\n\nDestaques:\n${result.advantages.map((item) => `• ${item}`).join("\n")}` : "";
+    decide("Descrição", description, result.description ? `${result.description}${destaques}` : "", setDescription);
+    // Cor, voltagem, garantia, embalagem e peso do produto entram como especificacoes: e onde a loja ja mostra a ficha tecnica.
+    const extras: Array<[string, string]> = [["Cor", result.color], ["Voltagem", result.voltage], ["Garantia", result.warranty], ["Conteúdo da embalagem", result.packageContents], ["Peso do produto", result.productWeightGrams ? `${result.productWeightGrams} g` : ""]];
+    const especificacoes = [...result.specifications, ...extras.filter(([rotulo, valor]) => valor && !result.specifications.some((item) => normalize(item.label) === normalize(rotulo))).map(([label, value]) => ({ label, value }))];
+    decide("Especificações", specs, especificacoes.map((item) => `${item.label}: ${item.value}`).join("\n"), setSpecs);
+    const categoria = normalize(result.category);
+    const ativas = categories.filter((item) => item.active);
+    const categoriaAchada = categoria ? ativas.find((item) => normalize(item.name) === categoria) ?? ativas.find((item) => normalize(item.name).includes(categoria) || categoria.includes(normalize(item.name))) : undefined;
+    decide("Categoria", categoryId, categoriaAchada?.id ?? "", changeCategory);
+    const medidas = result.packageDimensions;
+    if (medidas) for (const [rotulo, chave] of [["Comprimento", "length"], ["Largura", "width"], ["Altura", "height"]] as const) {
+      decide(rotulo, Number(shipping[chave]) > 0 ? shipping[chave] : "", String(medidas[chave]), (value) => setShipping((current) => ({ ...current, [chave]: value })));
+    }
     decide("Link da fonte", sourceUrl, result.primarySourceUrl, setSourceUrl);
     decide("Peso", Number(shipping.weight) > 0 ? shipping.weight : "", result.weightGrams ? String(result.weightGrams) : "", (value) => setShipping((current) => ({ ...current, weight: value })));
     if (finalName) decide("Palavras-chave", tags, buildTags(finalName, finalBrand, finalModel, categoryNames.get(categoryId) ?? ""), setTags);
     setAutoFilled((current) => ({ ...current, ...written }));
+    setLastResult(result);
     setAssistMessage("");
     return { filled, kept };
   }
@@ -141,15 +156,17 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     setName(fillSnapshot.name); setSlug(fillSnapshot.slug); setAutomaticSlug(fillSnapshot.automaticSlug);
     setBrand(fillSnapshot.brand); setModel(fillSnapshot.model); setGtin(fillSnapshot.gtin); setNcm(fillSnapshot.ncm);
     setDescription(fillSnapshot.description); setSpecs(fillSnapshot.specs); setTags(fillSnapshot.tags); setSourceUrl(fillSnapshot.sourceUrl);
-    setShipping((current) => ({ ...current, weight: fillSnapshot.weight }));
+    setShipping(fillSnapshot.shipping); setCategoryId(fillSnapshot.categoryId); setSku(fillSnapshot.sku); setAutomaticSku(fillSnapshot.automaticSku);
     setAutoFilled(fillSnapshot.autoFilled);
     setFillSnapshot(null);
+    setLastResult(null);
   }
 
   /** Outra ferramenta mexeu no formulario: o resultado da busca deixa de valer. */
   function forgetResearch() {
     setFillSnapshot(null);
     setAutoFilled({});
+    setLastResult(null);
     setAssistKey((current) => current + 1);
   }
 
@@ -158,7 +175,8 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
 
     <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-card">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Assistente de cadastro</p><h2 className="mt-1 text-lg font-black text-ink-900">Preencher mais rápido</h2><p className="mt-1 text-xs text-ink-500">Escaneie o código de barras ou digite o modelo: o painel busca os dados e preenche o cadastro. Nada é publicado sem você salvar.</p></div><button type="button" onClick={applySuggestions} disabled={!name.trim()} title="Gera palavras-chave, marca e uma descrição-base a partir do nome" className="rounded-lg border border-blue-200 bg-white px-4 py-2.5 text-xs font-black text-blue-800 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">Sugestões pelo nome</button></div>
-      <ProductResearchAssistant key={assistKey} name={name} brand={brand} model={model} gtin={gtin} category={categoryNames.get(categoryId) ?? ""} autoFocus={!product && assistKey === 0} onApply={applyResearch} onUndo={undoResearch} />
+      <ProductResearchAssistant key={assistKey} name={name} brand={brand} model={model} gtin={gtin} category={categoryNames.get(categoryId) ?? ""} autoFocus={!product && assistKey === 0} onApply={applyResearch} onUndo={undoResearch} onPrice={setPrice} />
+      {lastResult && <PromoText name={[name, model && !normalize(name).includes(normalize(model)) ? model : ""].filter(Boolean).join(" ")} result={lastResult} priceCents={priceCents} parcelamento={parcelamento} />}
       {!product && <div className="relative mt-4 max-w-2xl"><label className={labelClass}>Copiar estrutura de um produto semelhante<input value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder="Busque por nome, SKU, marca ou categoria" className={fieldClass} /></label>{templateQuery && <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl">{templateMatches.map((template) => <button key={template.id} type="button" onClick={() => copyTemplate(template)} className="flex w-full items-center justify-between gap-4 border-b border-ink-100 px-4 py-3 text-left last:border-0 hover:bg-blue-50"><span><strong className="block text-sm">{template.name}</strong><small className="text-ink-500">{template.category_name} · SKU {template.sku}</small></span><span className="shrink-0 text-[10px] font-black uppercase text-blue-700">Usar modelo</span></button>)}{!templateMatches.length && <p className="px-4 py-5 text-center text-sm text-ink-500">Nenhum produto semelhante encontrado.</p>}</div>}</div>}
       {suggestedBrand && !brand && <button type="button" onClick={() => setBrand(suggestedBrand)} className="mt-3 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800">Usar marca sugerida: {suggestedBrand}</button>}
       {assistMessage && <p role="status" className="mt-3 rounded-lg border border-gold-200 bg-gold-50 px-3 py-2 text-xs leading-relaxed text-gold-900">{assistMessage}</p>}
@@ -231,7 +249,36 @@ function Check({ name, label, checked }: { name: string; label: string; checked?
 function ErrorText({ value }: { value: string[] }) { return <span className="mt-1 block font-normal text-red-600">{value[0]}</span>; }
 function SearchLink({ label, href }: { label: string; href: string }) { return href ? <a href={href} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white px-3 py-2 text-xs font-black text-blue-800 shadow-sm ring-1 ring-blue-200 hover:bg-blue-100">{label} ↗</a> : <span className="cursor-not-allowed rounded-lg bg-white/60 px-3 py-2 text-xs font-black text-blue-300">{label}</span>; }
 /** Campos que a busca pode mudar, guardados para o "Desfazer preenchimento". */
-interface FillSnapshot { name: string; slug: string; automaticSlug: boolean; brand: string; model: string; gtin: string; ncm: string; description: string; specs: string; tags: string; sourceUrl: string; weight: string; autoFilled: Record<string, string> }
+interface FillSnapshot { name: string; slug: string; automaticSlug: boolean; brand: string; model: string; gtin: string; ncm: string; description: string; specs: string; tags: string; sourceUrl: string; shipping: { weight: string; length: string; width: string; height: string; origin: string }; categoryId: string; sku: string; automaticSku: boolean; autoFilled: Record<string, string> }
+
+/**
+ * Texto para colar no WhatsApp, no formato que o dono usa. Cor e voltagem so
+ * entram quando a pesquisa confirmou para a variante; o 12x vem da tabela da
+ * maquininha (a mesma conta do site).
+ */
+function montarTextoPromocional(name: string, result: Pick<ProductResearchResult, "advantages" | "voltage" | "color">, priceCents: number, parcelaCents: number): string {
+  const reais = (cents: number) => `R${(cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return [
+    `🔥 *${name.trim().toLocaleUpperCase("pt-BR")}* 🔥`,
+    ...(result.advantages.length ? ["📌 *PRINCIPAIS VANTAGENS:*", ...result.advantages.map((item) => `- ${item.toLocaleUpperCase("pt-BR")}`)] : []),
+    ...(result.voltage ? [`⚡ *${result.voltage.toLocaleUpperCase("pt-BR")}*`] : []),
+    ...(result.color ? [`🎨 *${result.color.toLocaleUpperCase("pt-BR")}*`] : []),
+    ...(priceCents > 0 ? [`💰 *${reais(priceCents)} À VISTA* *(PIX OU DINHEIRO)*`, `💳 *12X ${reais(parcelaCents)}* *(CARTÃO C/ TAXA)*`] : []),
+  ].join("\n");
+}
+
+function PromoText({ name, result, priceCents, parcelamento }: { name: string; result: ProductResearchResult; priceCents: number; parcelamento: ParcelamentoDaLoja }) {
+  const [copiado, setCopiado] = useState(false);
+  const texto = montarTextoPromocional(name, result, priceCents, simularParcela(priceCents, 12, parcelamento.taxas).parcela);
+  async function copiar() {
+    try { await navigator.clipboard.writeText(texto); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { setCopiado(false); }
+  }
+  return <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-black text-green-950">Texto promocional (WhatsApp)</p><button type="button" onClick={copiar} className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-black text-white hover:bg-green-600">{copiado ? "Copiado!" : "Copiar texto"}</button></div>
+    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-white p-3 font-sans text-xs leading-relaxed text-ink-900 ring-1 ring-green-100">{texto}</pre>
+    {priceCents <= 0 && <p className="mt-1 text-[11px] text-green-900">Digite o preço à vista para incluir o valor e o 12x.</p>}
+  </div>;
+}
 function cents(value?: number | null) { return value == null ? "" : (value / 100).toFixed(2).replace(".", ","); }
 function moneyInputToCents(value: string) { const raw = value.trim().replace(/\s/g, ""); if (!raw) return 0; const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw; const number = Number(normalized); return Number.isFinite(number) ? Math.round(number * 100) : 0; }
 function slugify(value: string) { return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90); }

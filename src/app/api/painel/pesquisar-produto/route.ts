@@ -10,7 +10,7 @@ const requestSchema = z.object({
   model: z.string().trim().max(100),
   gtin: z.string().trim().max(14),
   category: z.string().trim().max(100),
-}).refine((value) => value.model.length >= 2 || isValidGTIN(value.gtin));
+}).refine((value) => value.model.length >= 2 || value.name.length >= 3 || isValidGTIN(value.gtin));
 
 export const maxDuration = 60;
 const requestLog = new Map<string, { count: number; resetAt: number }>();
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Não conseguimos ler os dados da pesquisa." }, { status: 400 });
   }
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ message: "Informe um código de barras válido ou o modelo para pesquisar." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ message: "Informe um código de barras válido, o nome ou o modelo para pesquisar." }, { status: 400 });
 
   try {
     const result = await researchProduct(parsed.data);
