@@ -219,5 +219,6 @@ function normalizeProductOperationalMeta(value?: Partial<ProductOperationalMeta>
     cost_cents: typeof value?.cost_cents === "number" ? value.cost_cents : null,
     model: typeof value?.model === "string" ? value.model : "",
     gtin: typeof value?.gtin === "string" ? value.gtin : "",
+    variant_prices: value?.variant_prices && typeof value.variant_prices === "object" ? value.variant_prices : {},
   };
 }

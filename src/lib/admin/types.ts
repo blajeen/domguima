@@ -340,6 +340,16 @@ export interface ProductOperationalMeta {
   cost_cents: number | null;
   model: string;
   gtin: string;
+  /**
+   * Custo e preco anterior de cada variacao, por id da opcao.
+   * shortcut: mora no JSON de product_meta para nao exigir migracao; o site nao mostra preco anterior por opcao (usa o da opcao mais barata no produto). Mover para colunas de product_variants se a vitrine precisar.
+   */
+  variant_prices?: Record<string, VariantPriceMeta>;
+}
+
+export interface VariantPriceMeta {
+  cost_cents: number | null;
+  old_price_cents: number | null;
 }
 
 export interface ProductAssistTemplate {

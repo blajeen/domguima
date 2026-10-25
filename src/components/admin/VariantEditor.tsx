@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AdminProductVariant } from "@/lib/admin/types";
+import type { AdminProductVariant, VariantPriceMeta } from "@/lib/admin/types";
 import { formatPrice } from "@/lib/utils/format";
 
 /**
@@ -22,6 +22,8 @@ interface LinhaEditavel {
   label: string;
   sku: string;
   price: string;
+  cost: string;
+  oldPrice: string;
   stock: string;
   active: boolean;
   /** URL de uma das fotos do produto. Vazio = usa a imagem principal. */
@@ -46,29 +48,35 @@ function sugerirSku(skuBase: string, label: string, usados: Set<string>): string
 }
 
 function linhaVazia(): LinhaEditavel {
-  return { id: crypto.randomUUID(), label: "", sku: "", price: "", stock: "0", active: true, imageSrc: "" };
+  return { id: crypto.randomUUID(), label: "", sku: "", price: "", cost: "", oldPrice: "", stock: "0", active: true, imageSrc: "" };
+}
+
+function reais(cents?: number | null): string {
+  return cents ? (cents / 100).toFixed(2) : "";
 }
 
 export function VariantEditor({
+  ligado,
   skuBase,
-  precoBase,
   variantAxis,
   variants,
+  precosExtras = {},
   imagens = [],
   disponivel = true,
 }: {
+  /** A caixa "Este produto tem variacoes" fica no ProductForm, que esconde preco e estoque do produto quando ela esta marcada. */
+  ligado: boolean;
   skuBase: string;
-  /** Preco do produto, usado como ponto de partida da primeira opcao. */
-  precoBase: number;
   variantAxis?: string | null;
   variants?: AdminProductVariant[];
+  /** Custo e preco anterior de cada opcao, por id (guardados em product_meta). */
+  precosExtras?: Record<string, VariantPriceMeta>;
   /** Fotos ja enviadas do produto: sao elas que o lojista marca por cor. */
   imagens?: Array<{ src: string; alt: string }>;
   /** Falso enquanto a migracao de variacoes nao foi aplicada ao banco. */
   disponivel?: boolean;
 }) {
   const iniciais = variants ?? [];
-  const [ligado, setLigado] = useState(iniciais.length > 0);
   const [eixo, setEixo] = useState(variantAxis || "Cor");
   const [linhas, setLinhas] = useState<LinhaEditavel[]>(
     iniciais.length
@@ -77,24 +85,14 @@ export function VariantEditor({
           label: item.label,
           sku: item.sku,
           price: (item.price_cents / 100).toFixed(2),
+          cost: reais(precosExtras[item.id]?.cost_cents),
+          oldPrice: reais(precosExtras[item.id]?.old_price_cents),
           stock: String(item.stock),
           active: item.active,
           imageSrc: item.image_src ?? "",
         }))
       : [linhaVazia()],
   );
-
-  /**
-   * Ao ligar, a primeira opcao herda o preco do produto — o lojista acabou de
-   * digitar esse valor logo acima e nao deve ter de repetir.
-   */
-  function ligar(marcado: boolean) {
-    setLigado(marcado);
-    if (!marcado) return;
-    setLinhas((atual) => atual.length === 1 && !atual[0].price && precoBase > 0
-      ? [{ ...atual[0], price: (precoBase / 100).toFixed(2) }]
-      : atual);
-  }
 
   const skusUsados = useMemo(() => new Set(linhas.map((linha) => linha.sku.toUpperCase()).filter(Boolean)), [linhas]);
 
@@ -115,6 +113,9 @@ export function VariantEditor({
           label: linha.label.trim(),
           sku: linha.sku.trim().toUpperCase(),
           priceCents: Math.round(Number(linha.price) * 100),
+          costCents: Number(linha.cost) > 0 ? Math.round(Number(linha.cost) * 100) : null,
+          // Preco anterior so vale acima do preco, a mesma regra do produto.
+          oldPriceCents: Number(linha.oldPrice) > Number(linha.price) ? Math.round(Number(linha.oldPrice) * 100) : null,
           stock: Math.max(0, Math.trunc(Number(linha.stock) || 0)),
           active: linha.active,
           imageSrc: linha.imageSrc || null,
@@ -136,7 +137,7 @@ export function VariantEditor({
 
   if (!disponivel) {
     return (
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900 sm:col-span-2 lg:col-span-4">
         <strong className="block">Variações ainda não estão disponíveis neste banco.</strong>
         <span className="mt-1 block text-xs">
           Falta aplicar a migração <code className="rounded bg-white px-1">202609060001_variacoes.sql</code> no Supabase.
@@ -147,21 +148,11 @@ export function VariantEditor({
   }
 
   return (
-    <section className="rounded-xl border border-ink-200 bg-white p-5">
+    <section className="sm:col-span-2 lg:col-span-4">
       <input type="hidden" name="variantRows" value={payload} />
 
-      <label className="flex items-start gap-3">
-        <input type="checkbox" checked={ligado} onChange={(event) => ligar(event.target.checked)} className="mt-0.5 h-4 w-4" />
-        <span>
-          <span className="block text-sm font-black text-ink-900">Este produto tem variações</span>
-          <span className="block text-xs text-ink-500">
-            Cor, voltagem ou tamanho — cada opção com preço, estoque e SKU próprios. É o que evita cadastrar o mesmo produto três vezes.
-          </span>
-        </span>
-      </label>
-
       {ligado && (
-        <div className="mt-5 space-y-4">
+        <div className="space-y-4">
           <div className="max-w-xs">
             <label htmlFor="variant-axis" className="block text-xs font-bold text-ink-600">Tipo de variação</label>
             <input id="variant-axis" list="eixos-sugeridos" value={eixo} onChange={(event) => setEixo(event.target.value)} className={`${campo} mt-1`} placeholder="Cor" />
@@ -171,11 +162,13 @@ export function VariantEditor({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-ink-500">
                 <tr>
                   <th className="pb-2 pr-3 font-bold">{eixo.trim() || "Opção"}</th>
-                  <th className="pb-2 pr-3 font-bold">Preço</th>
+                  <th className="pb-2 pr-3 font-bold">Custo</th>
+                  <th className="pb-2 pr-3 font-bold">Preço à vista</th>
+                  <th className="pb-2 pr-3 font-bold">Preço anterior</th>
                   <th className="pb-2 pr-3 font-bold">Estoque</th>
                   <th className="pb-2 pr-3 font-bold">SKU</th>
                   <th className="pb-2 pr-3 font-bold">Foto</th>
@@ -200,9 +193,21 @@ export function VariantEditor({
                         />
                       </td>
                       <td className="py-1.5 pr-3">
+                        <input type="number" min={0} step="0.01" value={linha.cost}
+                          onChange={(event) => alterar(linha.id, { cost: event.target.value })}
+                          placeholder="uso interno" className={`${campo} w-28`} aria-label="Custo da opção" />
+                      </td>
+                      <td className="py-1.5 pr-3">
                         <input type="number" min={0} step="0.01" value={linha.price}
                           onChange={(event) => alterar(linha.id, { price: event.target.value })}
                           placeholder="119,90" className={`${campo} w-28`} aria-label="Preço da opção" />
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <input type="number" min={0} step="0.01" value={linha.oldPrice}
+                          onChange={(event) => alterar(linha.id, { oldPrice: event.target.value })}
+                          placeholder="opcional" title="Opcional; deve ser maior que o preço à vista"
+                          className={`${campo} w-28 ${linha.oldPrice && Number(linha.oldPrice) <= Number(linha.price) ? "border-red-300 bg-red-50" : ""}`}
+                          aria-label="Preço anterior da opção" />
                       </td>
                       <td className="py-1.5 pr-3">
                         <input type="number" min={0} value={linha.stock}
@@ -260,7 +265,7 @@ export function VariantEditor({
               ? "Preencha nome, preço e SKU de pelo menos uma opção — sem isso o produto será salvo sem variação."
               : <>
                   <strong>{ativas.length} opção(ões) ativa(s)</strong> · estoque total <strong>{estoqueTotal}</strong> · a partir de <strong>{formatPrice(menorPreco)}</strong>.
-                  {" "}O estoque e o preço do produto passam a vir daqui.
+                  {" "}O estoque e o preço do produto vêm daqui. Preço anterior menor ou igual ao preço é ignorado.
                 </>}
             {rotulosRepetidos.size > 0 && <span className="mt-1 block font-bold text-red-700">Há opções com o mesmo nome. Ajuste antes de salvar.</span>}
           </p>

@@ -27,6 +27,7 @@ import {
   type ActionState,
   type AdminProductRow,
   type AdminProductVariant,
+  type VariantPriceMeta,
   type CustomerPurchaseLookup,
   type SellerRecord,
   type StoreSettings,
@@ -136,9 +137,17 @@ export async function logoutAction() { await destroyAdminSession(); redirect("/p
 export async function saveProductAction(_: ActionState, formData: FormData): Promise<ActionState> {
   const owner = await ownerOrThrow();
   const id = String(formData.get("id") || formData.get("slug") || randomUUID()).trim();
+  // Variacoes: quando existem, elas mandam no estoque e no preco-base. O
+  // formulario esconde custo, preco e preco anterior do produto nesse caso;
+  // os do produto passam a ser os da opcao mais barata.
+  const variacoes = parseVariantRows(formData.get("variantRows"), id);
+  if (formData.get("hasVariants") === "1" && !variacoes) return { message: "Preencha nome, preço e SKU de pelo menos uma variação, ou desmarque “Este produto tem variações”." };
+  const ativasDoForm = variacoes?.rows.filter((linha) => linha.active) ?? [];
+  const maisBarata = [...(ativasDoForm.length ? ativasDoForm : variacoes?.rows ?? [])].sort((a, b) => a.price_cents - b.price_cents)[0];
+  const extraDaMaisBarata = maisBarata ? variacoes!.extras[maisBarata.id] : undefined;
   const oldPriceRaw = String(formData.get("oldPrice") ?? "").trim();
   const costRaw = String(formData.get("cost") ?? "").trim();
-  const costCents = costRaw ? moneyToCents(costRaw) : null;
+  const costCents = maisBarata ? extraDaMaisBarata?.cost_cents ?? null : costRaw ? moneyToCents(costRaw) : null;
   const ncm = onlyDigits(String(formData.get("ncm") ?? ""));
   const model = String(formData.get("model") ?? "").trim();
   const gtin = onlyDigits(String(formData.get("gtin") ?? ""));
@@ -149,8 +158,8 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   if (gtin && !isValidGTIN(gtin)) return { message: "Informe um EAN/GTIN válido ou deixe o campo vazio." };
   const parsed = productSchema.safeParse({
     id, name: formData.get("name"), slug: formData.get("slug"), sku: formData.get("sku"), brand: formData.get("brand"),
-    categoryId: formData.get("categoryId"), description: formData.get("description"), priceCents: moneyToCents(formData.get("price")),
-    oldPriceCents: oldPriceRaw ? moneyToCents(oldPriceRaw) : null, stock: Math.trunc(numberFrom(formData.get("stock"))),
+    categoryId: formData.get("categoryId"), description: formData.get("description"), priceCents: maisBarata ? maisBarata.price_cents : moneyToCents(formData.get("price")),
+    oldPriceCents: maisBarata ? extraDaMaisBarata?.old_price_cents ?? null : oldPriceRaw ? moneyToCents(oldPriceRaw) : null, stock: Math.trunc(numberFrom(formData.get("stock"))),
     lowStockThreshold: Math.trunc(numberFrom(formData.get("lowStockThreshold"))), status: formData.get("status"),
     tags: splitCommaList(formData.get("tags")), sourceUrl: formData.get("sourceUrl"), sellerNote: formData.get("sellerNote"),
     shippingWeight: Math.trunc(numberFrom(formData.get("shippingWeight"))), shippingLength: numberFrom(formData.get("shippingLength")),
@@ -193,8 +202,6 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
       categories: { name: state.categories.find((category) => category.id === value.categoryId)?.name ?? value.categoryId },
     };
 
-    // Variacoes: quando existem, elas mandam no estoque e no preco-base.
-    const variacoes = parseVariantRows(formData.get("variantRows"), id);
     const anteriores = new Map((before?.product_variants ?? []).map((item) => [item.id, item]));
     if (variacoes) {
       const ativas = variacoes.rows.filter((linha) => linha.active);
@@ -233,7 +240,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
           commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now,
         });
       }
-      draft.operations.product_meta[id] = { ncm, cost_cents: costCents, model, gtin };
+      draft.operations.product_meta[id] = { ncm, cost_cents: costCents, model, gtin, variant_prices: variacoes?.extras ?? {} };
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
     created = !before;
@@ -1173,6 +1180,8 @@ const variantRowInput = z.object({
   label: z.string().trim().min(1).max(60),
   sku: z.string().trim().min(2).max(60),
   priceCents: z.number().int().positive().max(100_000_000),
+  costCents: z.number().int().positive().max(100_000_000).nullable().optional(),
+  oldPriceCents: z.number().int().positive().max(100_000_000).nullable().optional(),
   stock: z.number().int().min(0).max(1_000_000),
   active: z.boolean(),
   imageSrc: z.string().trim().max(600).nullable().optional(),
@@ -1184,7 +1193,7 @@ const variantRowInput = z.object({
  * Devolve `null` quando o produto nao tem variacao — diferente de lista vazia,
  * que significaria "tinha e o lojista apagou todas".
  */
-function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { axis: string; rows: AdminProductVariant[] } | null {
+function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { axis: string; rows: AdminProductVariant[]; extras: Record<string, VariantPriceMeta> } | null {
   const texto = String(raw ?? "").trim();
   if (!texto) return null;
   let bruto: unknown;
@@ -1197,6 +1206,7 @@ function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { 
 
   const vistos = new Set<string>();
   const rows: AdminProductVariant[] = [];
+  const extras: Record<string, VariantPriceMeta> = {};
   for (const [indice, linha] of parsed.data.rows.entries()) {
     const sku = linha.sku.toUpperCase();
     // SKU repetido dentro do mesmo produto viraria erro de indice unico no
@@ -1208,8 +1218,13 @@ function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { 
       price_cents: linha.priceCents, stock: linha.stock, sort_order: indice, active: linha.active,
       image_src: linha.imageSrc || null,
     });
+    extras[linha.id] = {
+      cost_cents: linha.costCents ?? null,
+      // Mesma regra do produto: preco anterior so vale acima do preco.
+      old_price_cents: linha.oldPriceCents && linha.oldPriceCents > linha.priceCents ? linha.oldPriceCents : null,
+    };
   }
-  return rows.length ? { axis: parsed.data.axis, rows } : null;
+  return rows.length ? { axis: parsed.data.axis, rows, extras } : null;
 }
 
 function parseVariants(value: FormDataEntryValue | null) { return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [name, ...rest] = line.split(":"); return { name: name.trim(), options: rest.join(":").split(",").map((item) => item.trim()).filter(Boolean) }; }).filter((item) => item.name && item.options.length); }
