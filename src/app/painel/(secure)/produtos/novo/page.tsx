@@ -8,6 +8,9 @@ import { buildCategorySkuChoices } from "@/lib/admin/sku";
 
 type Params = Record<string, string | string[] | undefined>;
 
+// O comparativo de precos roda como Server Action desta pagina e pode levar ate 1 minuto.
+export const maxDuration = 60;
+
 export default async function NewProductPage({ searchParams }: { searchParams: Promise<Params> }) {
   await requireOwner();
   const params = await searchParams;

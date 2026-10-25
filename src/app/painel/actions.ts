@@ -11,6 +11,7 @@ import { copyCatalogImage, countProductMovements, createImageUploadTarget, creat
 import { OpenAIWebError } from "@/lib/admin/openai-web";
 import { composeCover, composeExplainer, downloadPhoto, findOfficialPhotos, type OfficialPhoto } from "@/lib/admin/product-art";
 import { RemoteFetchError } from "@/lib/admin/remote-fetch";
+import { findMarketPrice, type MarketPriceResult } from "@/lib/admin/market-price";
 import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
 import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
@@ -1751,6 +1752,25 @@ export async function findOfficialPhotosAction(productId: unknown): Promise<{ ok
     if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
     console.error("Falha ao buscar fotos oficiais:", error);
     return { ok: false, message: "Não foi possível buscar as fotos agora. Tente de novo." };
+  }
+}
+
+const marketPriceInput = z.object({
+  name: z.string().trim().max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
+  gtin: z.string().trim().max(14), color: z.string().trim().max(60), voltage: z.string().trim().max(40),
+}).refine((value) => value.model.length >= 2 || value.name.length >= 3 || isValidGTIN(value.gtin));
+
+/** Menor preco do mesmo modelo no mercado, conferido na pagina da loja. So referencia: nao mexe no preco. */
+export async function marketPriceAction(input: unknown): Promise<{ ok: boolean; message?: string; result?: MarketPriceResult }> {
+  await ownerOrThrow();
+  const parsed = marketPriceInput.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Preencha o nome, o modelo ou o GTIN para comparar preços." };
+  try {
+    return { ok: true, result: await findMarketPrice(parsed.data) };
+  } catch (error) {
+    if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
+    console.error("Falha no comparativo de preços:", error);
+    return { ok: false, message: "Não foi possível comparar os preços agora. Tente de novo." };
   }
 }
 

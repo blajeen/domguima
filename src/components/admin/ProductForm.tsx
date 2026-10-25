@@ -10,6 +10,7 @@ import { onlyDigits } from "@/lib/utils/validators";
 import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControls";
 import { parcelamentoMaximo, simularParcela, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { InstallmentSimulator } from "./InstallmentSimulator";
+import { MarketPriceBox } from "./MarketPriceBox";
 import { ProductResearchAssistant, type ResearchFillReport, type ResearchLookup } from "./ProductResearchAssistant";
 import { VariantEditor } from "./VariantEditor";
 
@@ -112,6 +113,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     if (!replacing) setFillSnapshot({ name, slug, automaticSlug, brand, model, gtin, ncm, description, specs, tags, sourceUrl, shipping, categoryId, sku, automaticSku, autoFilled });
     const filled: string[] = [];
     const kept: string[] = [];
+    const diffs: ResearchFillReport["diffs"] = {};
     const written: Record<string, string> = {};
     function decide(label: string, current: string, next: string, set: (value: string) => void, force = false): string {
       const atual = current.trim();
@@ -119,7 +121,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
       if (!novo || atual === novo) return atual;
       const livre = !atual || autoFilled[label] === atual;
       if (replacing ? replacing.has(label) : force || livre) { set(novo); filled.push(label); written[label] = novo; return novo; }
-      if (!replacing) kept.push(label);
+      if (!replacing) { kept.push(label); diffs[label] = { current: atual, found: novo }; }
       return atual;
     }
     const knownBrand = knownBrands.find((item) => normalize(item) === normalize(result.brand)) ?? result.brand;
@@ -148,7 +150,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     setAutoFilled((current) => ({ ...current, ...written }));
     setLastResult(result);
     setAssistMessage("");
-    return { filled, kept };
+    return { filled, kept, diffs };
   }
 
   function undoResearch() {
@@ -202,7 +204,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
       {product ? <label className={labelClass}>Estoque atual<input value={product.stock} disabled className={`${fieldClass} bg-ink-50`} /><input type="hidden" name="stock" value={product.stock} /><span className="mt-1 block font-normal text-ink-400">Use a tela Estoque para alterar.</span></label> : <Field name="stock" label="Estoque inicial" type="number" min="0" defaultValue={0} required />}</>}
       <Field name="lowStockThreshold" label="Avisar estoque baixo em" type="number" min="0" defaultValue={product?.low_stock_threshold ?? 3} required /><label className={labelClass}>Status<select name="status" defaultValue={product?.status ?? "active"} className={fieldClass}><option value="active">Publicado</option><option value="draft">Rascunho</option><option value="archived">Arquivado</option></select></label>
       {!comVariacoes && <div className={`rounded-xl border p-4 sm:col-span-2 ${costCents > 0 && priceCents > 0 ? grossProfit >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50" : "border-ink-200 bg-ink-50"}`}><p className="text-[10px] font-black uppercase tracking-wide text-ink-500">Margem bruta estimada</p>{costCents > 0 && priceCents > 0 ? <div className="mt-2 flex flex-wrap items-end justify-between gap-3"><div><strong className={`text-xl ${grossProfit >= 0 ? "text-green-800" : "text-red-700"}`}>{formatPrice(grossProfit)}</strong><span className="ml-2 text-sm font-bold text-ink-600">{marginPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div><small className="text-ink-500">Antes de impostos, frete e comissão</small></div> : <p className="mt-2 text-xs text-ink-500">Preencha custo e preço para calcular.</p>}</div>}<PrecoNoSite priceCents={priceCents} parcelamento={parcelamento} comVariacoes={comVariacoes} />
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:col-span-2 lg:col-span-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-blue-950">Comparativo de preços</p><p className="mt-1 text-xs text-blue-700">Pesquisa atual: {comparisonTerm || "informe nome, modelo ou EAN"}</p></div><div className="flex flex-wrap gap-2"><SearchLink label="Google Shopping" href={comparisonTerm ? googleShoppingUrl(comparisonTerm) : ""} /><SearchLink label="Buscar preços no Google" href={comparisonTerm ? googlePriceUrl(comparisonTerm) : ""} /></div></div><p className="mt-2 text-[10px] leading-relaxed text-blue-600">Os resultados abrem no Google para conferência. O painel não copia preços nem altera sua oferta automaticamente.</p></div>
+      <MarketPriceBox name={name} brand={brand} model={model} gtin={gtin} color={lastResult?.color ?? ""} voltage={lastResult?.voltage ?? ""} googleLinks={<><SearchLink label="Google Shopping" href={comparisonTerm ? googleShoppingUrl(comparisonTerm) : ""} /><SearchLink label="Buscar preços no Google" href={comparisonTerm ? googlePriceUrl(comparisonTerm) : ""} /></>} />
       <div className="flex flex-wrap gap-4 sm:col-span-2 lg:col-span-3 lg:pt-2"><Check name="isFeatured" label="Destaque na home" checked={product?.is_featured} /><Check name="isOffer" label="Oferta" checked={product?.is_offer} /><Check name="isBestSeller" label="Seleção mais vendidos" checked={product?.is_best_seller} /><Check name="isExclusive" label="Exclusivo Dom Guima" checked={product?.is_exclusive} /><Check name="heroEnabled" label="Pode aparecer no banner" checked={product?.hero_enabled ?? true} /></div><Field name="heroPriority" label="Prioridade no banner" type="number" min="-100" max="100" defaultValue={product?.hero_priority ?? 0} hint="0 = automático; use de -100 a 100 para ajustar." />
     </div></Section>
 

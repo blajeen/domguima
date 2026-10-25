@@ -18,6 +18,8 @@ export interface ResearchLookup {
 export interface ResearchFillReport {
   filled: string[];
   kept: string[];
+  /** O que estava no campo e o que a busca achou, para o lojista escolher campo a campo. */
+  diffs: Record<string, { current: string; found: string }>;
 }
 
 interface ProductResearchAssistantProps {
@@ -137,10 +139,14 @@ export function ProductResearchAssistant({ name, brand, model, gtin, category, a
     void search();
   }
 
-  function replaceKept() {
+  /** Troca os campos listados pelo que a busca achou; sem lista, todos os mantidos. */
+  function replaceKept(labels?: string[]) {
     if (!outcome) return;
-    const report = onApplyRef.current(outcome.result, outcome.lookup, outcome.report.kept);
-    setOutcome({ ...outcome, report: { filled: [...new Set([...outcome.report.filled, ...report.filled])], kept: [] } });
+    const alvo = labels ?? outcome.report.kept;
+    const report = onApplyRef.current(outcome.result, outcome.lookup, alvo);
+    const kept = outcome.report.kept.filter((label) => !alvo.includes(label));
+    const diffs = Object.fromEntries(Object.entries(outcome.report.diffs).filter(([label]) => kept.includes(label)));
+    setOutcome({ ...outcome, report: { filled: [...new Set([...outcome.report.filled, ...report.filled])], kept, diffs } });
   }
 
   function undo() {
@@ -199,9 +205,16 @@ export function ProductResearchAssistant({ name, brand, model, gtin, category, a
         {outcome.report.filled.length
           ? <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-900"><strong>Preenchido:</strong> {outcome.report.filled.join(", ")}.</p>
           : <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-700">Nenhum campo vazio pôde ser preenchido com o que foi encontrado.</p>}
-        {!!outcome.report.kept.length && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gold-50 px-3 py-2 text-xs text-gold-900">
-          <span><strong>Mantido o que você já tinha digitado:</strong> {outcome.report.kept.join(", ")}.</span>
-          <button type="button" onClick={replaceKept} className="rounded-md bg-white px-2.5 py-1 font-black text-gold-900 ring-1 ring-gold-300 hover:bg-gold-100">Substituir pelos encontrados</button>
+        {!!outcome.report.kept.length && <div className="mt-2 rounded-lg bg-gold-50 px-3 py-2 text-xs text-gold-900">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span><strong>Diferente do que você digitou — mantido o seu:</strong></span>
+            <button type="button" onClick={() => replaceKept()} className="rounded-md bg-white px-2.5 py-1 font-black text-gold-900 ring-1 ring-gold-300 hover:bg-gold-100">Usar todos os encontrados</button>
+          </div>
+          <ul className="mt-2 space-y-1.5">{outcome.report.kept.map((label) => <li key={label} className="rounded-md bg-white p-2 ring-1 ring-gold-200">
+            <div className="flex flex-wrap items-center justify-between gap-2"><strong>{label}</strong><button type="button" onClick={() => replaceKept([label])} className="font-black text-blue-700 underline">usar o encontrado</button></div>
+            <p className="mt-1 line-clamp-3 text-ink-600"><span className="font-bold">Seu:</span> {outcome.report.diffs[label]?.current}</p>
+            <p className="line-clamp-3 text-ink-900"><span className="font-bold">Encontrado:</span> {outcome.report.diffs[label]?.found}</p>
+          </li>)}</ul>
         </div>}
 
         {pendingFields(result).length > 0 && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-900"><strong>Pendente (não confirmado, preencha se souber):</strong> {pendingFields(result).join(", ")}.</p>}

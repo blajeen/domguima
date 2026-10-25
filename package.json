@@ -10,6 +10,7 @@
     "import:shopee": "node scripts/import-shopee.mjs",
     "test:smoke": "node scripts/smoke-test.mjs",
     "test:parcela": "node --experimental-strip-types scripts/check-parcela.mjs",
+    "test:cadastro": "node scripts/check-cadastro.mjs",
     "optimize:assets": "node scripts/optimize-assets.mjs",
     "images:standardize": "node scripts/standardize-product-images.mjs",
     "images:audit": "node scripts/audit-product-covers.mjs",
