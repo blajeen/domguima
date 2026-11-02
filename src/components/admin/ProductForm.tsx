@@ -131,8 +131,7 @@ export function ProductForm({ product, categories, operationalMeta, initialCateg
     const finalModel = decide("Modelo", model, lookup.kind === "model" ? lookup.value : result.model, setModel, lookup.kind === "model");
     decide("EAN/GTIN", gtin, lookup.kind === "gtin" ? lookup.value : result.gtin, setGtin, lookup.kind === "gtin");
     decide("NCM", ncm, result.ncm, setNcm);
-    const destaques = result.advantages.length ? `\n\nDestaques:\n${result.advantages.map((item) => `• ${item}`).join("\n")}` : "";
-    decide("Descrição", description, result.description ? `${result.description}${destaques}` : "", setDescription);
+    decide("Descrição", description, result.description, setDescription);
     // Cor, voltagem, garantia, embalagem e peso do produto entram como especificacoes: e onde a loja ja mostra a ficha tecnica.
     const extras: Array<[string, string]> = [["Cor", result.color], ["Voltagem", result.voltage], ["Garantia", result.warranty], ["Conteúdo da embalagem", result.packageContents], ["Peso do produto", result.productWeightGrams ? `${result.productWeightGrams} g` : ""]];
     const especificacoes = [...result.specifications, ...extras.filter(([rotulo, valor]) => valor && !result.specifications.some((item) => normalize(item.label) === normalize(rotulo))).map(([label, value]) => ({ label, value }))];

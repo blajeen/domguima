@@ -22,7 +22,8 @@ const webResultSchema = z.object({
   // Texto livre de proposito: o modelo as vezes devolve "EAN-13: 789...".
   // O codigo e extraido depois; um GTIN mal escrito nunca derruba o resto.
   gtin: z.string().trim().max(200),
-  description: z.string().trim().max(1_200),
+  // Folga acima dos 1.000 pedidos: passar um pouco nao pode derrubar a pesquisa inteira.
+  description: z.string().trim().max(2_000),
   ncm: z.string().trim().regex(/^$|^\d{8}$/),
   ncmConfidence: z.enum(["high", "medium", "low"]),
   ncmNote: z.string().trim().max(300),
@@ -336,9 +337,11 @@ async function researchOnWeb(apiKey: string, input: ProductResearchInput, hint: 
               "Não invente, não complete por intuição e não transfira características de um modelo semelhante. Letras, números e sufixos do modelo precisam coincidir. Em caso de divergência, prefira o manual ou a página oficial; se o conflito continuar, deixe o dado vazio e explique em notes.",
               "Preencha model com o código de modelo exato confirmado e gtin com o código de barras confirmado em fonte oficial (só dígitos); deixe vazios quando não tiver certeza.",
               "Quando gtin ficar vazio, pesquise o modelo exato junto de EAN e de código de barras em varejistas brasileiros (as páginas de produto costumam mostrar o EAN na ficha técnica) e liste em gtinCandidates cada código que aparece na página DESSE modelo, com a URL da página. Considere a versão vendida no Brasil (ex.: sufixo /ZD da Samsung). Só códigos que você viu escritos na página; não monte nem complete números. Cada código será conferido abrindo a página.",
-              "Escreva name como o título de vitrine em português do Brasil: tipo de produto, marca, linha, modelo e o dado que diferencia (tamanho, capacidade, voltagem), sem repetir palavras.",
-              "Escreva description em português do Brasil para marketplace, com até 1.000 caracteres, clara e comercial, usando somente características confirmadas. Não mencione preço, estoque, frete, prazo ou desempenho não comprovado.",
+              // Prompt de titulo definido pelo dono (02/11/2026); a grafia final vem de formatTitle.
+              "name: crie um título simples e profissional em português do Brasil usando, nesta ordem, as informações disponíveis: TIPO DE PRODUTO + MARCA + MODELO + COR + VOLTAGEM. Inclua a cor e a voltagem somente quando forem informadas ou confirmadas. Não invente dados. Não inclua preço, emojis ou frases promocionais. Em name, retorne somente o título, pronto para copiar.",
               "advantages: até cinco vantagens curtas (até 60 caracteres cada), fáceis de entender, tiradas só de características confirmadas; sem exageros.",
+              // Prompt de descricao definido pelo dono (02/11/2026); os "destaques confirmados" dele sao advantages.
+              "description: crie uma descrição comercial profissional em português do Brasil, com até 1.000 caracteres, usando advantages como os destaques confirmados. Escreva um texto envolvente, claro e fácil de entender, apresentando o produto pelo nome, com iniciais maiúsculas, e explicando como seus principais destaques ajudam o cliente no dia a dia. Inclua todos os destaques em dois ou três parágrafos naturais, separados por uma linha em branco. Use uma linguagem persuasiva e profissional, sem exageros e sem inventar características ou funções. Não inclua preço, voltagem, NCM ou GTIN no texto. Em description, retorne somente a descrição, pronta para copiar.",
               "category: o tipo de produto em uma ou duas palavras, como uma loja de varejo chamaria (ex.: Eletroportáteis, Ferramentas, Smart TV).",
               "color e voltage: só quando confirmados para a variante exata (gtin ou modelo com sufixo); produto bivolt escreva Bivolt. Na dúvida deixe vazio.",
               "warranty: prazo e condição da garantia do fabricante (ex.: 12 meses contra defeitos de fabricação), só quando confirmado. packageContents: itens que vêm na caixa.",
