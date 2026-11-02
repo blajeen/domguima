@@ -2,8 +2,8 @@ import "server-only";
 
 /**
  * Uma pergunta com pesquisa na web e resposta em JSON (schema estrito).
- * A chave fica no servidor. Usada pela busca de fotos oficiais e pelo
- * comparativo de preco; a pesquisa de cadastro tem a sua propria chamada.
+ * A chave fica no servidor. Usada pelo comparativo de preco; a pesquisa de
+ * cadastro tem a sua propria chamada.
  */
 export class OpenAIWebError extends Error {}
 

@@ -7,13 +7,9 @@ import { z } from "zod";
 import { contaPrincipalOrThrow, createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { aplicarLoteDePrecos, CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, descreverItem, especiaisAcimaDoDesconto, formatarDesconto, lerDescontoDigitado, lerLoteDePrecos, linhasParaLojistas, mostraPrecoSite, validarPrecoEspecial, type VendaLojistas } from "@/lib/admin/lojistas";
 import { formatPrice } from "@/lib/utils/format";
-import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, uploadProductImage, type CatalogState } from "@/lib/admin/catalog-store";
+import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { OpenAIWebError } from "@/lib/admin/openai-web";
-import { composeCover, composeExplainer, downloadPhoto, findOfficialPhotos, type OfficialPhoto } from "@/lib/admin/product-art";
-import { RemoteFetchError } from "@/lib/admin/remote-fetch";
 import { findMarketPrice, type MarketPriceResult } from "@/lib/admin/market-price";
-import { generateProductPhotos } from "@/lib/admin/ai-image";
-import { AI_IMAGE_PROMPT_PADRAO } from "@/lib/admin/ai-image-prompt";
 import { buildCustomerIndex, customerKey, phoneKey } from "@/lib/admin/customers";
 import { getCustomerPurchases } from "@/lib/admin/data";
 import { applyDailySales, applyInventoryCounts, InventoryOperationError } from "@/lib/admin/inventory";
@@ -255,21 +251,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
     return catalogStorageError(error);
   }
   refreshCatalog();
-  if (created) {
-    // As imagens nao seguram o produto: se a arte falhar, ele ja esta salvo e a
-    // pagina de edicao avisa para montar pelo quadro de imagens.
-    let arte = "";
-    const capaUrl = String(formData.get("artCover") ?? "").trim();
-    const ladoUrl = String(formData.get("artSide") ?? "").trim();
-    if (capaUrl && ladoUrl) {
-      let lidas: unknown = null;
-      try { lidas = JSON.parse(String(formData.get("artBenefits") ?? "[]")); } catch { lidas = null; }
-      const vantagens = artBenefits.safeParse(lidas);
-      const urls = z.string().url().max(1_000);
-      arte = vantagens.success && urls.safeParse(capaUrl).success && urls.safeParse(ladoUrl).success && (await attachProductArt(owner.id, id, capaUrl, ladoUrl, vantagens.data)).ok ? "&arte=ok" : "&arte=falhou";
-    }
-    redirect(`/painel/produtos/${encodeURIComponent(id)}?created=1${arte}`);
-  }
+  if (created) redirect(`/painel/produtos/${encodeURIComponent(id)}?created=1`);
   return { ok: true, message: "Produto salvo com sucesso." };
 }
 
@@ -567,7 +549,6 @@ export async function saveSettingsAction(_: ActionState, formData: FormData): Pr
     for (const key of keys) state.settings[key] = String(formData.get(key) ?? "").trim();
     state.settings.cardFeeTable = taxasParaTexto(parcelamento.taxas);
     state.settings.cardInstallmentsHeadline = String(parcelamento.anunciarAte);
-    state.settings.aiImagePrompt = String(formData.get("aiImagePrompt") ?? "").trim().slice(0, 3_000);
     // Valor fora da lista (form adulterado ou versao antiga) volta ao padrao.
     state.settings.leadDistributionMode = normalizeLeadDistributionMode(state.settings.leadDistributionMode);
     audit(state, owner.id, "settings.updated", "settings", "store", before, state.settings);
@@ -1751,41 +1732,7 @@ export async function registerProductImagesAction(productId: unknown, caminhos: 
   }
 }
 
-// ── Fotos oficiais e artes do produto ──────────────────────────────────────
-
-const photoQuery = z.object({
-  name: z.string().trim().max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
-  gtin: z.string().trim().max(14), sourceUrl: z.string().trim().max(1_000),
-}).refine((value) => value.model.length >= 2 || value.name.length >= 3 || isValidGTIN(value.gtin));
-
-/**
- * Procura fotos do modelo exato nas paginas do fabricante e de lojas grandes.
- * Recebe o id de um produto salvo, ou os dados do cadastro ainda nao salvo
- * (o produto novo ja sai com as imagens).
- */
-export async function findOfficialPhotosAction(input: unknown): Promise<{ ok: boolean; message?: string; photos?: OfficialPhoto[] }> {
-  await ownerOrThrow();
-  let consulta: z.infer<typeof photoQuery>;
-  if (typeof input === "string") {
-    const state = await readCatalogState();
-    const product = state.products.find((item) => item.id === input.trim());
-    if (!product) return { ok: false, message: "Produto não encontrado." };
-    const meta = state.operations.product_meta[product.id];
-    consulta = { name: product.name, brand: product.brand ?? "", model: meta?.model ?? "", gtin: meta?.gtin ?? "", sourceUrl: product.source_url ?? "" };
-  } else {
-    const parsed = photoQuery.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Preencha o nome, o modelo ou o GTIN para buscar fotos." };
-    consulta = parsed.data;
-  }
-  try {
-    const photos = await findOfficialPhotos({ ...consulta, sourceUrl: /^https?:\/\//.test(consulta.sourceUrl) ? consulta.sourceUrl : null });
-    return photos.length ? { ok: true, photos } : { ok: true, photos: [], message: "Nenhuma foto confiável do modelo exato foi encontrada. Envie as fotos manualmente." };
-  } catch (error) {
-    if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
-    console.error("Falha ao buscar fotos oficiais:", error);
-    return { ok: false, message: "Não foi possível buscar as fotos agora. Tente de novo." };
-  }
-}
+// ── Comparativo de precos ──────────────────────────────────────────────────
 
 const marketPriceInput = z.object({
   name: z.string().trim().max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
@@ -1804,125 +1751,6 @@ export async function marketPriceAction(input: unknown): Promise<{ ok: boolean; 
     console.error("Falha no comparativo de preços:", error);
     return { ok: false, message: "Não foi possível comparar os preços agora. Tente de novo." };
   }
-}
-
-const aiPhotoQuery = z.object({
-  name: z.string().trim().min(3).max(180), brand: z.string().trim().max(100), model: z.string().trim().max(100),
-  color: z.string().trim().max(60), details: z.array(z.string().trim().max(120)).max(8),
-});
-
-/**
- * Sem foto real: a IA desenha duas fotos do produto (frente e outro angulo),
- * guardadas no Storage para entrar na mesma escolha de capa e outro angulo.
- * Recebe o id de um produto salvo ou os dados do cadastro ainda nao salvo.
- */
-export async function aiProductPhotosAction(input: unknown): Promise<{ ok: boolean; message?: string; photos?: OfficialPhoto[] }> {
-  await ownerOrThrow();
-  let consulta: z.infer<typeof aiPhotoQuery>;
-  let pasta = "ia-rascunho";
-  const state = await readCatalogState();
-  // O padrao de Configuracoes vai em toda geracao; vazio volta ao da loja.
-  const padrao = state.settings.aiImagePrompt?.trim() || AI_IMAGE_PROMPT_PADRAO;
-  if (typeof input === "string") {
-    const product = state.products.find((item) => item.id === input.trim());
-    if (!product) return { ok: false, message: "Produto não encontrado." };
-    const meta = state.operations.product_meta[product.id];
-    const cor = product.specifications.find((item) => normalizeText(item.label) === "cor")?.value ?? "";
-    consulta = { name: product.name, brand: product.brand ?? "", model: meta?.model ?? "", color: cor, details: product.specifications.slice(0, 8).map((item) => `${item.label}: ${item.value}`.slice(0, 120)) };
-    pasta = product.id;
-  } else {
-    const parsed = aiPhotoQuery.safeParse(input);
-    if (!parsed.success) return { ok: false, message: "Preencha o nome do produto para gerar as imagens." };
-    consulta = parsed.data;
-  }
-  try {
-    const { front, angle } = await generateProductPhotos(consulta, padrao);
-    const [frente, lado] = await Promise.all([
-      uploadProductImage(pasta, front, "jpg", "image/jpeg"),
-      uploadProductImage(pasta, angle, "jpg", "image/jpeg"),
-    ]);
-    const foto = (url: string): OfficialPhoto => ({ url, pageUrl: "", domain: "Gerada por IA", width: 1024, height: 1024, manufacturer: false, ai: true });
-    return { ok: true, photos: [foto(frente.src), foto(lado.src)] };
-  } catch (error) {
-    if (error instanceof OpenAIWebError) return { ok: false, message: error.message };
-    console.error("Falha ao gerar fotos com IA:", error);
-    return { ok: false, message: "Não foi possível gerar as imagens agora. Tente de novo." };
-  }
-}
-
-function normalizeText(value: string): string {
-  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
-}
-
-const artBenefits = z.array(z.string().trim().min(1).max(70)).min(1).max(5);
-const productArtInput = z.object({
-  // Vazio so na previa do cadastro novo, quando o produto ainda nao existe.
-  productId: z.string().trim().max(200),
-  coverUrl: z.string().trim().url().max(1_000),
-  sideUrl: z.string().trim().url().max(1_000),
-  benefits: artBenefits,
-  mode: z.enum(["preview", "save"]),
-});
-
-type ArtResult = { ok: true; cover: { jpeg: Buffer; enlarged: boolean }; explainer: { jpeg: Buffer; enlarged: boolean } } | { ok: false; message: string };
-
-async function buildArt(coverUrl: string, sideUrl: string, benefits: string[], size: number): Promise<ArtResult> {
-  try {
-    const [fotoCapa, fotoLado] = await Promise.all([downloadPhoto(coverUrl), coverUrl === sideUrl ? null : downloadPhoto(sideUrl)]);
-    const [cover, explainer] = await Promise.all([composeCover(fotoCapa, size), composeExplainer(fotoLado ?? fotoCapa, benefits, size)]);
-    return { ok: true, cover, explainer };
-  } catch (error) {
-    if (error instanceof RemoteFetchError) return { ok: false, message: `Não foi possível baixar uma das fotos (${error.message}). Escolha outra.` };
-    console.error("Falha ao montar as artes do produto:", error);
-    return { ok: false, message: "Não foi possível montar as imagens agora." };
-  }
-}
-
-/** Monta em 2000 × 2000, envia ao Storage e poe no produto, com a capa como foto principal. */
-async function attachProductArt(ownerId: string, productId: string, coverUrl: string, sideUrl: string, benefits: string[]): Promise<{ ok: boolean; message: string; enlarged?: boolean }> {
-  const arte = await buildArt(coverUrl, sideUrl, benefits, 2000);
-  if (!arte.ok) return arte;
-  try {
-    const [capa, explicativa] = await Promise.all([
-      uploadProductImage(productId, arte.cover.jpeg, "jpg", "image/jpeg"),
-      uploadProductImage(productId, arte.explainer.jpeg, "jpg", "image/jpeg"),
-    ]);
-    await mutateCatalogState((draft) => {
-      const product = draft.products.find((item) => item.id === productId);
-      if (!product) throw new Error("Produto não encontrado.");
-      const images = (product.product_images ?? []).map((image) => ({ ...image, is_primary: false }));
-      images.push(
-        { id: randomUUID(), product_id: productId, src: capa.src, storage_path: capa.storagePath, alt: product.name, sort_order: images.length, is_primary: true },
-        { id: randomUUID(), product_id: productId, src: explicativa.src, storage_path: explicativa.storagePath, alt: `${product.name} - vantagens`, sort_order: images.length + 1, is_primary: false },
-      );
-      product.product_images = images;
-      product.updated_at = new Date().toISOString();
-      audit(draft, ownerId, "product.art_generated", "product", productId, null, { coverUrl, sideUrl, benefits, paths: [capa.storagePath, explicativa.storagePath] });
-    });
-    refreshCatalog();
-    return { ok: true, enlarged: arte.cover.enlarged || arte.explainer.enlarged, message: "Capa e imagem explicativa salvas no produto. A capa virou a foto principal." };
-  } catch (error) {
-    console.error("Falha ao salvar as artes do produto:", error);
-    return { ok: false, message: catalogStorageError(error).message ?? "Não foi possível salvar as imagens agora." };
-  }
-}
-
-/**
- * Monta a capa e a imagem explicativa. "preview" devolve as duas pequenas
- * para conferir; "save" poe as duas no produto (ver attachProductArt).
- */
-export async function productArtAction(input: unknown): Promise<{ ok: boolean; message?: string; cover?: string; explainer?: string; enlarged?: boolean }> {
-  const owner = await ownerOrThrow();
-  const parsed = productArtInput.safeParse(input);
-  if (!parsed.success) return { ok: false, message: "Escolha a capa, o outro ângulo e escreva de 1 a 5 vantagens (até 70 caracteres cada)." };
-  const { productId, coverUrl, sideUrl, benefits, mode } = parsed.data;
-  if (mode === "save") {
-    if (!(await readCatalogState()).products.some((item) => item.id === productId)) return { ok: false, message: "Produto não encontrado." };
-    return attachProductArt(owner.id, productId, coverUrl, sideUrl, benefits);
-  }
-  const arte = await buildArt(coverUrl, sideUrl, benefits, 700);
-  if (!arte.ok) return arte;
-  return { ok: true, enlarged: arte.cover.enlarged || arte.explainer.enlarged, cover: `data:image/jpeg;base64,${arte.cover.jpeg.toString("base64")}`, explainer: `data:image/jpeg;base64,${arte.explainer.jpeg.toString("base64")}` };
 }
 
 /** Mesma URL publica que o Storage devolve, montada sem outra ida ao servidor. */
