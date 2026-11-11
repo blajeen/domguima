@@ -27,6 +27,7 @@ export default async function InventoryPage() {
       variant_label: linha.label,
       name: `${product.name} · ${linha.label}`,
       sku: linha.sku,
+      gtin: meta.get(product.id)?.variant_prices?.[linha.id]?.gtin || base.gtin,
       price_cents: linha.price_cents,
       stock: linha.stock,
       image_src: linha.image_src ?? image?.src ?? null,
