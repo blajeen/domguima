@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { AdminProductVariant, VariantPriceMeta } from "@/lib/admin/types";
 import { formatPrice } from "@/lib/utils/format";
+import { isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 /**
  * Grade de variacoes da ficha do produto, no formato que o lojista ja conhece
@@ -21,6 +22,7 @@ interface LinhaEditavel {
   id: string;
   label: string;
   sku: string;
+  gtin: string;
   price: string;
   cost: string;
   oldPrice: string;
@@ -48,7 +50,7 @@ function sugerirSku(skuBase: string, label: string, usados: Set<string>): string
 }
 
 function linhaVazia(): LinhaEditavel {
-  return { id: crypto.randomUUID(), label: "", sku: "", price: "", cost: "", oldPrice: "", stock: "0", active: true, imageSrc: "" };
+  return { id: crypto.randomUUID(), label: "", sku: "", gtin: "", price: "", cost: "", oldPrice: "", stock: "0", active: true, imageSrc: "" };
 }
 
 function reais(cents?: number | null): string {
@@ -69,7 +71,7 @@ export function VariantEditor({
   skuBase: string;
   variantAxis?: string | null;
   variants?: AdminProductVariant[];
-  /** Custo e preco anterior de cada opcao, por id (guardados em product_meta). */
+  /** Custo, preco anterior e GTIN de cada opcao, por id (guardados em product_meta). */
   precosExtras?: Record<string, VariantPriceMeta>;
   /** Fotos ja enviadas do produto: sao elas que o lojista marca por cor. */
   imagens?: Array<{ src: string; alt: string }>;
@@ -84,6 +86,7 @@ export function VariantEditor({
           id: item.id,
           label: item.label,
           sku: item.sku,
+          gtin: precosExtras[item.id]?.gtin ?? "",
           price: (item.price_cents / 100).toFixed(2),
           cost: reais(precosExtras[item.id]?.cost_cents),
           oldPrice: reais(precosExtras[item.id]?.old_price_cents),
@@ -112,6 +115,7 @@ export function VariantEditor({
           id: linha.id,
           label: linha.label.trim(),
           sku: linha.sku.trim().toUpperCase(),
+          gtin: linha.gtin,
           priceCents: Math.round(Number(linha.price) * 100),
           costCents: Number(linha.cost) > 0 ? Math.round(Number(linha.cost) * 100) : null,
           // Preco anterior so vale acima do preco, a mesma regra do produto.
@@ -162,7 +166,7 @@ export function VariantEditor({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-ink-500">
                 <tr>
                   <th className="pb-2 pr-3 font-bold">{eixo.trim() || "Opção"}</th>
@@ -171,6 +175,7 @@ export function VariantEditor({
                   <th className="pb-2 pr-3 font-bold">Preço anterior</th>
                   <th className="pb-2 pr-3 font-bold">Estoque</th>
                   <th className="pb-2 pr-3 font-bold">SKU</th>
+                  <th className="pb-2 pr-3 font-bold">EAN / GTIN</th>
                   <th className="pb-2 pr-3 font-bold">Foto</th>
                   <th className="pb-2 pr-3 font-bold">Ativa</th>
                   <th className="pb-2" />
@@ -220,6 +225,16 @@ export function VariantEditor({
                           placeholder={sugerirSku(skuBase, linha.label, skusUsados) || "DG-ELT-002-PRETO"}
                           className={`${campo} font-mono text-xs ${skuRepetido ? "border-red-300 bg-red-50" : ""}`}
                           aria-label="SKU da opção" />
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <input value={linha.gtin}
+                          onChange={(event) => alterar(linha.id, { gtin: onlyDigits(event.target.value).slice(0, 14) })}
+                          ref={(input) => {
+                            input?.setCustomValidity(linha.gtin && !isValidGTIN(linha.gtin) ? "Informe um EAN/GTIN válido ou deixe o campo vazio." : "");
+                          }}
+                          inputMode="numeric" maxLength={14} placeholder="Código de barras"
+                          className={`${campo} min-w-[9rem] font-mono text-xs`}
+                          aria-label={`EAN / GTIN da opção ${linha.label || "nova"}`} />
                       </td>
                       <td className="py-1.5 pr-3">
                         {imagens.length === 0 ? (

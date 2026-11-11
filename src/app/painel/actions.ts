@@ -144,6 +144,11 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
   // os do produto passam a ser os da opcao mais barata.
   const variacoes = parseVariantRows(formData.get("variantRows"), id);
   if (formData.get("hasVariants") === "1" && !variacoes) return { message: "Preencha nome, preço e SKU de pelo menos uma variação, ou desmarque “Este produto tem variações”." };
+  const gtinInvalido = variacoes?.rows.find((linha) => {
+    const codigo = variacoes.extras[linha.id]?.gtin;
+    return codigo && !isValidGTIN(codigo);
+  });
+  if (gtinInvalido) return { message: `Informe um EAN/GTIN válido para a variação “${gtinInvalido.label}” ou deixe o campo vazio.` };
   const ativasDoForm = variacoes?.rows.filter((linha) => linha.active) ?? [];
   const maisBarata = [...(ativasDoForm.length ? ativasDoForm : variacoes?.rows ?? [])].sort((a, b) => a.price_cents - b.price_cents)[0];
   const extraDaMaisBarata = maisBarata ? variacoes!.extras[maisBarata.id] : undefined;
@@ -1181,6 +1186,7 @@ const variantRowInput = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(60),
   sku: z.string().trim().min(2).max(60),
+  gtin: z.string().transform(onlyDigits).optional(),
   priceCents: z.number().int().positive().max(100_000_000),
   costCents: z.number().int().positive().max(100_000_000).nullable().optional(),
   oldPriceCents: z.number().int().positive().max(100_000_000).nullable().optional(),
@@ -1221,6 +1227,7 @@ function parseVariantRows(raw: FormDataEntryValue | null, productId: string): { 
       image_src: linha.imageSrc || null,
     });
     extras[linha.id] = {
+      gtin: linha.gtin,
       cost_cents: linha.costCents ?? null,
       // Mesma regra do produto: preco anterior so vale acima do preco.
       old_price_cents: linha.oldPriceCents && linha.oldPriceCents > linha.priceCents ? linha.oldPriceCents : null,
