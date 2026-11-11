@@ -142,7 +142,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits, parcelam
   }
 
   function exportExcel() {
-    const header = ["nome_produto", "sku", "estoque", "valor_real", "valor_promocional", "parcelado_no_site (calculado)"];
+    const header = ["nome_produto", "sku", "gtin", "estoque", "valor_real", "valor_promocional", "parcelado_no_site (calculado)"];
     const lines = sheetProducts.map((product) => {
       const draft = drafts[product.id];
       const real = product.old_price_cents ?? product.price_cents;
@@ -150,8 +150,9 @@ export function InventorySpreadsheet({ products, movements, todayUnits, parcelam
       // Só informativo: o site calcula o parcelado sozinho pela tabela da
       // maquininha (Configurações), e a importação ignora esta coluna.
       const parcelado = parcelamentoMaximo(product.price_cents, parcelamento);
+      // GTIN como ="..." para o Excel nao virar 7,89E+12; a importacao ignora a coluna.
       const installment = parcelado ? `${parcelado.count}x de ${formatPrice(parcelado.value)}` : "";
-      return [product.name, product.sku, draft.stock, formatPrice(real), promo === "" ? "" : formatPrice(Number(promo)), installment].map(csvCell).join(";");
+      return [product.name, product.sku, product.gtin ? `="${product.gtin}"` : "", draft.stock, formatPrice(real), promo === "" ? "" : formatPrice(Number(promo)), installment].map(csvCell).join(";");
     });
     const blob = new Blob(["\uFEFF", [header.map(csvCell).join(";"), ...lines].join("\r\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

@@ -534,6 +534,8 @@ export interface InventorySheetProduct {
   variant_label: string | null;
   name: string;
   sku: string;
+  /** GTIN do cadastro (anotacoes operacionais); vazio quando nao foi preenchido. */
+  gtin: string;
   price_cents: number;
   old_price_cents: number | null;
   stock: number;
