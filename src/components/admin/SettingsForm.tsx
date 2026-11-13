@@ -10,9 +10,9 @@ import { FormMessage, SubmitButton, fieldClass, labelClass } from "./FormControl
 
 const distributionModes = Object.keys(LEAD_DISTRIBUTION_MODE_LABELS) as LeadDistributionMode[];
 
-export function SettingsForm({ settings }: { settings: StoreSettings }) {
+export function SettingsForm({ settings, section = "all" }: { settings: StoreSettings; section?: "all" | "store" | "installments" }) {
   const [state, action] = useActionState(saveSettingsAction, {});
-  return <form action={action} className="space-y-5"><div className="grid gap-4 sm:grid-cols-2">
+  return <form action={action} className="space-y-5"><div hidden={section === "installments"}><div className="grid gap-4 sm:grid-cols-2">
     <Field name="supportEmail" label="E-mail de atendimento" value={settings.supportEmail} type="email" />
     <Field name="supportHours" label="Horario de atendimento" value={settings.supportHours} placeholder="Seg a sex, 9h as 18h" />
     <Field name="cnpj" label="CNPJ" value={settings.cnpj} />
@@ -31,7 +31,7 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
       </select>
       <span className="mt-1 block font-normal text-ink-500">Vale para os cliques de WhatsApp do site, o pedido rápido e os pedidos do checkout. No rodízio ou em “menos atendimentos em aberto”, o cliente vê um botão único e a loja escolhe quem recebe; no checkout completo o pedido já chega com o atendente definido (em “cliente escolhe”, ele entra na fila livre). Quem entra na distribuição é definido em “Atendentes”, abaixo. “Menos atendimentos em aberto” entrega para quem tem menos atendimentos nas etapas Novo, Em atendimento, Orçamento enviado e Aguardando pagamento — o mesmo número “em aberto” da tela de Atendimento — e desempata pelo rodízio. Para a conta ficar justa, marque cada conversa como Ganho ou Perdido em Atendimento ao encerrá-la (pedido confirmado ou cancelado fecha sozinho); um clique no WhatsApp que ninguém fechou continua contando como carga de quem o recebeu.</span>
     </label>
-  </div><ParcelamentoFields inicial={lerParcelamento(settings)} /><FormMessage state={state} /><SubmitButton>Salvar configuracoes</SubmitButton></form>;
+  </div></div><div hidden={section === "store"}><ParcelamentoFields inicial={lerParcelamento(settings)} /></div><FormMessage state={state} /><SubmitButton>Salvar configurações</SubmitButton></form>;
 }
 
 /**

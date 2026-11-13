@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import type { BusinessDashboardData } from "@/lib/admin/dashboard-period";
 import { formatPrice } from "@/lib/utils/format";
+import { MonthlyTargetForm } from "./BusinessForms";
 
 const tabs = [{ key: "sales", label: "Vendas" }, { key: "operations", label: "Operação" }, { key: "channels", label: "Canais" }] as const;
 type Tab = typeof tabs[number]["key"];
@@ -37,6 +38,8 @@ export function BusinessDashboard({ data }: { data: BusinessDashboardData }) {
         <Metric label="Ticket médio" value={formatPrice(totals.orders ? Math.round(totals.salesCents / totals.orders) : 0)} />
         <Metric label="Itens vendidos" value={String(totals.units)} />
       </div>
+      <details className="business-goal"><summary>{data.monthlyTargetCents ? `Meta do mês: ${formatPrice(data.monthlyTargetCents)} · ${(totals.salesCents / data.monthlyTargetCents * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% atingida` : "Definir meta do mês"}</summary><MonthlyTargetForm month={data.from.slice(0,7)} cents={data.monthlyTargetCents ?? 0} /></details>
+      {!!data.monthlyTargetCents && <progress className="business-goal-progress" max={data.monthlyTargetCents} value={Math.min(totals.salesCents, data.monthlyTargetCents)} aria-label="Progresso da meta mensal" />}
       <SalesChart data={data} />
       <p className="business-footnote">Valores acumulados por data do pedido. Pendentes e cancelados ficam fora do faturamento.</p>
     </div>
@@ -81,7 +84,7 @@ function SalesChart({ data }: { data: BusinessDashboardData }) {
       <path d={previous} fill="none" stroke="var(--color-ink-400)" strokeWidth="2" strokeDasharray="5 5" />
       <path d={current} fill="none" stroke="var(--color-gold-600)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       {[0, Math.floor((data.series.length - 1) / 2), data.series.length - 1].filter((value, index, list) => list.indexOf(value) === index).map(index => <text key={index} x={x(index)} y={height - 4} textAnchor="middle" className="business-axis">{data.series[index].label}</text>)}
-      {data.series.map((row, index) => <circle key={row.day} cx={x(index)} cy={y(row.salesCents)} r={selected === index ? 4 : 2} fill="var(--color-gold-600)" onMouseEnter={() => setSelected(index)}><title>{row.label}: {formatPrice(row.salesCents)}</title></circle>)}
+      {data.series.map((row, index) => <circle key={row.day} cx={x(index)} cy={y(row.salesCents)} r={selected === index ? 4 : 2} fill="var(--color-gold-600)" onMouseEnter={() => setSelected(index)}><title>{`${row.label}: ${formatPrice(row.salesCents)}`}</title></circle>)}
     </svg>
     <div className="business-point-detail"><span>Até {point.label}</span><strong>{formatPrice(point.salesCents)}</strong><span>Anterior: {point.previousCents === null ? "—" : formatPrice(point.previousCents)}</span></div>
     <label className="business-chart-slider">Consultar dia <input type="range" min={0} max={data.series.length - 1} disabled={data.series.length === 1} value={selected} onChange={event => setSelected(Number(event.target.value))} aria-label="Dia do gráfico de faturamento" /></label>

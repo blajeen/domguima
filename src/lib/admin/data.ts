@@ -2,6 +2,7 @@ import "server-only";
 
 import { readCatalogState, type CatalogState } from "./catalog-store";
 import { dashboardPeriods, type BusinessDashboardData } from "./dashboard-period";
+import { incompleteProduct } from "./catalog-insights";
 import { channelSummaries, reportTotals } from "./reports";
 import { buildCustomerIndex, customerSummaries, lookupCustomerPurchases, recentBuyers, RECENT_BUYERS_DAYS, repurchaseSuggestions, type CustomerIndex } from "./customers";
 import { lerParcelamento, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
@@ -125,6 +126,7 @@ export async function getDashboardData() {
   const { currentOrders, previousOrders, comparisonCurrentOrders, ...period } = dashboardPeriods(state.operations.orders);
   const business: BusinessDashboardData = {
     ...period,
+    monthlyTargetCents: state.operations.business?.monthlyTargets?.[period.from.slice(0,7)] ?? 0,
     totals: reportTotals(currentOrders),
     comparisonSalesCents: reportTotals(comparisonCurrentOrders).salesCents,
     previousSalesCents: reportTotals(previousOrders).salesCents,
@@ -171,7 +173,7 @@ export async function getDashboardData() {
     archived: products.filter((item) => item.status === "archived").length,
     outOfStock: products.filter((item) => item.status !== "archived" && item.stock === 0).length,
     lowStock: products.filter((item) => item.status !== "archived" && item.stock > 0 && item.stock <= item.low_stock_threshold).length,
-    incomplete: products.filter((item) => !item.name || !item.sku || !item.description || item.price_cents <= 0 || !item.product_images?.length).length,
+    incomplete: products.filter(incompleteProduct).length,
     pendingOrders,
     /** Janela, em dias, dos dois números abaixo. */
     recentBuyersDays: RECENT_BUYERS_DAYS,

@@ -336,6 +336,8 @@ export interface SellerRecord {
 }
 
 export interface ProductOperationalMeta {
+  /** Optional promotion visibility dates, inclusive in São Paulo. Prices remain as entered. */
+  offer_schedule?: { starts: string; ends: string };
   ncm: string;
   cost_cents: number | null;
   model: string;
@@ -383,6 +385,8 @@ export interface OrderCustomerSnapshot {
 }
 
 export interface SalesOrderItem {
+  /** Cost captured when the order is created; absent on historical orders. */
+  cost_unit_cents?: number | null;
   product_id: string;
   product_name: string;
   sku: string;
@@ -442,6 +446,8 @@ export const UNASSIGNED_ORDER_SELLER_ID = "pending";
 export const UNASSIGNED_ORDER_SELLER_NAME = "Aguardando definicao";
 
 export interface AdminOperationsState {
+  crm_workflow?: import("./crm-workflow-types").CrmWorkflowState;
+  business?: import("./business-insights").BusinessSettings;
   sellers: SellerRecord[];
   orders: SalesOrderRecord[];
   product_meta: Record<string, ProductOperationalMeta>;

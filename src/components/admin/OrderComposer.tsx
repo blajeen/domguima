@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { createOrderAction, customerPurchasesAction } from "@/app/painel/actions";
 import { commissionForUnit } from "@/lib/admin/commission";
 import { customerIdentities } from "@/lib/admin/customers";
@@ -104,12 +103,12 @@ interface OrderComposerProps {
 const ESPERA_DA_CONSULTA_MS = 400;
 
 export function OrderComposer({ products, sellers, taxas, lead = null, returnTo }: OrderComposerProps) {
-  const router = useRouter();
   const ativos = sellers.filter((seller) => seller.active);
   // Com atendimento de origem, o vendedor sugerido é quem já atende o cliente.
   const [sellerId, setSellerId] = useState((lead?.sellerId && ativos.some((seller) => seller.id === lead.sellerId) ? lead.sellerId : null) ?? ativos[0]?.id ?? "");
   const [customer, setCustomer] = useState(lead ? { ...emptyCustomer, name: lead.customerName, phone: formatPhone(lead.customerPhone) } : emptyCustomer);
   const [notes, setNotes] = useState("");
+  const [saleMode, setSaleMode] = useState<"delivery" | "counter">("delivery");
   // WhatsApp + Direto: o caminho mais comum de uma venda lançada à mão. O
   // operador troca quando foi na loja física ou veio pelo Instagram. Vindo de
   // um atendimento, valem o canal e a origem dele.
@@ -210,6 +209,7 @@ export function OrderComposer({ products, sellers, taxas, lead = null, returnTo 
     startTransition(async () => {
       const result = await createOrderAction({
         requestId,
+        saleMode,
         sellerId,
         customer: { ...customer, cpf: onlyDigits(customer.cpf), phone: onlyDigits(customer.phone), cep: onlyDigits(customer.cep) },
         notes,
@@ -226,8 +226,12 @@ export function OrderComposer({ products, sellers, taxas, lead = null, returnTo 
       // vermelha (`erro`), não junto do sucesso.
       if (lead && returnTo) {
         const aviso = result.warning ? `&erro=${encodeURIComponent(result.warning)}` : "";
-        router.push(`${returnTo}${returnTo.includes("?") ? "&" : "?"}feito=${encodeURIComponent(result.message ?? "")}${aviso}`);
-      } else router.push(`/painel/pedidos?criado=${encodeURIComponent(result.orderId)}`);
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Navegação completa evita a corrida entre revalidatePath da ação e o router, observada no QA.
+        window.location.assign(`${returnTo}${returnTo.includes("?") ? "&" : "?"}feito=${encodeURIComponent(result.message ?? "")}${aviso}`);
+      } else {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Navegação completa evita deixar o formulário aberto após a venda já salva.
+        window.location.assign(`/painel/pedidos?criado=${encodeURIComponent(result.orderId)}${result.warning ? `&erro=${encodeURIComponent(result.warning)}` : ""}`);
+      }
     });
   }
 
@@ -236,10 +240,12 @@ export function OrderComposer({ products, sellers, taxas, lead = null, returnTo 
       {lead && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-800"><strong>Pedido do atendimento de {lead.customerName || "cliente sem nome"}</strong> ({lead.kindLabel}). Ao finalizar, o atendimento fica vinculado a este pedido e passa para Ganho.</div>}
       <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black">Cliente e entrega</h2><p className="mt-1 text-xs text-ink-500">Os dados ficam registrados como estavam no momento da venda.</p></div><span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700">CEP com preenchimento automático</span></div>
+        <label className={`${labelClass} mt-4`}>Tipo de venda<select value={saleMode} onChange={event => { const mode = event.target.value as typeof saleMode; setSaleMode(mode); if (mode === "counter") { setChannel("store"); setSource("store"); } }} className={fieldClass}><option value="delivery">Pedido com entrega</option><option value="counter">Venda no balcão / retirada</option></select></label>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label className={`${labelClass} sm:col-span-2`}>Nome completo<input required value={customer.name} onChange={(event) => updateCustomer("name", event.target.value)} className={fieldClass} /></label>
-          <label className={labelClass}>CPF<input required inputMode="numeric" value={customer.cpf} onChange={(event) => updateCustomer("cpf", formatDocument(event.target.value))} placeholder="000.000.000-00" className={fieldClass} /></label>
+          <label className={labelClass}>CPF{saleMode === "counter" && <span className="font-normal"> (opcional)</span>}<input required={saleMode === "delivery"} inputMode="numeric" value={customer.cpf} onChange={(event) => updateCustomer("cpf", formatDocument(event.target.value))} placeholder="000.000.000-00" className={fieldClass} /></label>
           <label className={labelClass}>Telefone <span className="font-normal text-ink-400">(opcional)</span><input inputMode="tel" value={customer.phone} onChange={(event) => updateCustomer("phone", formatPhone(event.target.value))} className={fieldClass} /></label>
+          {saleMode === "delivery" && <>
           <label className={labelClass}>CEP<div className="mt-1.5 flex gap-2"><input required inputMode="numeric" value={customer.cep} onChange={(event) => updateCustomer("cep", formatCep(event.target.value))} onBlur={() => { if (onlyDigits(customer.cep).length === 8 && !customer.street) void lookupCep(); }} placeholder="00000-000" className="min-w-0 flex-1 rounded-lg border border-ink-200 px-3 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-100" /><button type="button" onClick={() => void lookupCep()} className="rounded-lg border border-ink-200 px-3 text-xs font-bold hover:border-gold-400">Buscar</button></div>{cepStatus && <span className="mt-1 block font-normal text-ink-500">{cepStatus}</span>}</label>
           <label className={`${labelClass} sm:col-span-2`}>Endereço<input required value={customer.street} onChange={(event) => updateCustomer("street", event.target.value)} className={fieldClass} /></label>
           <label className={labelClass}>Número<input required value={customer.number} onChange={(event) => updateCustomer("number", event.target.value)} className={fieldClass} /></label>
@@ -247,6 +253,7 @@ export function OrderComposer({ products, sellers, taxas, lead = null, returnTo 
           <label className={labelClass}>Bairro<input required value={customer.neighborhood} onChange={(event) => updateCustomer("neighborhood", event.target.value)} className={fieldClass} /></label>
           <label className={labelClass}>Cidade<input required value={customer.city} onChange={(event) => updateCustomer("city", event.target.value)} className={fieldClass} /></label>
           <label className={labelClass}>Estado<input required maxLength={2} value={customer.state} onChange={(event) => updateCustomer("state", event.target.value.toUpperCase())} className={fieldClass} /></label>
+          </>}
         </div>
         {/* Aba nova para o histórico: sair desta tela perderia o pedido em montagem. */}
         {avisoDeRecorrencia && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"><strong>Cliente recorrente.</strong> {avisoDeRecorrencia} {recorrencia?.reference && <a href={`/painel/clientes?cliente=${encodeURIComponent(recorrencia.reference)}`} target="_blank" rel="noopener noreferrer" className="font-bold underline">Ver histórico</a>}</p>}

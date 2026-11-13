@@ -26,6 +26,7 @@ import {
 import { commissionForUnit } from "./commission";
 
 export interface CreateOrderInput {
+  saleMode?: "delivery" | "counter";
   requestId: string;
   sellerId: string;
   customer: OrderCustomerSnapshot;
@@ -151,6 +152,7 @@ export async function createSalesOrder(state: CatalogState, input: CreateOrderIn
     delivery_method: "shipping_to_confirm",
     customer: input.customer,
     items: prepared.map(({ product, opcao, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
+      cost_unit_cents: opcao ? state.operations.product_meta[product.id]?.variant_prices?.[opcao.id]?.cost_cents ?? null : state.operations.product_meta[product.id]?.cost_cents ?? null,
       product_id: product.id,
       product_name: product.name,
       sku: opcao?.sku ?? product.sku,
@@ -264,6 +266,7 @@ export async function createPendingSalesOrder(state: CatalogState, input: Create
     delivery_method: input.deliveryMethod,
     customer: input.customer,
     items: prepared.map(({ product, opcao, quantity, variant, precoUnitario, lineTotal, commissionUnit }) => ({
+      cost_unit_cents: opcao ? state.operations.product_meta[product.id]?.variant_prices?.[opcao.id]?.cost_cents ?? null : state.operations.product_meta[product.id]?.cost_cents ?? null,
       product_id: product.id,
       product_name: product.name,
       sku: opcao?.sku ?? product.sku,
@@ -598,6 +601,7 @@ export async function createChannelSalesOrder(state: CatalogState, input: Channe
       complement: "", neighborhood: "", city: "", state: "",
     },
     items: prepared.map(({ product, opcao, quantity, unitPriceCents, lineTotal, gross, commissionUnit }) => ({
+      cost_unit_cents: opcao ? state.operations.product_meta[product.id]?.variant_prices?.[opcao.id]?.cost_cents ?? null : state.operations.product_meta[product.id]?.cost_cents ?? null,
       product_id: product.id,
       product_name: product.name,
       sku: opcao?.sku ?? product.sku,

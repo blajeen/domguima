@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { WhatsAppChooser } from "@/components/layout/WhatsAppChooser";
 import { Button } from "@/components/ui/Button";
@@ -204,6 +205,7 @@ export function ProductPurchase({
       )}
 
       {/* Ações: um principal e, abaixo, o carrinho em contorno. */}
+      <p className="rounded-control border border-fio bg-ink-50 p-3 text-xs leading-relaxed text-ink-600">Enviamos para todo o Brasil. Valor do frete e prazo são confirmados pela equipe antes de qualquer cobrança. <Link href="/institucional/frete-e-entrega" className="font-bold underline">Ver entrega e retirada</Link>.</p>
       <div ref={acoesRef} className="space-y-2.5">
         <Button onClick={buyNow} disabled={outOfStock} size="lg" fullWidth>
           {outOfStock ? "Indisponível" : "Comprar agora"}

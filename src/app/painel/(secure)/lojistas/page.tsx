@@ -8,7 +8,7 @@ import { VendaLojistasForm } from "@/components/admin/lojistas/VendaLojistasForm
 import { company, whatsapp } from "@/config/site";
 import { getOwner } from "@/lib/admin/auth";
 import { formatPrice } from "@/lib/utils/format";
-import { getAdminProducts, getStoreSettings, getVendaLojistas } from "@/lib/admin/data";
+import { getAdminProducts, getAllProductOperationalMeta, getStoreSettings, getVendaLojistas } from "@/lib/admin/data";
 import { especiaisAcimaDoDesconto, especiaisForaDaTabela, formatarDesconto, itensSemPrecoParaLojistas, linhasParaLojistas, mostraPrecoSite } from "@/lib/admin/lojistas";
 
 // O título da aba vira o nome sugerido do arquivo em "Salvar como PDF": sem o
@@ -29,8 +29,9 @@ export default async function LojistasPage() {
   const owner = await getOwner();
   if (!owner?.principal) notFound();
 
-  const [produtos, venda, settings] = await Promise.all([getAdminProducts(), getVendaLojistas(), getStoreSettings()]);
+  const [produtos, venda, settings, meta] = await Promise.all([getAdminProducts(), getVendaLojistas(), getStoreSettings(), getAllProductOperationalMeta()]);
   const linhas = linhasParaLojistas(produtos, venda);
+  const costs = Object.fromEntries(linhas.map(linha => { const variant = linha.chave.split("::")[1]; const productMeta = meta.get(linha.produtoId); return [linha.chave, variant ? productMeta?.variant_prices?.[variant]?.cost_cents ?? null : productMeta?.cost_cents ?? null]; }));
   const semPreco = itensSemPrecoParaLojistas(produtos);
   const guardados = especiaisForaDaTabela(produtos, venda, linhas);
   const acima = especiaisAcimaDoDesconto(linhas);
@@ -64,7 +65,7 @@ export default async function LojistasPage() {
           </p>
         )}
         <EspeciaisForaDaTabela itens={guardados} />
-        <PrecosEspeciais linhas={linhas} descontoRotulo={descontoRotulo} mostrarPrecoSite={mostrarPrecoSite} />
+        <PrecosEspeciais costs={costs} linhas={linhas} descontoRotulo={descontoRotulo} mostrarPrecoSite={mostrarPrecoSite} />
       </PanelCard>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>

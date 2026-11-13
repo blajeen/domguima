@@ -172,7 +172,7 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
     // o livro-razao e reintroduzir a perda de pedido concorrente.
     // Toda chave nova de operations entra nesta lista: o que ficar de fora nao
     // e gravado e some no proximo save (a venda para lojistas entrou aqui).
-    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs, lojistas: state.operations.lojistas };
+    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs, lojistas: state.operations.lojistas, crm_workflow: state.operations.crm_workflow, business: state.operations.business };
     const persistedState = {
       ...state,
       settings: { ...state.settings, __operations: operationsSemPedidos },
@@ -204,13 +204,45 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
  */
 let mutationQueue: Promise<unknown> = Promise.resolve();
 
-export function mutateCatalogState(change: (state: CatalogState) => void | Promise<void>): Promise<CatalogState> {
+export function mutateCatalogState(change: (state: CatalogState) => void | Promise<void>, options: { privateOnly?: boolean } = {}): Promise<CatalogState> {
   const run = async (): Promise<CatalogState> => {
+    if (options.privateOnly && hasSupabaseConfig()) {
+      // Notes, goals and campaign expenses must never rewrite products or stock.
+      // Compare-and-swap protects the private JSON against concurrent saves.
+      const db = createSupabaseAdminClient();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: row, error: readError } = await db.from("store_settings").select("settings,updated_at").eq("id", "store").maybeSingle();
+        if (readError || !row) throw new Error("Não foi possível ler as configurações da loja.");
+        const state = structuredClone(await readCatalogState(true));
+        const original = structuredClone(state.operations);
+        const originalLogs = new Set(state.auditLogs.map(log => log.id));
+        await change(state);
+        const persisted = row.settings as Record<string, unknown>;
+        const privateData = { ...(persisted.__operations as Record<string, unknown> ?? {}) };
+        for (const key of ["sellers", "product_meta", "contact_opt_outs", "lojistas", "crm_workflow", "business"] as const) {
+          if (JSON.stringify(state.operations[key]) !== JSON.stringify(original[key])) privateData[key] = state.operations[key];
+        }
+        const updatedAt = new Date(Math.max(Date.now(), Date.parse(row.updated_at) + 1)).toISOString();
+        const { data: saved, error } = await db.from("store_settings").update({ settings: { ...persisted, __operations: privateData }, updated_at: updatedAt }).eq("id", "store").eq("updated_at", row.updated_at).select("id");
+        if (error) throw new Error("Não foi possível salvar as configurações da loja.");
+        if (!saved?.length) continue;
+        const logs = state.auditLogs.filter(log => !originalLogs.has(log.id));
+        if (logs.length) {
+          const { error: auditError } = await db.from("audit_logs").insert(logs);
+          if (auditError) console.warn("Anotação salva, mas o histórico não pôde ser registrado.", auditError.code);
+        }
+        invalidarCacheRemoto();
+        return state;
+      }
+      throw new Error("As configurações mudaram em outra sessão. Tente novamente.");
+    }
     // Leitura fresca: nunca partir do cache para escrever.
     const state = structuredClone(await readCatalogState(true));
     await change(state);
-    state.catalogEnabled = true;
-    state.settings.catalogEnabled = true;
+    if (!options.privateOnly) {
+      state.catalogEnabled = true;
+      state.settings.catalogEnabled = true;
+    }
     await writeCatalogState(state);
     return state;
   };
@@ -435,6 +467,8 @@ export function defaultOperationsState(): AdminOperationsState {
     sellers: defaultSellers(),
     orders: [],
     product_meta: {},
+    crm_workflow: {},
+    business: { monthlyTargets: {}, campaignBudgets: {}, orderCosts: {} },
     contact_opt_outs: [],
     lojistas: normalizarVendaLojistas(null),
   };
@@ -454,6 +488,8 @@ function normalizeOperations(value?: Partial<AdminOperationsState> | null): Admi
     // origem com o valor padrao ("nao informado").
     orders: canonicalizeOrderSellers((Array.isArray(value?.orders) ? value.orders : []).map(normalizeOrderOrigin), sellers),
     product_meta: value?.product_meta && typeof value.product_meta === "object" ? value.product_meta : {},
+    crm_workflow: value?.crm_workflow && typeof value.crm_workflow === "object" ? value.crm_workflow : {},
+    business: value?.business && typeof value.business === "object" ? value.business : { monthlyTargets: {}, campaignBudgets: {}, orderCosts: {} },
     // Gravado antes desta lista existir = ninguem pediu para sair. So digitos,
     // sem repetir: e o formato das identidades de customers.ts.
     contact_opt_outs: normalizeContactOptOuts(value?.contact_opt_outs),

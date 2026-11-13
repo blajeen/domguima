@@ -3,6 +3,9 @@ import { CatalogView } from "@/components/catalog/CatalogView";
 import { parseFilterState, parseSort, priceRangesFor, toProductFilters } from "@/lib/catalog/filters";
 import { getBrands, getOffers, queryProducts } from "@/lib/catalog/queries";
 
+// Refresh time-based selections and offer periods within five minutes.
+export const revalidate = 300;
+
 export const metadata: Metadata = {
   title: "Ofertas",
   description:

@@ -18,7 +18,7 @@ export function DailyOrdersChart({ data }: { data: BusinessDashboardData }) {
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Pedidos finalizados por dia, de ${period}. ${total} pedidos no período. Hoje: ${today.orders}.`}>
       {[0, max].map(value => <g key={value}><line x1={left} x2={width - right} y1={y(value)} y2={y(value)} stroke="var(--color-ink-100)" /><text x={left - 7} y={y(value) + 3} textAnchor="end" className="business-axis">{value}</text></g>)}
       <path d={path} fill="none" stroke="var(--color-ink-600)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((point, index) => <circle key={point.day} cx={x(index)} cy={y(point.orders)} r={points.length === 1 || index === points.length - 1 ? 3.5 : 2.5} fill="var(--color-gold-600)"><title>{point.label}: {point.orders} pedido(s) finalizado(s)</title></circle>)}
+      {points.map((point, index) => <circle key={point.day} cx={x(index)} cy={y(point.orders)} r={points.length === 1 || index === points.length - 1 ? 3.5 : 2.5} fill="var(--color-gold-600)"><title>{`${point.label}: ${point.orders} pedido(s) finalizado(s)`}</title></circle>)}
       {[0, Math.floor((points.length - 1) / 2), points.length - 1].filter((value, index, all) => all.indexOf(value) === index).map(index => <text key={index} x={x(index)} y={height - 3} textAnchor="middle" className="business-axis">{points[index].label}</text>)}
     </svg>
     <p className="daily-orders-note">Até 14 dias do mês, pela data do pedido. Dias sem pedidos excluem hoje, ainda em andamento.</p>

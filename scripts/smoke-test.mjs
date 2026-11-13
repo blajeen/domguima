@@ -178,7 +178,8 @@ else fail("carrinho não persistiu");
 console.log("\n▸ Checkout");
 await page.goto(`${BASE}/checkout`, { waitUntil: "networkidle" });
 await page.waitForTimeout(500);
-if (await page.getByRole("button", { name: "Enviar pedido" }).isVisible() && !(await page.getByRole("button", { name: /WhatsApp/ }).count())) pass("checkout oferece um único envio pelo site");
+const checkoutForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Enviar pedido" }) });
+if (await checkoutForm.getByRole("button", { name: "Enviar pedido" }).isVisible() && !(await checkoutForm.getByRole("button", { name: /WhatsApp/ }).count())) pass("checkout oferece um único envio pelo site");
 else fail("checkout ainda exibe mais de um fluxo de envio");
 await page.getByRole("button", { name: "Enviar pedido" }).click();
 await page.waitForTimeout(400);
@@ -188,9 +189,13 @@ const errors = await page.locator('[aria-invalid="true"]').count();
 if (errors >= 8) pass(`validação bloqueia envio incompleto (${errors} campos)`);
 else fail(`validação mostrou só ${errors} erros`);
 
+// Deterministic API responses exercise filling the real checkout form without
+// making a local regression test depend on an external provider's availability.
+await context.route("https://viacep.com.br/ws/38400100/json/", route => route.fulfill({ json: { cep: "38400-100", logradouro: "Rua de teste", bairro: "Centro", localidade: "Uberlândia", uf: "MG" } }));
+await context.route("https://brasilapi.com.br/api/cep/v1/38400100", route => route.fulfill({ json: { cep: "38400100", street: "Rua de teste", neighborhood: "Centro", city: "Uberlândia", state: "MG" } }));
 await page.fill("#cep", "38400100");
 await page.locator("#cep").blur();
-await page.waitForTimeout(3000);
+await page.waitForFunction(() => document.querySelector("#city")?.value?.toLowerCase().includes("uberl"), { timeout: 5000 });
 const city = await page.inputValue("#city");
 if (city.toLowerCase().includes("uberl")) pass(`CEP preenche endereço (${city})`);
 else fail(`CEP não preencheu a cidade (recebido: "${city}")`);

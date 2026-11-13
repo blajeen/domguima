@@ -1,0 +1,11 @@
+"use client";
+import { useId, useRef, useState } from "react";
+import type { SellerRecord, StoreSettings } from "@/lib/admin/types";
+import { ImportCatalogForm, SettingsForm } from "./SettingsForm";
+import { SellersForm } from "./SellersForm";
+
+const tabs = ["Loja", "Atendentes", "Parcelamento", "Importação"];
+export function SettingsWorkspace({ settings, sellers, orderCounts, storeWhatsappDisplay }: { settings: StoreSettings; sellers: SellerRecord[]; orderCounts: Record<string, number>; storeWhatsappDisplay: string }) {
+  const [active, setActive] = useState(0), id = useId(), buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  return <><div role="tablist" aria-label="Configurações da loja" className="mb-5 flex flex-wrap gap-2">{tabs.map((tab, index) => <button key={tab} ref={element => { buttons.current[index] = element; }} type="button" role="tab" id={`${id}-tab-${index}`} aria-selected={active === index} aria-controls={`${id}-panel`} tabIndex={active === index ? 0 : -1} onClick={() => setActive(index)} onKeyDown={event => { const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null; if (next !== null) { event.preventDefault(); setActive(next); buttons.current[next]?.focus(); } }} className={`rounded-lg border px-4 py-2 text-sm font-bold ${active === index ? "border-gold-400 bg-gold-50 text-ink-900" : "border-ink-200 bg-white text-ink-500"}`}>{tab}</button>)}</div><section role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${active}`} className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card"><h2 className="mb-4 text-lg font-black">{tabs[active]}</h2><div hidden={active !== 0 && active !== 2}><SettingsForm settings={settings} section={active === 2 ? "installments" : "store"} /></div><div hidden={active !== 1}><p className="mb-4 text-sm text-ink-500">Atendentes do site e dos pedidos. Sem WhatsApp próprio, usam o número principal da loja.</p><SellersForm sellers={sellers} orderCounts={orderCounts} storeWhatsappDisplay={storeWhatsappDisplay} /></div><div hidden={active !== 3}><ImportCatalogForm /></div></section></>;
+}

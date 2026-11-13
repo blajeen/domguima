@@ -84,6 +84,7 @@ export default async function DashboardPage() {
         </PanelCard>
         <PanelCard>
           <h2 className="text-lg font-black">Atalhos</h2>
+          {(data.outOfStock > 0 || data.lowStock > 0 || data.incomplete > 0 || data.freeLeads > 0) && <div className="mt-4 rounded-xl bg-gold-50 p-3"><h3 className="text-xs font-black">Atenção agora</h3><ul className="mt-2 space-y-2 text-xs">{data.incomplete > 0 && <li><Link className="font-bold underline" href="/painel/produtos?cadastro=incompleto">Completar {data.incomplete} cadastro(s)</Link></li>}{(data.lowStock > 0 || data.outOfStock > 0) && <li><Link className="font-bold underline" href="/painel/estoque#reposicao">Planejar reposição: {data.outOfStock} sem estoque e {data.lowStock} com estoque baixo</Link></li>}{data.freeLeads > 0 && <li><Link className="font-bold underline" href="/painel/atendimento?aba=fila">Assumir {data.freeLeads} atendimento(s) da fila</Link></li>}</ul></div>}
           <div className="mt-4 grid gap-2">
             <QuickLink href="/painel/pedidos/novo" label="Criar novo pedido" />
             <QuickLink href="/painel/pedidos" label="Consultar pedidos" />

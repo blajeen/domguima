@@ -6,6 +6,7 @@ const pad = (value: number) => String(value).padStart(2, "0");
 const date = (year: number, month: number, day: number) => `${year}-${pad(month)}-${pad(day)}`;
 
 export interface BusinessDashboardData {
+  monthlyTargetCents?: number;
   from: string;
   to: string;
   monthLabel: string;

@@ -12,6 +12,7 @@ import {
   FilterTrigger,
 } from "./CatalogFilters";
 import { SortSelect } from "./SortSelect";
+import { ProductComparison } from "./ProductComparison";
 
 interface CatalogViewProps {
   title: string;
@@ -69,6 +70,7 @@ export function CatalogView({
         )}
       </header>
 
+      <ProductComparison products={products.map(product => ({ id: product.id, name: product.name, slug: product.slug, categoryId: product.categoryId, price: product.price, brand: product.brand ?? "", stock: product.stock, specs: product.specifications.slice(0, 12) }))} />
       <CatalogFiltersProvider
         brands={brands}
         priceRanges={priceRanges}

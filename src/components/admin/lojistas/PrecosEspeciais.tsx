@@ -18,12 +18,14 @@ import { SubmitButton } from "../FormControls";
  * linha: o "Salvar todos" enxerga tudo, inclusive as linhas que a busca ou o
  * filtro escondem (atributo hidden, sem tirar da tela).
  */
-export function PrecosEspeciais({ linhas, descontoRotulo, mostrarPrecoSite }: {
+export function PrecosEspeciais({ linhas, descontoRotulo, mostrarPrecoSite, costs = {} }: {
+  costs?: Record<string, number | null>;
   linhas: LinhaLojista[];
   descontoRotulo: string;
   /** Com o preço do site oculto (padrão), ele some também desta tabela: o dono pode mostrar a tela a outro lojista. */
   mostrarPrecoSite: boolean;
 }) {
+  const [showMargin, setShowMargin] = useState(false);
   const [busca, setBusca] = useState("");
   const [soEspeciais, setSoEspeciais] = useState(false);
   const [rascunhos, setRascunhos] = useState<Record<string, string>>({});
@@ -106,6 +108,7 @@ export function PrecosEspeciais({ linhas, descontoRotulo, mostrarPrecoSite }: {
       </label>
     </div>
     <p className="mt-2 text-xs text-ink-500" aria-live="polite">{visiveis.size} de {linhas.length} itens publicados com estoque.</p>
+    <label className="mt-3 flex items-center gap-2 text-xs font-bold text-ink-600"><input type="checkbox" checked={showMargin} onChange={event => setShowMargin(event.target.checked)} />Mostrar margem estimada (uso interno, não sai no PDF)</label>
     <div className="mt-3 overflow-x-auto rounded-xl border border-ink-100">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="bg-ink-50 text-xs text-ink-500">
@@ -122,6 +125,7 @@ export function PrecosEspeciais({ linhas, descontoRotulo, mostrarPrecoSite }: {
         </thead>
         <tbody className="divide-y divide-ink-100">
           {linhas.map((linha) => <LinhaPreco
+            cost={showMargin ? costs[linha.chave] : undefined}
             key={linha.chave} linha={linha} descontoRotulo={descontoRotulo} mostrarPrecoSite={mostrarPrecoSite} oculta={!visiveis.has(linha.chave)}
             texto={rascunhos[linha.chave] ?? textoDoPreco(linha.especialCents)} digitar={digitar} limpar={limpar}
           />)}
@@ -207,7 +211,8 @@ function textoDoPreco(cents: number | null): string {
  * foco fica no botão e a confirmação aparece. O texto vem de cima (rascunho,
  * ou o preço salvo); salvou, o rascunho sai e a linha mostra o salvo.
  */
-function LinhaPreco({ linha, descontoRotulo, mostrarPrecoSite, oculta, texto, digitar, limpar }: {
+function LinhaPreco({ linha, descontoRotulo, mostrarPrecoSite, oculta, texto, digitar, limpar, cost }: {
+  cost?: number | null;
   linha: LinhaLojista;
   descontoRotulo: string;
   mostrarPrecoSite: boolean;
@@ -278,6 +283,7 @@ function LinhaPreco({ linha, descontoRotulo, mostrarPrecoSite, oculta, texto, di
           <BotaoDaLinha secundario name="acao" value="tirar" formNoValidate aria-label={`Tirar o preço especial de ${rotulo}`}>Tirar</BotaoDaLinha>
         )}
       </form>
+      {cost !== undefined && (() => { const price = validacao.ok ? validacao.cents ?? linha.comDescontoCents : linha.finalCents; const margin = cost && cost > 0 ? price - cost : null; return <p role="status" className={`mt-1 max-w-72 text-xs ${margin !== null && margin < 0 ? "font-bold text-red-700" : "text-ink-500"}`}>{margin === null ? "Sem custo cadastrado para estimar margem." : `Margem bruta: ${formatPrice(margin)} (${(margin / price * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%). ${margin < 0 ? "Atenção: abaixo do custo cadastrado. " : ""}Antes de taxas, frete e impostos.`}</p>; })()}
       {ajuda && (
         <p id={idAjuda} role="status" className={`mt-1 max-w-72 text-xs ${ajuda.alerta ? "font-bold text-red-700" : "text-ink-500"}`}>{ajuda.texto}</p>
       )}

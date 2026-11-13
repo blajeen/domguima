@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { getCrmWorkflow } from "@/lib/admin/crm-workflow";
+import { DELIVERY_STATUS_LABELS, PAYMENT_STATUS_LABELS, type CrmWorkflowEntry } from "@/lib/admin/crm-workflow-types";
+import { OrderTrackingLink } from "@/components/admin/OrderTrackingLink";
+import { OrderWorkflowForm } from "@/components/admin/CrmWorkflowForms";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { AssignOrderForm } from "@/components/admin/AssignOrderForm";
 import { CancelOrderForm } from "@/components/admin/CancelOrderForm";
@@ -11,7 +15,7 @@ import { requireOwner } from "@/lib/admin/auth";
 import { buildCustomerIndex, phoneKey, recurrenceBadge } from "@/lib/admin/customers";
 import { getParcelamento, getSalesOrders, getSellers } from "@/lib/admin/data";
 import type { TaxasDoCartao } from "@/lib/catalog/parcelamento";
-import { channelFilterParam, matchesOriginFilters, ORIGIN_FILTER_NOT_INFORMED, sourceFilterParam } from "@/lib/admin/reports";
+import { channelFilterParam, matchesOriginFilters, ORIGIN_FILTER_NOT_INFORMED, sourceFilterParam, validDateParam } from "@/lib/admin/reports";
 import {
   ORDER_CHANNEL_LABELS,
   ORDER_PAYMENT_METHOD_LABELS,
@@ -39,6 +43,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const status = params.status === "cancelled" ? "cancelled" : params.status === "completed" ? "completed" : params.status === "pending" ? "pending" : "";
   const canal = channelFilterParam(params.canal);
   const origem = sourceFilterParam(params.origem);
+  const de = validDateParam(params.de, ""), ate = validDateParam(params.ate, "");
+  const workflow = await getCrmWorkflow();
   // Quem é quem: telefone e CPF que aparecem juntos em algum pedido são o mesmo
   // cliente. Serve à busca abaixo e à etiqueta de recorrência de cada card.
   const clientes = buildCustomerIndex(allOrders);
@@ -52,7 +58,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   // dele, inclusive os feitos com outro telefone ou só com o CPF.
   const clienteRef = typeof params.cliente === "string" ? params.cliente.trim() : "";
   const clienteDoLink = clienteRef ? clientes.keyOfOrderNumber(clienteRef) : null;
-  const orders = allOrders.filter((order) => {
+  const matchingOrders = allOrders.filter((order) => {
     // A campanha entra na busca: "natal" acha os pedidos que vieram do link da campanha de Natal.
     // O telefone entra como foi digitado e só em dígitos: "(34) 99999" e "3499999" acham o mesmo pedido.
     const searchable = normalize(`${order.number} ${order.customer.name} ${order.customer.cpf} ${order.customer.phone} ${onlyDigits(order.customer.phone ?? "")} ${order.seller_name} ${attributionCampaign(order.attribution)} ${order.items.map((item) => `${item.product_name} ${item.sku}`).join(" ")}`);
@@ -60,15 +66,19 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       || searchable.includes(normalize(query))
       || (digitosDaBusca.length >= 4 && searchable.includes(digitosDaBusca))
       || (clienteDaBusca !== null && clientes.keyOfOrder(order) === clienteDaBusca);
-    return achouPelaBusca
+    const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(order.created_at));
+    return (!de || localDay >= de) && (!ate || localDay <= ate) && achouPelaBusca
       && (!clienteRef || (clienteDoLink !== null && clientes.keyOfOrder(order) === clienteDoLink))
       && (!seller || order.seller_id === seller)
       && (!status || order.status === status)
       && matchesOriginFilters(order, { channel: canal, source: origem });
   });
+  const pages = Math.max(1, Math.ceil(matchingOrders.length / 25));
+  const page = Math.max(1, Math.min(pages, /^\d{1,6}$/.test(String(params.pagina ?? "")) ? Number(params.pagina) : 1));
+  const orders = matchingOrders.slice((page - 1) * 25, page * 25);
   // Filtros atuais, para a atribuição voltar à mesma lista.
   const filtros = new URLSearchParams();
-  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status], ["canal", canal], ["origem", origem], ["cliente", clienteRef]] as const) {
+  for (const [chave, valor] of [["q", query], ["vendedor", seller], ["status", status], ["canal", canal], ["origem", origem], ["cliente", clienteRef], ["de", de], ["ate", ate], ["pagina", page > 1 ? String(page) : ""]] as const) {
     if (valor) filtros.set(chave, valor);
   }
   const volta = filtros.toString() ? `/painel/pedidos?${filtros.toString()}` : "/painel/pedidos";
@@ -85,7 +95,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <AdminPageHeader
         eyebrow="Operação comercial"
         title="Pedidos"
-        description={`${orders.length} de ${allOrders.length} pedidos`}
+        description={`${matchingOrders.length} de ${allOrders.length} pedidos · página ${page} de ${pages}`}
         actions={<div className="flex flex-wrap gap-2">
           <Link href="/painel/pedidos/importar" className="rounded-lg border border-ink-300 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-800">Lançar do grupo</Link>
           <Link href="/painel/pedidos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950">+ Novo pedido</Link>
@@ -116,6 +126,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <label className="w-44 text-xs font-bold text-ink-600">Status<select name="status" defaultValue={status} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option><option value="pending">Aguardando confirmação</option><option value="completed">Finalizados</option><option value="cancelled">Cancelados</option></select></label>
           <label className="w-40 text-xs font-bold text-ink-600">Canal<select name="canal" defaultValue={canal} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todos</option>{Object.entries(ORDER_CHANNEL_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
           <label className="w-40 text-xs font-bold text-ink-600">Origem<select name="origem" defaultValue={origem} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm"><option value="">Todas</option>{Object.entries(TRAFFIC_SOURCE_LABELS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}<option value={ORIGIN_FILTER_NOT_INFORMED}>{ORIGIN_NOT_INFORMED_LABEL}</option></select></label>
+          <label className="w-40 text-xs font-bold text-ink-600">De<input type="date" name="de" defaultValue={de} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
+          <label className="w-40 text-xs font-bold text-ink-600">Até<input type="date" name="ate" defaultValue={ate} className="mt-1.5 w-full rounded-lg border border-ink-200 px-3 py-2.5 text-sm" /></label>
           <button className="rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-bold text-white">Filtrar</button>
         </form>
       </PanelCard>
@@ -138,6 +150,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             <OrderRow
               key={order.id}
               order={order}
+              workflow={workflow[`order:${order.id}`]}
               sellers={sellers}
               taxas={parcelamento.taxas}
               volta={volta}
@@ -147,12 +160,16 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         })}
         {!orders.length && <PanelCard><p className="py-10 text-center text-sm text-ink-500">Nenhum pedido corresponde aos filtros.</p></PanelCard>}
       </div>
+      {pages > 1 && <nav aria-label="Páginas de pedidos" className="mt-5 flex flex-wrap items-center justify-center gap-4 text-sm">{page > 1 ? <a href={pageLink(filtros, page - 1)} className="rounded-lg border border-ink-200 bg-white px-4 py-2 font-bold">← Anterior</a> : <span />}<span>Página {page} de {pages} · 25 por página</span>{page < pages ? <a href={pageLink(filtros, page + 1)} className="rounded-lg border border-ink-200 bg-white px-4 py-2 font-bold">Próxima →</a> : <span />}</nav>}
     </>
   );
 }
 
-function OrderRow({ order, sellers, taxas, volta, customer }: {
+function pageLink(filters: URLSearchParams, page: number) { const query = new URLSearchParams(filters); query.set("pagina", String(page)); return `/painel/pedidos?${query}`; }
+
+function OrderRow({ order, sellers, taxas, volta, customer, workflow }: {
   order: SalesOrderRecord;
+  workflow?: CrmWorkflowEntry;
   sellers: Awaited<ReturnType<typeof getSellers>>;
   taxas: TaxasDoCartao;
   volta: string;
@@ -160,7 +177,7 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
   customer: { returning: boolean; label: string } | null;
 }) {
   const payment = order.payment_method ? ORDER_PAYMENT_METHOD_LABELS[order.payment_method] : "Pagamento a combinar";
-  const delivery = order.delivery_method === "uberlandia_delivery" ? "Entrega em Uberlândia" : "Frete a combinar";
+  const delivery = workflow?.delivery_status === "not_required" ? "Retirada na loja / sem entrega" : order.delivery_method === "uberlandia_delivery" ? "Entrega em Uberlândia" : "Frete a combinar";
   // Pedido do site que ninguém assumiu ainda: "Fila livre", no mesmo tom da
   // tela de Atendimento, em vez do rótulo técnico gravado no banco.
   const semAtendente = order.seller_id === UNASSIGNED_ORDER_SELLER_ID;
@@ -196,6 +213,7 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
           </div>
           <p className="mt-1 text-sm font-semibold">{order.customer.name}</p>
           {customerDetails && <p className="text-xs text-ink-500">{customerDetails}</p>}
+          {workflow && <p className="mt-1 text-xs text-ink-500">Pagamento: {PAYMENT_STATUS_LABELS[workflow.payment_status ?? "unconfirmed"]} · Entrega: {DELIVERY_STATUS_LABELS[workflow.delivery_status ?? "unconfirmed"]}</p>}
         </div>
         <div>
           <p className="text-xs text-ink-400">{new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</p>
@@ -227,6 +245,8 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
               <p className="font-black text-ink-900">Entrega e pagamento</p>
               <p className="mt-2"><strong>Entrega:</strong> {delivery}</p>
               <p><strong>Pagamento:</strong> {payment}</p>
+              <OrderTrackingLink orderId={order.id} />
+              <OrderWorkflowForm id={order.id} value={workflow} />
               {address && <p className="mt-2">{address}</p>}
               {neighborhood && <p>{neighborhood}</p>}
               {order.customer.cep?.trim() && <p>CEP {order.customer.cep}</p>}

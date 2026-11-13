@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { orderInput } from "@/lib/admin/crm-order-input";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -24,7 +25,6 @@ import {
   LEAD_LOST_REASONS,
   LEAD_STAGE_LABELS,
   LEAD_STAGES,
-  PANEL_ORDER_CHANNELS,
   PANEL_TRAFFIC_SOURCES,
   type ActionState,
   type AdminProductRow,
@@ -33,12 +33,11 @@ import {
   type CustomerPurchaseLookup,
   type SellerRecord,
   type StoreSettings,
-  type TrafficSource,
 } from "@/lib/admin/types";
-import { isTrafficSource, trafficSourceLabel } from "@/lib/services/origem";
+import { trafficSourceLabel } from "@/lib/services/origem";
 import { ANUNCIAR_ATE_PADRAO, MAX_PARCELAS, taxasParaTexto, validarTabelaDigitada } from "@/lib/catalog/parcelamento";
 import { categorySchema, moneyToCents, numberFrom, productSchema } from "@/lib/admin/validation";
-import { isValidCPF, isValidDocument, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
+import { isValidDocument, isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 const inventoryCountInput = z.object({
   productId: z.string().trim().min(1).max(200),
@@ -57,36 +56,6 @@ const dailySaleInput = z.object({
   quantity: z.number().int().min(1).max(1_000_000),
 });
 
-const orderInput = z.object({
-  requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/),
-  sellerId: z.string().trim().min(1).max(80),
-  customer: z.object({
-    name: z.string().trim().min(3).max(140),
-    cpf: z.string().transform(onlyDigits).refine(isValidCPF, "CPF inválido."),
-    phone: z.string().trim().max(30),
-    cep: z.string().transform(onlyDigits).refine((value) => value.length === 8, "CEP inválido."),
-    street: z.string().trim().min(2).max(180),
-    number: z.string().trim().min(1).max(30),
-    complement: z.string().trim().max(100),
-    neighborhood: z.string().trim().min(2).max(100),
-    city: z.string().trim().min(2).max(100),
-    state: z.string().trim().length(2).transform((value) => value.toUpperCase()),
-  }),
-  notes: z.string().trim().max(500),
-  channel: z.enum(PANEL_ORDER_CHANNELS, { error: "Escolha onde a venda foi fechada." }),
-  // Qualquer origem conhecida passa aqui; a action restringe às do painel, mais
-  // a do atendimento de origem (um cliente que veio da Shopee continua Shopee).
-  source: z.custom<TrafficSource>(isTrafficSource, { error: "Escolha como o cliente chegou até a loja." }),
-  // Atendimento de onde o pedido saiu ("Lançar pedido" na tela de Atendimento).
-  leadId: z.string().trim().max(80).nullable().optional(),
-  items: z.array(z.object({
-    productId: z.string().trim().min(1).max(200),
-    variantId: z.string().trim().max(120).nullable().optional(),
-    quantity: z.number().int().min(1).max(10_000),
-    expectedStock: z.number().int().min(0),
-    unitPriceCents: z.number().int().positive().max(100_000_000),
-  })).min(1).max(100),
-});
 
 /**
  * Freio de força bruta no login. O scrypt já torna cada tentativa cara, mas
@@ -247,7 +216,7 @@ export async function saveProductAction(_: ActionState, formData: FormData): Pro
           commission_percent: 0, commission_cents: 0, actor_id: owner.id, created_at: now,
         });
       }
-      draft.operations.product_meta[id] = { ncm, cost_cents: costCents, model, gtin, variant_prices: variacoes?.extras ?? {} };
+      draft.operations.product_meta[id] = { ...draft.operations.product_meta[id], ncm, cost_cents: costCents, model, gtin, variant_prices: variacoes?.extras ?? {} };
       audit(draft, owner.id, before ? "product.updated" : "product.created", "product", id, before, product);
     });
     created = !before;
@@ -408,12 +377,21 @@ export async function createOrderAction(input: unknown): Promise<ActionState> {
     // como alerta e nao na faixa verde de sucesso.
     let recado = "";
     let aviso: string | undefined;
+    if (pedido.saleMode === "counter") {
+      try {
+        await mutateCatalogState(current => {
+          const notes = current.operations.crm_workflow ??= {};
+          const key = `order:${created.id}`;
+          notes[key] = { ...notes[key], delivery_status: "not_required", updated_at: new Date().toISOString(), updated_by: owner.id };
+        }, { privateOnly: true });
+      } catch { aviso = "Pedido finalizado; não foi possível anotar a retirada. Ajuste o acompanhamento em Pedidos."; }
+    }
     if (leadId) {
       const vinculo = vinculavel
         ? await linkLeadToOrder(vinculavel.id, created, state, owner.id)
         : { ok: false, message: "O atendimento de origem não existe mais ou já acompanha outro pedido: o pedido foi criado sem vínculo." };
       if (vinculo.ok) recado = ` ${vinculo.message}`;
-      else aviso = vinculo.message;
+      else aviso = [aviso, vinculo.message].filter(Boolean).join(" ");
       revalidatePath("/painel/atendimento");
     }
     refreshCatalog();
