@@ -30,7 +30,7 @@ export async function createDancingMascot(canvas: HTMLCanvasElement) {
     renderer.dispose(); renderer.forceContextLoss();
   };
   try {
-    const gltf = await new GLTFLoader().loadAsync("/mascot/dom-guima.glb");
+    const gltf = await new GLTFLoader().loadAsync("/mascot/dom-guima.glb?v=2");
     model = gltf.scene; scene.add(model);
     const clips = gltf.animations.filter(clip => /^dance_/.test(clip.name)).sort((a, b) => a.name.localeCompare(b.name));
     if (!clips.length) throw new Error("No dance clips");
