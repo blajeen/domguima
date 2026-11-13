@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
+import { BusinessDashboard } from "@/components/admin/BusinessDashboard";
 import { getDashboardData } from "@/lib/admin/data";
 import { formatPrice } from "@/lib/utils/format";
 
@@ -28,32 +29,37 @@ export default async function DashboardPage() {
   return (
     <>
       <AdminPageHeader
-        eyebrow="Operacao da loja"
-        title="Visao geral"
-        description="Acompanhe o catalogo sem inventar metricas de faturamento."
+        eyebrow="Operação da loja"
+        title="Visão geral"
+        description="Vendas, pedidos e estoque em um só lugar."
         actions={<Link href="/painel/produtos/novo" className="rounded-lg bg-gold-400 px-4 py-2.5 text-sm font-extrabold text-ink-950 hover:bg-gold-300">+ Novo produto</Link>}
       />
       {/* Sem as migrations do CRM os cards de atendimento abaixo ficam em zero:
           o aviso diz por quê, em vez de parecer uma loja sem movimento. */}
       <CrmMigrationNotice />
-      {/* Nove cards: três colunas fecham a grade sem card sobrando. */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="dashboard-overview">
+      <section className="dashboard-operation" aria-labelledby="operation-heading">
+        <div className="dashboard-operation-heading"><p className="business-kicker">Operação da loja</p><h2 id="operation-heading">Resumo geral</h2><p>Estoque e atendimentos em tempo real</p></div>
+      <div className="dashboard-stats">
         {stats.map((stat) => {
           const conteudo = (
             <>
-              <p className="text-xs font-semibold text-ink-500">{stat.label}</p>
-              <p className={`mt-2 text-3xl font-black ${stat.color}`}>{stat.value}</p>
-              {stat.detail && <p className="mt-1 text-xs text-ink-500">{stat.detail}</p>}
+              <p className="dashboard-stat-label">{stat.label}</p>
+              <p className={`dashboard-stat-value ${stat.color}`}>{stat.value}</p>
+              {stat.detail && <p className="dashboard-stat-detail">{stat.detail}</p>}
             </>
           );
           return (
-            <PanelCard key={stat.label} className="p-4">
+            <div key={stat.label} className="dashboard-stat">
               {stat.href
                 ? <Link href={stat.href} className="block rounded-lg hover:opacity-80">{conteudo}</Link>
                 : conteudo}
-            </PanelCard>
+            </div>
           );
         })}
+      </div>
+      </section>
+      <BusinessDashboard data={data.business} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">

@@ -266,3 +266,62 @@ body:has(.admin-app) {
 html[data-barra-lojistas] {
   scroll-padding-bottom: 7rem;
 }
+/* Business overview: compact operation cards and monthly charts. */
+.dashboard-overview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+.dashboard-operation, .business-dashboard { min-width: 0; }
+.dashboard-operation-heading { padding: 3px 1px 16px; }
+.dashboard-operation-heading h2, .business-heading h2 { font-size: 20px; font-weight: 850; letter-spacing: -.6px; line-height: 1.3; }
+.dashboard-operation-heading > p:last-child, .business-period { color: var(--color-ink-500); font-size: 12px; margin-top: 5px; }
+.dashboard-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.dashboard-stat { background: white; border: 1px solid var(--color-ink-100); border-radius: 14px; padding: 16px 14px; min-height: 112px; box-shadow: 0 1px 2px #10182809; }
+.dashboard-stat-label { font-size: 11px; font-weight: 650; color: var(--color-ink-500); line-height: 1.5; }
+.dashboard-stat-value { font-size: 28px; font-weight: 850; line-height: 1.2; margin-top: 8px; }
+.dashboard-stat-detail { color: var(--color-ink-500); font-size: 10px; line-height: 1.5; margin-top: 6px; }
+.business-dashboard { background: white; border: 1px solid var(--color-ink-100); border-radius: 18px; padding: 22px; box-shadow: 0 1px 3px #10182809; }
+.business-heading { display: flex; gap: 14px; justify-content: space-between; align-items: start; }
+.business-kicker { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--color-gold-700); margin-bottom: 5px; }
+.business-report-link { font-size: 11px; color: var(--color-gold-800); font-weight: 750; white-space: nowrap; padding-top: 5px; }
+.business-report-link:hover { text-decoration: underline; }
+.business-tabs { display: flex; gap: 4px; padding: 4px; background: var(--color-ink-50); border-radius: 10px; margin: 18px 0; }
+.business-tabs button { flex: 1; border-radius: 7px; padding: 8px 6px; font-size: 12px; font-weight: 750; color: var(--color-ink-500); cursor: pointer; }
+.business-tabs button[aria-selected="true"] { background: white; color: var(--color-ink-900); box-shadow: 0 1px 4px #10182812; }
+.business-dashboard :focus-visible, .dashboard-stat a:focus-visible { outline: 2px solid var(--color-gold-500); outline-offset: 3px; border-radius: 5px; }
+.business-sales-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.business-label { font-size: 11px; color: var(--color-ink-500); }
+.business-revenue { font-size: clamp(24px,2.3vw,36px); font-weight: 850; letter-spacing: -1px; line-height: 1.3; margin-top: 4px; }
+.business-comparison { display: flex; flex-direction: column; gap: 5px; text-align: right; align-items: flex-end; font-size: 9px; color: var(--color-ink-500); }
+.business-change { padding: 4px 7px; border-radius: 6px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.business-change.positive { color: #047857; background: #ecfdf5; }
+.business-change.negative { color: #b91c1c; background: #fef2f2; }
+.business-change.neutral { color: var(--color-ink-500); background: var(--color-ink-50); }
+.business-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; padding: 15px 0; margin: 10px 0 5px; border-bottom: 1px solid var(--color-ink-100); }
+.business-metrics p { color: var(--color-ink-500); font-size: 10px; line-height: 1.4; }
+.business-metrics strong { display: block; font-size: 16px; margin-top: 4px; font-weight: 800; }
+.business-chart-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 17px 0 10px; align-items: baseline; }
+.business-chart-heading h3 { font-size: 12px; font-weight: 750; }
+.business-chart-heading > p { font-size: 10px; color: var(--color-ink-500); }
+.business-legend { display: flex; gap: 10px; font-size: 9px; color: var(--color-ink-500); }
+.business-legend span { display: flex; align-items: center; gap: 4px; }
+.business-legend i { width: 12px; height: 3px; background: var(--color-gold-600); border-radius: 2px; }
+.business-legend i.previous { height: 0; background: none; border-top: 2px dashed var(--color-ink-400); }
+.business-line-chart svg { width: 100%; height: auto; overflow: visible; }
+.business-axis { font-size: 10px; fill: var(--color-ink-500); }
+.business-point-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 10px; color: var(--color-ink-500); margin: 5px 0; }
+.business-point-detail strong { color: var(--color-ink-900); }
+.business-chart-slider { display: flex; align-items: center; gap: 12px; font-size: 9px; color: var(--color-ink-500); }
+.business-chart-slider input { flex: 1; min-width: 0; height: 16px; accent-color: var(--color-gold-600); }
+.business-footnote { color: var(--color-ink-500); font-size: 9px; line-height: 1.6; margin-top: 12px; }
+.business-chart-empty { font-size: 10px; color: var(--color-ink-500); margin-bottom: 6px; }
+.business-empty { padding: 28px 16px; background: var(--color-ink-50); border-radius: 12px; color: var(--color-ink-500); font-size: 12px; line-height: 1.7; margin-top: 18px; }
+.business-bars { display: grid; gap: 18px; margin: 22px 0; }
+.business-bar-row > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; margin-bottom: 7px; }
+.business-bar-row strong { font-weight: 650; }
+.business-bar-row p { margin-top: 5px; color: var(--color-ink-500); font-size: 10px; }
+.business-track { background: var(--color-ink-50); height: 8px; border-radius: 6px; overflow: hidden; }
+.business-track span { display: block; height: 100%; border-radius: 6px; }
+.business-operation-total { display: flex; gap: 12px; align-items: center; margin-top: 24px; }
+.business-operation-total strong { font-size: 40px; font-weight: 850; letter-spacing: -1px; }
+.business-operation-total span { color: var(--color-ink-500); font-size: 12px; }
+.business-operation-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 26px; }
+@media (max-width: 1199px) { .dashboard-overview { grid-template-columns: minmax(0,1fr); } .business-revenue { font-size: 34px; } }
+@media (max-width: 560px) { .dashboard-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-stat { min-height: 102px; padding: 13px; } .business-dashboard { padding: 17px; } .business-revenue { font-size: 27px; } .business-metrics { gap: 8px; } .business-metrics strong { font-size: 14px; } .business-heading h2 { font-size: 19px; } }

@@ -1,6 +1,8 @@
 import "server-only";
 
-import { readCatalogState } from "./catalog-store";
+import { readCatalogState, type CatalogState } from "./catalog-store";
+import { dashboardPeriods, type BusinessDashboardData } from "./dashboard-period";
+import { channelSummaries, reportTotals } from "./reports";
 import { buildCustomerIndex, customerSummaries, lookupCustomerPurchases, recentBuyers, RECENT_BUYERS_DAYS, repurchaseSuggestions, type CustomerIndex } from "./customers";
 import { lerParcelamento, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { defaultStoreSettings } from "./defaults";
@@ -13,6 +15,10 @@ export { defaultStoreSettings } from "./defaults";
 
 export async function getAdminProducts(): Promise<AdminProductRow[]> {
   const state = await readCatalogState();
+  return adminProductsFromState(state);
+}
+
+function adminProductsFromState(state: CatalogState): AdminProductRow[] {
   const categoryNames = new Map(state.categories.map((category) => [category.id, category.name]));
   return state.products.map((product) => ({ ...product, categories: { name: categoryNames.get(product.category_id) ?? product.category_id } })).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
@@ -114,8 +120,21 @@ export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
 }
 
 export async function getDashboardData() {
-  const products = await getAdminProducts();
   const state = await readCatalogState();
+  const products = adminProductsFromState(state);
+  const { currentOrders, previousOrders, comparisonCurrentOrders, ...period } = dashboardPeriods(state.operations.orders);
+  const business: BusinessDashboardData = {
+    ...period,
+    totals: reportTotals(currentOrders),
+    comparisonSalesCents: reportTotals(comparisonCurrentOrders).salesCents,
+    previousSalesCents: reportTotals(previousOrders).salesCents,
+    statuses: {
+      completed: currentOrders.filter(order => order.status === "completed").length,
+      pending: currentOrders.filter(order => order.status === "pending").length,
+      cancelled: currentOrders.filter(order => order.status === "cancelled").length,
+    },
+    channels: channelSummaries(currentOrders),
+  };
   const pendingOrders = state.operations.orders.filter((order) => order.status === "pending").length;
 
   // Atendimentos moram fora do catalogo: contagens exatas no banco (ou no
@@ -137,6 +156,7 @@ export async function getDashboardData() {
   const compraramNoPeriodo = recentBuyers(clientes);
 
   return {
+    business,
     /** Hoje (YYYY-MM-DD, fuso da loja): o link do card leva à lista filtrada no mesmo dia que ele contou. */
     today: hoje,
     freeLeads,
