@@ -1,6 +1,6 @@
 # Mascote do painel
 
-O personagem é decorativo, sem voz, interação ou painel de configuração. Só é montado no layout autenticado de `/painel`; não aparece no login nem na loja. O canvas é transparente, fica fixo no canto inferior direito e não intercepta cliques. A animação pausa em abas ocultas, respeita redução de movimento e some na impressão.
+O personagem não tem voz, chat ou painel de configuração. Só é montado no layout autenticado de `/painel`; não aparece no login nem na loja. O canvas é transparente e começa no canto inferior direito. Segurar o botão esquerdo permite arrastar; soltar encerra o movimento. O botão direito não arrasta. A posição é lembrada no navegador e ajustada aos limites ao redimensionar a tela. As setas do teclado também movem o personagem (Shift aumenta o passo). A animação pausa em abas ocultas, respeita redução de movimento e some na impressão.
 
 O modelo `public/mascot/dom-guima.glb` veio do arquivo Tripo enviado pelo proprietário em Downloads. A revisão no Blender manteve 65 ossos e a identidade da foto, refinou discretamente a camiseta e as bochechas, normalizou os pesos em 18.582 vértices, suavizou ombros/cotovelos/joelhos e isolou cabeça e cabelo dos ombros. O deslocamento horizontal das danças foi fixado e as escalas dos ossos estabilizadas.
 

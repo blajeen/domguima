@@ -166,6 +166,11 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
   const semAtendente = order.seller_id === UNASSIGNED_ORDER_SELLER_ID;
   const campanha = attributionCampaign(order.attribution);
   const ultimaCampanha = latestCampaign(order.attribution);
+  const location = [order.customer.city?.trim(), order.customer.state?.trim()].filter(Boolean).join("/");
+  const customerDetails = [order.customer.cpf?.trim(), location].filter(Boolean).join(" · ");
+  const street = [order.customer.street?.trim(), order.customer.number?.trim()].filter(Boolean).join(", ");
+  const address = [street, order.customer.complement?.trim()].filter(Boolean).join(" · ");
+  const neighborhood = [order.customer.neighborhood?.trim(), location].filter(Boolean).join(" · ");
 
   return (
     <article className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
@@ -190,7 +195,7 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
             {campanha && <span className="rounded-full bg-gold-50 px-2.5 py-1 text-[10px] font-black text-gold-800" title="Campanha (utm_campaign) do link por onde o cliente chegou">Campanha: {campanha}</span>}
           </div>
           <p className="mt-1 text-sm font-semibold">{order.customer.name}</p>
-          <p className="text-xs text-ink-500">{order.customer.cpf} · {order.customer.city}/{order.customer.state}</p>
+          {customerDetails && <p className="text-xs text-ink-500">{customerDetails}</p>}
         </div>
         <div>
           <p className="text-xs text-ink-400">{new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</p>
@@ -222,9 +227,9 @@ function OrderRow({ order, sellers, taxas, volta, customer }: {
               <p className="font-black text-ink-900">Entrega e pagamento</p>
               <p className="mt-2"><strong>Entrega:</strong> {delivery}</p>
               <p><strong>Pagamento:</strong> {payment}</p>
-              <p className="mt-2">{order.customer.street}, {order.customer.number}{order.customer.complement ? ` · ${order.customer.complement}` : ""}</p>
-              <p>{order.customer.neighborhood} · {order.customer.city}/{order.customer.state}</p>
-              <p>CEP {order.customer.cep}</p>
+              {address && <p className="mt-2">{address}</p>}
+              {neighborhood && <p>{neighborhood}</p>}
+              {order.customer.cep?.trim() && <p>CEP {order.customer.cep}</p>}
               {order.customer.phone && <p className="mt-2">Telefone {order.customer.phone}</p>}
               {order.customer.email && <p>E-mail {order.customer.email}</p>}
               {order.notes && <p className="mt-3 border-t border-ink-100 pt-3"><strong>Observações:</strong> {order.notes}</p>}
