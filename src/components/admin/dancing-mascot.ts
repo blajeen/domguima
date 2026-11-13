@@ -33,7 +33,7 @@ export async function createDancingMascot(canvas: HTMLCanvasElement) {
     const gltf = await new GLTFLoader().loadAsync("/mascot/dom-guima.glb?v=2");
     model = gltf.scene; scene.add(model);
     const clips = gltf.animations
-      .filter(clip => /^dance_/.test(clip.name) && clip.name !== "dance_03")
+      .filter(clip => ["dance_01", "dance_02", "dance_03", "dance_05"].includes(clip.name))
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!clips.length) throw new Error("No dance clips");
     const mixer = new THREE.AnimationMixer(model);
