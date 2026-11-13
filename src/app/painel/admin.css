@@ -278,9 +278,14 @@ html[data-barra-lojistas] {
 .daily-orders-metrics strong { margin-left: 4px; font-size: 14px; color: var(--color-ink-900); }
 .daily-orders svg { width: 100%; height: auto; }
 .daily-orders-note { font-size: 9px; line-height: 1.5; color: var(--color-ink-500); margin-top: 4px; }
-.dashboard-overview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+.dashboard-overview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: stretch; }
+.dashboard-operation { display: flex; flex-direction: column; }
+.dashboard-operation .daily-orders { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+.dashboard-overview > .business-dashboard { display: flex; flex-direction: column; }
+.dashboard-overview > .business-dashboard > [role="tabpanel"]:not([hidden]) { flex: 1; display: flex; flex-direction: column; }
+.dashboard-overview .business-line-chart { margin-top: auto; }
 .dashboard-operation, .business-dashboard { min-width: 0; }
-.dashboard-operation-heading { padding: 3px 1px 16px; }
+.dashboard-operation-heading { padding: 23px 1px 16px; }
 .dashboard-operation-heading h2, .business-heading h2 { font-size: 20px; font-weight: 850; letter-spacing: -.6px; line-height: 1.3; }
 .dashboard-operation-heading > p:last-child, .business-period { color: var(--color-ink-500); font-size: 12px; margin-top: 5px; }
 .dashboard-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
@@ -334,5 +339,5 @@ html[data-barra-lojistas] {
 .business-operation-total strong { font-size: 40px; font-weight: 850; letter-spacing: -1px; }
 .business-operation-total span { color: var(--color-ink-500); font-size: 12px; }
 .business-operation-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 26px; }
-@media (max-width: 1199px) { .dashboard-overview { grid-template-columns: minmax(0,1fr); } .business-revenue { font-size: 34px; } }
+@media (max-width: 1199px) { .dashboard-overview { grid-template-columns: minmax(0,1fr); } .dashboard-operation-heading { padding-top: 3px; } .business-revenue { font-size: 34px; } }
 @media (max-width: 560px) { .dashboard-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-stat { min-height: 102px; padding: 13px; } .business-dashboard { padding: 17px; } .business-revenue { font-size: 27px; } .business-metrics { gap: 8px; } .business-metrics strong { font-size: 14px; } .business-heading h2 { font-size: 19px; } }
