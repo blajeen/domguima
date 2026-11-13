@@ -10,6 +10,10 @@ O mapa de cor usa 2048 px para preservar os detalhes do rosto; os mapas auxiliar
 
 Validação: TypeScript, ESLint, build de produção e navegador Edge com login local de teste. Conferidos movimento em quadros distintos, persistência entre rotas, posição no celular, redução de movimento, ausência no login/loja e ausência de erros JavaScript.
 
+## Trapézio e axilas — terceira revisão
+
+A revisão localizada de 3.436 vértices remove parte da influência da cabeça/pescoço na região externa da gola, redistribui-a para peito e clavícula, limpa influências distantes nas axilas e suaviza os pesos com distância entre vizinhos e continuidade nas divisões de UV. Pequenas cristas da superfície foram suavizadas nessas áreas; rosto, mãos e coreografia foram preservados. A primeira tentativa que abria demais a manga foi descartada. Editável local: `Dom-Guima-rig-revisado-v3.blend`; cache do modelo: `?v=3`.
+
 ## Segunda revisão — 13/11/2026
 
 A imagem enviada pelo proprietário foi comparada às poses das cinco animações: a pose de perna cruzada corresponde a `dance_04_mirrored`, por volta de 9,73 segundos. Essa variação foi desativada; `dance_03`, inicialmente retirada pelo nome informado, foi restaurada. O player e o enquadramento usam uma lista explícita com `dance_01`, `dance_02`, `dance_03` e `dance_05`.
