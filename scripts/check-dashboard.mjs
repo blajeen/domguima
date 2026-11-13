@@ -25,6 +25,11 @@ try {
   assert.equal(result.series.at(-1).salesCents, 50000, "cancelled/pending excluded from chart");
   assert.equal(result.series.at(-1).previousCents, 25000);
   assert.equal(result.series[0].salesCents, 20000);
+  assert.equal(result.series[0].orders, 1, "daily orders use São Paulo boundary");
+  assert.equal(result.series[1].orders, 0, "days without orders remain visible");
+  assert.equal(result.series.at(-1).orders, 1, "daily count excludes pending/cancelled");
+  assert.equal(result.series.reduce((sum, day) => sum + day.orders, 0), reportTotals(result.currentOrders).orders);
+  assert.equal(dashboardPeriods([order("2026-11-13T15:00:00Z"), order("2026-11-13T16:00:00Z")], now).series.at(-1).orders, 2, "multiple orders on same day counted separately");
   const totals = reportTotals(result.currentOrders);
   assert.equal(totals.salesCents, result.series.at(-1).salesCents);
   assert.equal(totals.orders, 2);
@@ -48,6 +53,7 @@ try {
   assert.equal(january.comparisonTo, "2025-12-01");
   assert.equal(january.series.length, 1);
   assert.equal(january.series[0].salesCents, 0);
+  assert.equal(january.series[0].orders, 0);
   assert.equal(january.series[0].previousCents, 0);
   const timezone = dashboardPeriods([], new Date("2026-11-01T02:00:00Z"));
   assert.equal(timezone.to, "2026-10-31", "now also follows São Paulo timezone");

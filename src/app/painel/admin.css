@@ -267,6 +267,17 @@ html[data-barra-lojistas] {
   scroll-padding-bottom: 7rem;
 }
 /* Business overview: compact operation cards and monthly charts. */
+.daily-orders { margin-top: 14px; padding: 15px 17px 12px; border: 1px solid var(--color-ink-100); border-radius: 14px; background: white; box-shadow: 0 1px 2px #10182809; }
+.daily-orders-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.daily-orders-heading h2 { font-size: 14px; font-weight: 800; }
+.daily-orders-heading p, .daily-orders-heading a { font-size: 10px; color: var(--color-ink-500); margin-top: 3px; }
+.daily-orders-heading a { white-space: nowrap; font-weight: 700; color: var(--color-gold-800); }
+.daily-orders-heading a:hover { text-decoration: underline; }
+.daily-orders-heading a:focus-visible { outline: 2px solid var(--color-gold-500); outline-offset: 3px; }
+.daily-orders-metrics { display: flex; gap: 12px; justify-content: space-between; margin: 10px 0 5px; font-size: 10px; color: var(--color-ink-500); }
+.daily-orders-metrics strong { margin-left: 4px; font-size: 14px; color: var(--color-ink-900); }
+.daily-orders svg { width: 100%; height: auto; }
+.daily-orders-note { font-size: 9px; line-height: 1.5; color: var(--color-ink-500); margin-top: 4px; }
 .dashboard-overview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
 .dashboard-operation, .business-dashboard { min-width: 0; }
 .dashboard-operation-heading { padding: 3px 1px 16px; }

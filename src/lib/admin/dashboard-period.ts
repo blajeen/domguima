@@ -14,7 +14,7 @@ export interface BusinessDashboardData {
   elapsedDays: number;
   comparisonFrom: string;
   comparisonTo: string;
-  series: { day: number; label: string; salesCents: number; previousCents: number | null }[];
+  series: { day: number; label: string; orders: number; salesCents: number; previousCents: number | null }[];
   totals: { orders: number; units: number; salesCents: number; discountCents: number; commissionCents: number };
   comparisonSalesCents: number;
   previousSalesCents: number;
@@ -48,12 +48,17 @@ export function dashboardPeriods(orders: readonly SalesOrderRecord[], now = new 
     return result;
   };
   const dailyCurrent = daily(current), dailyPrevious = daily(previous);
+  const dailyOrders = new Map<number, number>();
+  for (const item of current) if (item.order.status === "completed") {
+    const number = Number(item.day.slice(-2));
+    dailyOrders.set(number, (dailyOrders.get(number) ?? 0) + 1);
+  }
   let cumulative = 0, priorCumulative = 0;
   const series = Array.from({ length: day }, (_, index) => {
     const number = index + 1;
     cumulative += dailyCurrent.get(number) ?? 0;
     priorCumulative += dailyPrevious.get(number) ?? 0;
-    return { day: number, label: `${pad(number)}/${pad(month)}`, salesCents: cumulative, previousCents: number <= comparisonDay ? priorCumulative : null };
+    return { day: number, label: `${pad(number)}/${pad(month)}`, orders: dailyOrders.get(number) ?? 0, salesCents: cumulative, previousCents: number <= comparisonDay ? priorCumulative : null };
   });
   return {
     from, to, comparisonFrom, comparisonTo, comparisonDay, elapsedDays: day,

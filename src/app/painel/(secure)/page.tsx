@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
 import { BusinessDashboard } from "@/components/admin/BusinessDashboard";
+import { DailyOrdersChart } from "@/components/admin/DailyOrdersChart";
 import { getDashboardData } from "@/lib/admin/data";
 import { formatPrice } from "@/lib/utils/format";
 
@@ -58,6 +59,7 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+      <DailyOrdersChart data={data.business} />
       </section>
       <BusinessDashboard data={data.business} />
       </div>
