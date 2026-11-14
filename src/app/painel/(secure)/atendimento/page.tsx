@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { getCrmWorkflow } from "@/lib/admin/crm-workflow";
+import { dateInShop, isOverdue, type CrmWorkflowEntry } from "@/lib/admin/crm-workflow-types";
+import { FollowupForm } from "@/components/admin/CrmWorkflowForms";
 import { identifyLeadCustomerAction, linkLeadToOrderAction } from "@/app/painel/actions";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
@@ -75,6 +78,7 @@ const COR_DA_ETAPA: Record<LeadStage, string> = {
 export default async function AtendimentoPage({ searchParams }: { searchParams: Promise<Params> }) {
   const owner = await requireOwner();
   const params = await searchParams;
+  const workflow = await getCrmWorkflow();
 
   // "Todos" é a aba de entrada: no modo padrão (o cliente escolhe com quem
   // falar) os cliques de WhatsApp já nascem com atendente — só os pedidos do
@@ -350,6 +354,7 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
           <LeadRow
             key={lead.id}
             lead={lead}
+            workflow={workflow[`lead:${lead.id}`]}
             seller={lead.seller_id ? porId.get(lead.seller_id) ?? null : null}
             productName={lead.product_id ? nomeDoProduto.get(lead.product_id) ?? lead.product_id : ""}
             order={lead.order_id ? pedidoPorId.get(lead.order_id) ?? null : null}
@@ -371,8 +376,9 @@ export default async function AtendimentoPage({ searchParams }: { searchParams: 
   );
 }
 
-function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSellerId, volta }: {
+function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSellerId, volta, workflow }: {
   lead: LeadRecord;
+  workflow?: CrmWorkflowEntry;
   seller: SellerRecord | null;
   productName: string;
   /** Pedido vinculado (`lead.order_id`), quando ainda está na lista de pedidos. */
@@ -441,6 +447,7 @@ function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSel
             ? <a href={customerWhatsappLink(telefoneDoCliente)} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm font-bold text-[#128C7E] hover:underline">{telefone} · abrir WhatsApp</a>
             : <p className="mt-1 text-sm text-ink-400">Sem telefone registrado</p>}
           {lead.message && <p className="mt-2 line-clamp-2-safe text-xs text-ink-500">{lead.message}</p>}
+          {workflow?.next_contact_at && OPEN_LEAD_STAGES.includes(lead.stage) && <p className={`mt-2 text-xs font-bold ${isOverdue(workflow.next_contact_at) ? "text-red-700" : "text-blue-700"}`}>{isOverdue(workflow.next_contact_at) ? "Retorno atrasado: " : "Próximo retorno: "}{dateInShop(workflow.next_contact_at)}</p>}
           {lead.notes && <p className="mt-2 text-xs text-ink-600"><strong>Obs.:</strong> {lead.notes}</p>}
         </div>
 
@@ -466,6 +473,7 @@ function LeadRow({ lead, seller, productName, order, clientes, sellers, ownerSel
       </div>
 
       <div className="space-y-3 border-t border-ink-100 bg-ink-50/50 px-5 py-3">
+        {OPEN_LEAD_STAGES.includes(lead.stage) && <details><summary className="cursor-pointer text-xs font-bold text-blue-700">Agendar próximo retorno</summary><FollowupForm id={lead.id} value={workflow} /></details>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* `key` pela etapa gravada: depois de salvar, a página volta só com a
               query nova e o Next não remonta a árvore — sem remontar, o select

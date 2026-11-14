@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CategoryStrip } from "@/components/home/CategoryStrip";
+import { ProductComparison } from "@/components/catalog/ProductComparison";
 import { FaixaDeOfertas } from "@/components/home/FaixaDeOfertas";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import {
@@ -20,6 +21,9 @@ import {
   getExclusiveProducts,
   getOffers,
 } from "@/lib/catalog/queries";
+
+// Refresh time-based selections and offer periods within five minutes.
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: `${site.name} — ${site.tagline}`,
@@ -42,6 +46,7 @@ export default async function HomePage() {
     shown,
   );
   const offers = await getOffers(12);
+  const comparisonProducts = [...new Map([...technology, ...homeEssentials, ...offers].map(product => [product.id, product])).values()];
   // As ofertas não passam pelo `shown`: um produto pode estar nelas e em outra
   // vitrine. Esse fica sem a transição da foto nas duas (nome repetido na tela
   // cancela a transição).
@@ -103,6 +108,7 @@ export default async function HomePage() {
         <ProductCarousel products={selection} title="Um pouco de cada categoria" repetidos={repetidos} />
 
         <CategoryStrip />
+        <ProductComparison products={comparisonProducts.map(product => ({ id: product.id, name: product.name, slug: product.slug, categoryId: product.categoryId, price: product.price, brand: product.brand ?? "", stock: product.stock, specs: product.specifications.slice(0,12) }))} />
 
         <VitrineGrade products={technology} title="TVs, celulares e informática" repetidos={repetidos} />
 

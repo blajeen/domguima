@@ -25,7 +25,7 @@ export default function AccountPage() {
       </h1>
       <p className="mt-2 max-w-prose text-base leading-relaxed text-ink-600">
         A venda da Dom Guima é assistida. Acompanhamento, dúvidas e suporte são
-        resolvidos diretamente com a nossa equipe:
+        resolvidos diretamente com a nossa equipe. Se recebeu um link individual de acompanhamento, abra-o para consultar a situação do pedido, pagamento e entrega. Caso ainda não tenha o link, peça ao atendente:
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2">

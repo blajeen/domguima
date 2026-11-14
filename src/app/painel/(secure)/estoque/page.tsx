@@ -1,10 +1,11 @@
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
+import { StockRecommendations } from "@/components/admin/StockRecommendations";
 import { InventorySpreadsheet } from "@/components/admin/InventorySpreadsheet";
-import { getAdminProducts, getAllProductOperationalMeta, getParcelamento, getInventoryMovements } from "@/lib/admin/data";
+import { getAdminProducts, getSalesOrders, getAllProductOperationalMeta, getParcelamento, getInventoryMovements } from "@/lib/admin/data";
 import type { InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/types";
 
 export default async function InventoryPage() {
-  const [products, movements, parcelamento, meta] = await Promise.all([getAdminProducts(), getInventoryMovements(200), getParcelamento(), getAllProductOperationalMeta()]);
+  const [products, movements, parcelamento, meta, orders] = await Promise.all([getAdminProducts(), getInventoryMovements(200), getParcelamento(), getAllProductOperationalMeta(), getSalesOrders()]);
   // Produto com variacao entra como UMA LINHA POR OPCAO, cada uma com o
   // proprio saldo. Antes ele ficava de fora e o lojista nao tinha onde ver o
   // estoque de cada cor.
@@ -45,6 +46,7 @@ export default async function InventoryPage() {
 
   return <>
     <AdminPageHeader eyebrow="Operação de estoque" title="Estoque" description="Uma visão rápida para conferir preços, corrigir quantidades e registrar as saídas do dia com segurança." />
+    <StockRecommendations products={sheetProducts} orders={orders} />
     <PanelCard className="!p-0"><InventorySpreadsheet products={sheetProducts} movements={sheetMovements} todayUnits={todayUnits} parcelamento={parcelamento} /></PanelCard>
   </>;
 }

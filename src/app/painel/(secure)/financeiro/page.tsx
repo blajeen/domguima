@@ -6,6 +6,7 @@ import { channelFilterParam, channelSummaries, defaultReportRange, ORIGIN_FILTER
 import { ORDER_CHANNEL_LABELS, ORIGIN_NOT_INFORMED_LABEL, TRAFFIC_SOURCE_LABELS } from "@/lib/admin/types";
 import { orderChannelLabel, trafficSourceLabel } from "@/lib/services/origem";
 import { formatPrice } from "@/lib/utils/format";
+import { BusinessFinance } from "@/components/admin/BusinessFinance";
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -53,7 +54,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       <Metric title="Comissões" value={formatPrice(totals.commissionCents)} tone="gold" />
     </div>
 
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <BusinessFinance orders={orders} business={state.operations.business} workflow={state.operations.crm_workflow} selectedId={typeof params.custos === "string" ? params.custos : ""} query={downloadParams.toString()} />
+    <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <PanelCard><div className="flex items-end justify-between gap-3"><div><h2 className="text-base font-black">Resultado por vendedor</h2><p className="mt-1 text-xs text-ink-500">Somente pedidos finalizados entram nos totais.</p></div></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[600px] text-left text-sm"><thead className="text-xs uppercase text-ink-400"><tr><th className="py-2">Vendedor</th><th>Pedidos</th><th>Produtos</th><th>Vendas</th><th>Comissão</th></tr></thead><tbody className="divide-y divide-ink-100">{sellers.map((seller) => <tr key={seller.sellerId}><td className="py-3 font-bold">{seller.sellerName}</td><td>{seller.orders}</td><td>{seller.units}</td><td>{formatPrice(seller.salesCents)}</td><td className="font-black text-gold-800">{formatPrice(seller.commissionCents)}</td></tr>)}</tbody></table>{!sellers.length && <p className="py-10 text-center text-sm text-ink-500">Nenhuma venda finalizada neste período.</p>}</div></PanelCard>
       <div className="space-y-5">
       <PanelCard>

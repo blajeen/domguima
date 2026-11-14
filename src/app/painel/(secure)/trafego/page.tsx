@@ -20,6 +20,8 @@ import {
 } from "@/lib/admin/reports";
 import { isInternalPagePath } from "@/lib/services/origem";
 import { formatPrice } from "@/lib/utils/format";
+import { CampaignBudgetForm } from "@/components/admin/BusinessForms";
+import { campaignInvestment } from "@/lib/admin/business-insights";
 
 type Params = Record<string, string | string[] | undefined>;
 
@@ -53,6 +55,8 @@ export default async function TrafegoPage({ searchParams }: { searchParams: Prom
   const porCampanha = campaignSummaries(orders, trafego.rows);
   const paginas = pageSummaries(trafego.rows);
   const periodo = `de=${from}&ate=${to}`;
+  const budgets = Object.entries(state.operations.business?.campaignBudgets ?? {});
+  const budgetToEdit = budgets.find(([key]) => key === params.gasto)?.[1];
 
   // Destinos do gerador de links: só páginas públicas que existem.
   const destinos: LinkDestinationGroup[] = [
@@ -143,7 +147,7 @@ export default async function TrafegoPage({ searchParams }: { searchParams: Prom
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="text-xs uppercase text-ink-400">
-              <tr><th className="py-2">Campanha</th><th>Origem</th><th>Atendimentos</th><th>Pedidos finalizados</th><th>Conversão</th><th className="text-right">Vendas</th></tr>
+              <tr><th className="py-2">Campanha</th><th>Origem</th><th>Atendimentos</th><th>Pedidos finalizados</th><th>Conversão</th><th className="text-right">Vendas</th><th className="text-right">Investimento</th><th className="text-right">Custo/atendimento</th><th className="text-right">Vendas/investimento</th></tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
               {porCampanha.map((linha) => (
@@ -157,6 +161,9 @@ export default async function TrafegoPage({ searchParams }: { searchParams: Prom
                   <td>{linha.orders}</td>
                   <td>{linha.conversion === null ? "—" : PERCENTUAL.format(linha.conversion)}</td>
                   <td className="text-right font-black">{formatPrice(linha.salesCents)}</td>
+                  <td className="text-right">{campaignInvestment(state.operations.business, linha.label, from, to) > 0 ? formatPrice(campaignInvestment(state.operations.business, linha.label, from, to)) : "—"}</td>
+                  <td className="text-right">{linha.leads > 0 && campaignInvestment(state.operations.business, linha.label, from, to) > 0 ? formatPrice(Math.round(campaignInvestment(state.operations.business, linha.label, from, to) / linha.leads)) : "—"}</td>
+                  <td className="text-right">{campaignInvestment(state.operations.business, linha.label, from, to) > 0 ? `${(linha.salesCents / campaignInvestment(state.operations.business, linha.label, from, to)).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}×` : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -164,6 +171,8 @@ export default async function TrafegoPage({ searchParams }: { searchParams: Prom
           {!porCampanha.length && <p className="py-8 text-center text-sm text-ink-500">Nenhum atendimento ou pedido veio de link de campanha neste período.</p>}
         </div>
       </PanelCard>
+
+      <PanelCard className="mt-5"><h2 className="text-base font-black">Investimento por campanha</h2><p className="mb-4 mt-1 text-xs text-ink-500">Informe o gasto real da divulgação. A comparação inclui apenas gastos cujo intervalo inteiro está no filtro acima; períodos parciais não são rateados. Vendas/investimento não representa lucro.</p><CampaignBudgetForm key={params.gasto as string ?? "new"} from={from} to={to} campaigns={porCampanha.map(row => row.label)} initial={budgetToEdit} />{budgets.length > 0 && <ul className="mt-4 divide-y divide-ink-100">{budgets.map(([key, row]) => <li key={key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs"><span><strong>{row.campaign}</strong> · {row.from.split("-").reverse().join("/")} a {row.to.split("-").reverse().join("/")} · {formatPrice(row.cents)}</span><Link className="font-bold text-blue-700 underline" href={`/painel/trafego?${periodo}&gasto=${encodeURIComponent(key)}`}>Editar investimento</Link></li>)}</ul>}<p className="mt-3 text-xs text-ink-500">Para retirar um lançamento, edite o mesmo intervalo e informe zero. Intervalos sobrepostos da mesma campanha são recusados para evitar contagem duplicada.</p></PanelCard>
 
       <PanelCard className="mt-5">
         <h2 className="text-base font-black">Páginas que geraram atendimento</h2>

@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { getCrmWorkflow } from "@/lib/admin/crm-workflow";
+import { dateInShop } from "@/lib/admin/crm-workflow-types";
+import { ContactLogForm } from "@/components/admin/CrmWorkflowForms";
+import { ImportedCustomerIdentification } from "@/components/admin/ImportedCustomerIdentification";
 import { customerContactAction } from "@/app/painel/actions";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { CrmMigrationNotice } from "@/components/admin/CrmMigrationNotice";
@@ -13,7 +17,7 @@ import {
   VIP_MIN_ORDERS,
   VIP_MIN_TOTAL_CENTS,
 } from "@/lib/admin/customers";
-import { getCustomers } from "@/lib/admin/data";
+import { getCustomers, getSalesOrders } from "@/lib/admin/data";
 import { CUSTOMER_SEGMENT_LABELS, CUSTOMER_SEGMENTS, type CustomerSegment, type CustomerSummary } from "@/lib/admin/types";
 import { customerWhatsappLink, recompraMessage } from "@/lib/services/whatsapp";
 import { formatPrice } from "@/lib/utils/format";
@@ -80,6 +84,10 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
   const { book: livro, index: indice } = await getCustomers();
   const chaveDoLink = clienteRef ? indice.keyOfOrderNumber(clienteRef) : null;
   const todos = livro.customers;
+  const [workflow, orders] = await Promise.all([getCrmWorkflow(), getSalesOrders()]);
+  const lastContacts = new Map<string, string>();
+  for (const [key, note] of Object.entries(workflow)) if (key.startsWith("customer:") && note.last_contact_at) { const identity = indice.keyOfOrderNumber(key.slice(9)); if (identity && note.last_contact_at > (lastContacts.get(identity) ?? "")) lastContacts.set(identity, note.last_contact_at); }
+  const unidentified = orders.filter(order => order.status === "completed" && !indice.keyOfOrder(order)).map(order => ({id: order.id, number: order.number, name: order.customer.name}));
   const porSegmento = new Map<CustomerSegment, number>(CUSTOMER_SEGMENTS.map((valor) => [valor, 0]));
   for (const cliente of todos) porSegmento.set(cliente.segment, (porSegmento.get(cliente.segment) ?? 0) + 1);
 
@@ -139,6 +147,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         Só contam pedidos finalizados. “Inativo” vale sobre os outros: quem não compra há mais de {INACTIVE_AFTER_DAYS} dias aparece como inativo mesmo que já tenha sido VIP — compras e total continuam na tabela.
       </p>
 
+      {unidentified.length > 0 && <ImportedCustomerIdentification orders={unidentified} />}
       <PanelCard className="mt-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-base font-black">Sugestões de recontato</h2>
@@ -165,7 +174,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                   </p>
                   {cliente.openLeads > 0 && <p className="mt-0.5 text-xs font-bold text-orange-700">Já tem {cliente.openLeads} atendimento(s) em aberto: combine com quem está atendendo antes de chamar.</p>}
                 </div>
-                <AcoesDoCliente cliente={cliente} volta={volta} />
+                <AcoesDoCliente cliente={cliente} volta={volta} lastContact={lastContacts.get(cliente.key)} />
               </li>
             ))}
           </ul>
@@ -245,7 +254,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                     <p className="text-xs text-ink-500">{haDias(cliente.daysSinceLastOrder)} · {cliente.lastOrderNumber}</p>
                   </td>
                   <td className="py-3 pr-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${COR_DO_SEGMENTO[cliente.segment]}`}>{CUSTOMER_SEGMENT_LABELS[cliente.segment]}</span></td>
-                  <td className="py-3"><AcoesDoCliente cliente={cliente} volta={volta} /></td>
+                  <td className="py-3"><AcoesDoCliente cliente={cliente} volta={volta} lastContact={lastContacts.get(cliente.key)} /></td>
                 </tr>
               ))}
             </tbody>
@@ -269,9 +278,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
  * recontato — a conversa com ele, se ele mesmo chamar, continua pelo
  * Atendimento. A marca é reversível ("Permitir recontato").
  */
-function AcoesDoCliente({ cliente, volta }: { cliente: CustomerSummary; volta: string }) {
+function AcoesDoCliente({ cliente, volta, lastContact }: { cliente: CustomerSummary; volta: string; lastContact?: string }) {
   return (
     <div className="flex flex-wrap justify-end gap-2">
+      {lastContact && <p className="w-full text-right text-xs text-ink-500">Último recontato: {dateInShop(lastContact)}</p>}
+      {!cliente.contactOptOut && <ContactLogForm reference={cliente.lastOrderNumber} />}
       {cliente.contactOptOut
         ? null
         : cliente.phone

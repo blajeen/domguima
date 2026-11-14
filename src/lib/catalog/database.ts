@@ -1,4 +1,5 @@
 import "server-only";
+import { offerIsScheduledNow, readOfferSchedule } from "./offer-schedule";
 
 import { whatsappContacts, type WhatsappContact } from "@/config/site";
 import { readCatalogState } from "@/lib/admin/catalog-store";
@@ -25,7 +26,10 @@ export async function loadCatalogProducts(): Promise<Product[]> {
     if (!state.catalogEnabled) return fallbackProducts.map((product) => comParcelamento(product, parcelamento));
     const products = state.products.filter((product) => product.status === "active");
     return (products.length ? products.map((row) => toProduct(row as unknown as Record<string, unknown>, state.operations?.product_meta?.[row.id]?.variant_prices)) : fallbackProducts)
-      .map((product) => comParcelamento(product, parcelamento));
+      .map((product) => {
+        const scheduled = offerIsScheduledNow(readOfferSchedule(state.operations.product_meta[product.id]));
+        return comParcelamento(scheduled ? product : { ...product, isOffer: false, oldPrice: undefined, variantOptions: product.variantOptions?.map(option => ({ ...option, oldPrice: undefined })) }, parcelamento);
+      });
   } catch { return fallbackProducts.map((product) => comParcelamento(product, PARCELAMENTO_PADRAO)); }
 }
 

@@ -1,3 +1,5 @@
+import { readCatalogState } from "@/lib/admin/catalog-store";
+import { recentUnits } from "@/lib/admin/catalog-insights";
 import { normalize } from "@/lib/utils/format";
 import { loadCatalogCategories, loadCatalogProducts } from "./database";
 import type { Category, Product, ProductFilters, SortKey } from "./types";
@@ -32,7 +34,10 @@ export async function getOffers(limit?: number): Promise<Product[]> {
 }
 
 export async function getBestSellers(limit?: number): Promise<Product[]> {
-  const list = (await getSellableProducts()).filter((product) => product.isBestSeller).sort((a, b) => (b.soldCount ?? 0) - (a.soldCount ?? 0));
+  const products = await getSellableProducts();
+  const sold = recentUnits((await readCatalogState()).operations.orders);
+  const ranked = products.filter(product => (sold.get(product.id) ?? 0) > 0).sort((a,b) => (sold.get(b.id) ?? 0) - (sold.get(a.id) ?? 0) || a.name.localeCompare(b.name, "pt-BR"));
+  const list = ranked.length ? ranked : products.filter(product => product.isBestSeller).sort((a,b) => (b.soldCount ?? 0) - (a.soldCount ?? 0));
   return limit ? list.slice(0, limit) : list;
 }
 
