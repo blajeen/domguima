@@ -23,11 +23,12 @@ export const site = {
   tagline: "Empório das Ofertas",
   /**
    * Meta description e texto do rodapé. Só fatos: o que a loja vende, que
-   * envia para todo o Brasil e que o frete é confirmado antes de qualquer
-   * cobrança (páginas de frete e de termos). "Preço justo" saiu: vago.
+   * entrega em Uberlândia e região (o brand kit proíbe anunciar envio
+   * nacional) e que o frete é confirmado antes de qualquer cobrança (páginas
+   * de frete e de termos). "Preço justo" saiu: vago.
    */
   shortDescription:
-    "Eletrônicos, eletrodomésticos, climatização e decoração, com envio para todo o Brasil e frete confirmado antes de qualquer cobrança.",
+    "Eletrônicos, eletrodomésticos, climatização e decoração, com entrega em Uberlândia e região e frete confirmado antes de qualquer cobrança.",
   /** VERIFICADO — descrição escrita pela própria loja na Shopee. */
   longDescription:
     "Somos especialistas em promoções e em uma ampla linha de produtos, incluindo eletrônicos, eletrodomésticos, climatização e decoração. Nosso objetivo é oferecer qualidade, variedade e preços acessíveis, garantindo praticidade e economia para nossos clientes.",

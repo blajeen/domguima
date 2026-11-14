@@ -29,7 +29,7 @@ export const institutionalPages: InstitutionalPage[] = [
   {
     slug: "sobre-nos",
     title: "Sobre a Dom Guima",
-    description: `Conheça a Dom Guima, de ${company.cityState}: eletrônicos, eletrodomésticos, climatização e decoração, com atendimento pelo WhatsApp e envio para todo o Brasil.`,
+    description: `Conheça a Dom Guima, de ${company.cityState}: eletrônicos, eletrodomésticos, climatização e decoração, com atendimento pelo WhatsApp e entrega em Uberlândia e região.`,
     intro: site.longDescription,
     sections: [
       {
@@ -107,12 +107,12 @@ export const institutionalPages: InstitutionalPage[] = [
     slug: "frete-e-entrega",
     title: "Frete e entrega",
     description:
-      "Como funcionam o envio, o prazo e o cálculo de frete dos pedidos feitos na Dom Guima.",
+      "Como funcionam a entrega em Uberlândia e região, o prazo e o valor do frete dos pedidos feitos na Dom Guima.",
     sections: [
       {
-        heading: "Para onde enviamos",
+        heading: "Onde entregamos",
         paragraphs: [
-          `Enviamos para todo o Brasil. Nossos pedidos saem de ${shopeeStats.location}, então o prazo varia bastante conforme a distância e a região de destino.`,
+          "Entregamos em Uberlândia e região. Se preferir, também dá para combinar a retirada do pedido.",
         ],
       },
       {
@@ -123,16 +123,15 @@ export const institutionalPages: InstitutionalPage[] = [
         ],
       },
       {
-        heading: "Prazo de envio",
+        heading: "Prazo de entrega",
         paragraphs: [
-          "Depois do pagamento confirmado, preparamos e despachamos o pedido. Assim que ele é postado, enviamos o código de rastreio pelo WhatsApp.",
-          "O prazo de entrega em si é o da transportadora e começa a contar a partir da postagem.",
+          "Depois do pagamento confirmado, combinamos com você pelo WhatsApp o dia e o horário da entrega, conforme o seu endereço.",
         ],
       },
       {
         heading: "Produtos volumosos",
         paragraphs: [
-          "Itens grandes, como televisores, geladeiras e climatizadores, podem ter regras de envio diferentes conforme a região. Se for o seu caso, confirmamos as condições antes de fechar o pedido.",
+          "Itens grandes, como televisores, geladeiras e climatizadores, podem ter condições de entrega diferentes conforme o endereço. Se for o seu caso, confirmamos as condições antes de fechar o pedido.",
         ],
       },
     ],
@@ -207,7 +206,7 @@ export const institutionalPages: InstitutionalPage[] = [
         list: [
           `Chame no ${WHATSAPP_LINE} informando o número do pedido`,
           "Descreva o motivo e envie fotos ou vídeo, quando for o caso",
-          "Combinamos com você a forma de postagem da devolução",
+          "Combinamos com você como a devolução será feita",
           "Após recebermos e conferirmos o produto, seguimos com a troca ou o reembolso",
         ],
       },
@@ -244,7 +243,7 @@ export const institutionalPages: InstitutionalPage[] = [
       {
         heading: "Com quem compartilhamos",
         paragraphs: [
-          "Compartilhamos apenas o necessário para a entrega e o pagamento acontecerem: transportadoras e Correios recebem o endereço; o meio de pagamento recebe os dados da cobrança. Cada um usa esses dados só para a sua parte do processo.",
+          "Compartilhamos apenas o necessário para a entrega e o pagamento acontecerem: quem faz a entrega recebe o endereço; o meio de pagamento recebe os dados da cobrança. Cada um usa esses dados só para a sua parte do processo.",
         ],
       },
       {

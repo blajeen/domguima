@@ -18,7 +18,7 @@ export function organizationJsonLd() {
     url: site.url,
     logo: absoluteUrl("/brand/logo-dom-guima.png"),
     description: site.longDescription,
-    areaServed: { "@type": "Country", name: "Brasil" },
+    areaServed: { "@type": "City", name: "Uberlândia" },
     address: {
       "@type": "PostalAddress",
       addressRegion: shopeeStats.location,

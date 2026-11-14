@@ -55,7 +55,7 @@ export async function Header() {
           <div className="site-shell flex h-full items-center justify-between gap-4 text-xs">
             <p className="flex items-center gap-1.5">
               <Icon name="caminhao" size={16} />
-              Enviamos para todo o Brasil
+              Entregamos em Uberlândia e região
             </p>
             <div className="flex items-center gap-5">
               <a

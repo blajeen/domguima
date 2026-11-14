@@ -399,9 +399,7 @@ function EnvioDoProduto({ product, shopee }: { product: Product; shopee: CanalRe
           <li className="flex gap-3">
             <Icon name="localizacao" className="text-ouro-texto" />
             <span>
-              Enviado de{" "}
-              <strong className="font-semibold text-grafite-900">{product.shipping.origin}</strong>{" "}
-              para todo o Brasil.
+              Entrega em <strong className="font-semibold text-grafite-900">Uberlândia e região</strong>.
             </span>
           </li>
           {/* Peso zerado é cadastro incompleto, não um pacote de 0 g. */}
