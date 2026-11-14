@@ -8,6 +8,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "./config";
 import { defaultStoreSettings, initialCategories, initialProducts } from "./defaults";
 import { normalizarVendaLojistas } from "./lojistas";
+import { normalizarPostagens } from "@/lib/content/postagens";
 import { canonicalizeOrderSellers, defaultSellers, normalizeSellers } from "./sellers";
 import type { AdminCategoryRow, AdminOperationsState, AdminProductImage, AdminProductRow, AdminProductVariant, SalesOrderRecord, SellerRecord, StoreSettings } from "./types";
 
@@ -172,7 +173,7 @@ export async function writeCatalogState(state: CatalogState): Promise<void> {
     // o livro-razao e reintroduzir a perda de pedido concorrente.
     // Toda chave nova de operations entra nesta lista: o que ficar de fora nao
     // e gravado e some no proximo save (a venda para lojistas entrou aqui).
-    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs, lojistas: state.operations.lojistas };
+    const operationsSemPedidos = { sellers: state.operations.sellers, product_meta: state.operations.product_meta, contact_opt_outs: state.operations.contact_opt_outs, lojistas: state.operations.lojistas, postagens: state.operations.postagens };
     const persistedState = {
       ...state,
       settings: { ...state.settings, __operations: operationsSemPedidos },
@@ -437,6 +438,7 @@ export function defaultOperationsState(): AdminOperationsState {
     product_meta: {},
     contact_opt_outs: [],
     lojistas: normalizarVendaLojistas(null),
+    postagens: [],
   };
 }
 
@@ -460,6 +462,7 @@ function normalizeOperations(value?: Partial<AdminOperationsState> | null): Admi
     // Gravado antes da venda para lojistas existir = desconto padrao (10%),
     // sem condicoes e sem preco especial.
     lojistas: normalizarVendaLojistas(value?.lojistas),
+    postagens: normalizarPostagens(value?.postagens),
   };
 }
 

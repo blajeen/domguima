@@ -1,4 +1,5 @@
 import type { VendaLojistas } from "./lojistas";
+import type { PostagemPlanejada } from "@/lib/content/postagens";
 
 export type ActionState = {
   ok?: boolean;
@@ -459,6 +460,8 @@ export interface AdminOperationsState {
    * `settings`: preço de atacado não pode chegar perto do que a loja lê.
    */
   lojistas: VendaLojistas;
+  /** Calendário de postagens da aba Conteúdo (lib/content/postagens.ts). */
+  postagens: PostagemPlanejada[];
 }
 
 export interface AdminProductRow {

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { contaPrincipalOrThrow, createAdminSession, destroyAdminSession, ownerOrThrow, verifyAdminCredentials } from "@/lib/admin/auth";
 import { aplicarLoteDePrecos, CONDICOES_LOJISTA_MAXIMO, DESCONTO_LOJISTA_MAXIMO, descreverItem, especiaisAcimaDoDesconto, formatarDesconto, lerDescontoDigitado, lerLoteDePrecos, linhasParaLojistas, mostraPrecoSite, validarPrecoEspecial, type VendaLojistas } from "@/lib/admin/lojistas";
 import { formatPrice } from "@/lib/utils/format";
+import { lerPostagem } from "@/lib/content/postagens";
 import { copyCatalogImage, countProductMovements, createImageUploadTarget, createInitialState, deleteCatalogImage, deleteOrderRecords, imageExistsInStorage, mutateCatalogState, readCatalogState, type CatalogState } from "@/lib/admin/catalog-store";
 import { OpenAIWebError } from "@/lib/admin/openai-web";
 import { findMarketPrice, type MarketPriceResult } from "@/lib/admin/market-price";
@@ -1947,4 +1948,46 @@ export async function salvarPrecosLojistaEmLoteAction(_: ResultadoLoteLojistas, 
   const partes = [lote.mudancas.length ? `${lote.mudancas.length === 1 ? "1 preço salvo" : `${lote.mudancas.length} preços salvos`}.` : "Nada mudou."];
   if (lote.fora.length) partes.push(`${lote.fora.length === 1 ? "1 item não está mais na tabela e ficou sem salvar" : `${lote.fora.length} itens não estão mais na tabela e ficaram sem salvar`}: ${lote.fora.map((chave) => { const d = nomes.get(chave); return d ? `${d.rotulo} (${d.motivo})` : chave; }).join("; ")}.`);
   return { ok: !lote.fora.length, message: partes.join(" "), salvas: lote.salvas };
+}
+
+// ── Calendário de postagens (aba Conteúdo) ─────────────────────────────────
+
+/** Cria ou atualiza uma postagem planejada. Sem `id` no formulário = nova. */
+export async function salvarPostagemAction(_: ActionState, formData: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const campos = Object.fromEntries([...formData.entries()].map(([k, v]) => [k, typeof v === "string" ? v : ""]));
+  const id = campos.id || randomUUID();
+  const postagem = lerPostagem(campos, id);
+  if (typeof postagem === "string") return { message: postagem };
+  let achou = !campos.id;
+  try {
+    await mutateCatalogState((state) => {
+      const lista = state.operations.postagens;
+      const i = lista.findIndex((p) => p.id === id);
+      if (campos.id && i < 0) return;
+      achou = true;
+      audit(state, owner.id, i < 0 ? "conteudo.postagem.created" : "conteudo.postagem.updated", "postagem", id, i < 0 ? null : lista[i], postagem);
+      if (i < 0) lista.push(postagem);
+      else lista[i] = postagem;
+    });
+  } catch (error) {
+    console.error("Calendário de postagens: falha ao salvar.", error);
+    return { message: "Não foi possível salvar agora. Tente de novo em instantes." };
+  }
+  if (!achou) return { message: "Essa postagem foi excluída. Recarregue a página." };
+  revalidatePath("/painel/conteudo/calendario");
+  return { ok: true, message: campos.id ? "Postagem atualizada." : "Postagem planejada." };
+}
+
+export async function excluirPostagemAction(formData: FormData): Promise<void> {
+  const owner = await ownerOrThrow();
+  const id = String(formData.get("id") ?? "");
+  await mutateCatalogState((state) => {
+    const antes = state.operations.postagens.find((p) => p.id === id);
+    if (!antes) return;
+    state.operations.postagens = state.operations.postagens.filter((p) => p.id !== id);
+    audit(state, owner.id, "conteudo.postagem.deleted", "postagem", id, antes, null);
+  });
+  revalidatePath("/painel/conteudo/calendario");
+  redirect(`/painel/conteudo/calendario?mes=${String(formData.get("mes") ?? "")}`);
 }

@@ -1,4 +1,6 @@
 import Image from "next/image";
+import Link from "next/link";
+import { ConteudoAbas } from "./ConteudoAbas";
 import { AdminPageHeader, PanelCard } from "@/components/admin/AdminShell";
 import { ArteExemplo, CopiarTexto } from "@/components/admin/ConteudoCliente";
 import { EXEMPLOS, FORMATOS, promptCodex } from "@/lib/content/exemplosConteudo";
@@ -58,10 +60,7 @@ export default function ConteudoPage() {
     <>
       <AdminPageHeader eyebrow="Divulgacao" title="Conteúdo" description="Brand kit da Dom Guima e posts de exemplo com legenda pronta para o Instagram." />
 
-      <nav className="mb-6 flex gap-2 text-sm font-bold">
-        <a href="#brand-kit" className="rounded-lg bg-ink-900 px-3 py-2 text-white">Brand kit</a>
-        <a href="#exemplos" className="rounded-lg border border-ink-200 px-3 py-2">10 exemplos</a>
-      </nav>
+      <ConteudoAbas ativa="kit" />
 
       <div id="brand-kit" className="grid gap-6">
         <PanelCard>
@@ -178,6 +177,7 @@ export default function ConteudoPage() {
                 <div className="flex flex-wrap gap-3">
                   <CopiarTexto texto={e.legenda} rotulo="Copiar legenda" />
                   <CopiarTexto texto={promptCodex(e)} rotulo="Copiar prompt do Codex" />
+                  <Link href={`/painel/conteudo/calendario?exemplo=${e.id}`} className="rounded-lg bg-ink-900 px-3 py-1.5 text-xs font-bold text-white">Planejar no calendário</Link>
                 </div>
                 <details className="text-xs">
                   <summary className="cursor-pointer font-bold text-ink-500">Ver prompt</summary>
