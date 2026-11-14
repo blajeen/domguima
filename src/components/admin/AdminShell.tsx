@@ -13,6 +13,7 @@ const nav = [
   { href: "/painel/estoque", label: "Estoque", icon: "↕" },
   { href: "/painel/categorias", label: "Categorias", icon: "◇" },
   { href: "/painel/catalogo-pdf", label: "Catalogo PDF", icon: "PDF" },
+  { href: "/painel/conteudo", label: "Conteúdo", icon: "✦" },
   { href: "/painel/historico", label: "Historico", icon: "H" },
   { href: "/painel/financeiro", label: "Relatórios", icon: "$" },
   { href: "/painel/trafego", label: "Trafego", icon: "↗" },
