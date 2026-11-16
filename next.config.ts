@@ -7,7 +7,10 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "45mb" },
   },
   images: {
-    // AVIF/WebP automáticos: o Next serve o formato mais leve que o navegador aceita.
+    // A cota de otimização de imagens da Vercel acabou (fotos novas davam 402 e não apareciam):
+    // as fotos vão direto da origem. O painel já salva em WebP.
+    // shortcut: sem redimensionar por tela; voltar a otimizar se o plano da Vercel passar a cobrir.
+    unoptimized: true,
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
       // Fotos do Instagram, quando a Graph API estiver configurada.
