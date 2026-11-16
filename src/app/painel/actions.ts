@@ -48,6 +48,8 @@ const inventoryCountInput = z.object({
   expectedPriceCents: z.number().int().positive().optional(),
   priceCents: z.number().int().positive().optional(),
   oldPriceCents: z.number().int().positive().nullable().optional(),
+  name: z.string().trim().min(3).max(300).optional(),
+  gtin: z.string().refine(value => value === "" || isValidGTIN(value)).optional(),
 });
 
 const dailySaleInput = z.object({

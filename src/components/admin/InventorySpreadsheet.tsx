@@ -7,6 +7,7 @@ import { registerDailySalesAction, saveInventoryCountsAction } from "@/app/paine
 import type { ActionState, InventorySheetMovement, InventorySheetProduct } from "@/lib/admin/types";
 import { parcelamentoMaximo, type ParcelamentoDaLoja } from "@/lib/catalog/parcelamento";
 import { formatPrice, normalize } from "@/lib/utils/format";
+import { isValidGTIN, onlyDigits } from "@/lib/utils/validators";
 
 type ViewMode = "count" | "sales";
 type StockFilter = "all" | "in" | "attention" | "out";
@@ -20,7 +21,8 @@ function matchesStockFilter(filter: StockFilter, stock: number, lowStockThreshol
 }
 type SortKey = "name" | "price" | "stock";
 type Draft = { stock: number; originalStock: number; exitQty: number };
-type ImportLine = { rowNumber: number; sku: string; name: string; productId: string | null; stock: number | null; priceCents: number | null; oldPriceCents: number | null; issues: string[] };
+/** `newName` e `gtin` ficam null quando a lista não muda o cadastro (célula vazia ou igual). */
+type ImportLine = { rowNumber: number; sku: string; name: string; newName: string | null; gtin: string | null; productId: string | null; stock: number | null; priceCents: number | null; oldPriceCents: number | null; issues: string[] };
 type ImportPreview = { fileName: string; rows: ImportLine[]; parceladoIgnorado: boolean };
 
 interface InventorySpreadsheetProps {
@@ -175,6 +177,7 @@ export function InventorySpreadsheet({ products, movements, todayUnits, parcelam
     const stockIndex = indexOf("estoque", "quantidade");
     const realIndex = indexOf("valor_real", "preco_real", "preco");
     const promoIndex = indexOf("valor_promocional", "preco_promocional", "promocional");
+    const gtinIndex = indexOf("gtin", "ean", "codigo_de_barras");
     if (skuIndex < 0 || stockIndex < 0 || realIndex < 0) { setFeedback({ message: "A lista precisa conter as colunas SKU, estoque e valor_real." }); return; }
     const productsBySku = new Map(sheetProducts.map((product) => [normalize(product.sku), product]));
     const seen = new Set<string>();
@@ -198,7 +201,19 @@ export function InventorySpreadsheet({ products, movements, todayUnits, parcelam
       if (realIndex >= 0 && real === null) issues.push("Valor real inválido");
       if (promoIndex >= 0 && String(row[promoIndex] ?? "").trim() && promo === null) issues.push("Valor promocional inválido");
       if (real !== null) { priceCents = promo ?? real; oldPriceCents = promo !== null ? real : null; if (oldPriceCents !== null && oldPriceCents <= priceCents) issues.push("Valor real deve ser maior que o promocional"); }
-      return { rowNumber, sku, name, productId: product?.id ?? null, stock, priceCents, oldPriceCents, issues };
+      // Opção sai na planilha como "Produto · Cor": o nome do cadastro é sem o " · Cor".
+      const suffix = product?.variant_label ? ` · ${product.variant_label}` : "";
+      const baseName = suffix && name.endsWith(suffix) ? name.slice(0, -suffix.length).trim() : name;
+      const currentName = suffix ? product!.name.slice(0, -suffix.length) : product?.name;
+      const newName = product && baseName && baseName !== currentName ? baseName : null;
+      if (newName && newName.length < 3) issues.push("Nome precisa ter pelo menos 3 letras");
+      // O Excel exporta ="789..." para não virar 7,89E+12; aceita os dois jeitos.
+      const gtinRaw = gtinIndex >= 0 ? String(row[gtinIndex] ?? "").trim().replace(/^=/, "") : "";
+      const gtinDigits = onlyDigits(gtinRaw);
+      if (/e\+?\d/i.test(gtinRaw)) issues.push("GTIN virou 7,89E+12 no Excel: formate a coluna como Texto e digite de novo");
+      else if (gtinDigits && !isValidGTIN(gtinDigits)) issues.push("GTIN inválido (confira os dígitos)");
+      const gtin = product && gtinDigits && gtinDigits !== product.gtin ? gtinDigits : null;
+      return { rowNumber, sku, name, newName, gtin, productId: product?.id ?? null, stock, priceCents, oldPriceCents, issues };
     }).filter((row) => row.sku || row.name || row.stock !== null);
     // Listas antigas (e a de hoje, se o lojista editar a coluna) trazem o
     // parcelado; ele não se importa mais, e a prévia avisa em vez de calar.
@@ -212,13 +227,13 @@ export function InventorySpreadsheet({ products, movements, todayUnits, parcelam
     if (!importPreview) return;
     const validRows = importPreview.rows.filter((row) => !row.issues.length && row.productId && row.stock !== null && row.priceCents !== null);
     if (!validRows.length) return;
-    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.product_id, variantId: product.variant_id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents }; });
+    const updates = validRows.map((row) => { const product = sheetProducts.find((item) => item.id === row.productId)!; return { productId: product.product_id, variantId: product.variant_id, expectedStock: product.stock, stock: row.stock!, expectedPriceCents: product.price_cents, priceCents: row.priceCents!, oldPriceCents: row.oldPriceCents, ...(row.newName && { name: row.newName }), ...(row.gtin && { gtin: row.gtin }) }; });
     setFeedback({});
     startTransition(async () => {
       const result = await saveInventoryCountsAction(updates);
       setFeedback(result);
       if (result.ok) {
-        setSheetProducts((current) => current.map((product) => { const row = validRows.find((item) => item.productId === product.id); return row ? { ...product, stock: row.stock!, price_cents: row.priceCents!, old_price_cents: row.oldPriceCents } : product; }));
+        setSheetProducts((current) => current.map((product) => { const row = validRows.find((item) => item.productId === product.id); return row ? { ...product, stock: row.stock!, price_cents: row.priceCents!, old_price_cents: row.oldPriceCents, name: row.newName ? row.newName + (product.variant_label ? ` · ${product.variant_label}` : "") : product.name, gtin: row.gtin ?? product.gtin } : product; }));
         setDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, draft]) => { const row = validRows.find((item) => item.productId === id); return row ? [id, { ...draft, stock: row.stock!, originalStock: row.stock!, exitQty: 0 }] : [id, draft]; })));
         setImportPreview(null);
       }
@@ -289,7 +304,7 @@ function StockStepper({ value, max, onChange, onStep, label }: { value: number; 
 function StockStatus({ stock, threshold }: { stock: number; threshold: number }) { if (stock === 0) return <span className="inventory-status is-out"><i />Esgotado</span>; if (stock <= threshold) return <span className="inventory-status is-low"><i />Atenção</span>; return <span className="inventory-status is-ok"><i />Saudável</span>; }
 function ImportPreviewPanel({ preview, isPending, onCancel, onApply }: { preview: ImportPreview; isPending: boolean; onCancel: () => void; onApply: () => void }) {
   const validCount = preview.rows.filter((row) => !row.issues.length).length;
-  return <div className="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventory-import-title"><div className="inventory-import-head"><div><p className="inventory-kicker">Conferência antes de salvar</p><h3 id="inventory-import-title">Importar lista de estoque</h3><p>{preview.fileName} · {preview.rows.length} linhas lidas</p></div><button type="button" onClick={onCancel} aria-label="Fechar prévia">×</button></div><div className="inventory-import-summary"><span className="valid"><b>{validCount}</b> reconhecidas</span><span className={preview.rows.length - validCount ? "invalid" : "valid"}><b>{preview.rows.length - validCount}</b> com problema</span><small>O SKU é usado para localizar o produto. Nome e categoria não são alterados.</small>{preview.parceladoIgnorado && <small role="note"><b>Coluna de parcelado ignorada:</b> o site calcula o parcelado sozinho pelo preço, com a tabela da maquininha de Configurações.</small>}</div><div className="inventory-import-table-wrap"><table><thead><tr><th>Linha</th><th>Produto / SKU</th><th>Estoque</th><th>Valores</th><th>Resultado</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={`${row.rowNumber}-${row.sku}`}><td>{row.rowNumber}</td><td><strong>{row.name || "Produto sem nome"}</strong><small>{row.sku || "SKU vazio"}</small></td><td>{row.stock ?? "—"}</td><td>{row.priceCents !== null ? formatPrice(row.priceCents) : "—"}{row.oldPriceCents !== null && <small>real {formatPrice(row.oldPriceCents)}</small>}</td><td>{row.issues.length ? <span className="import-row-error">{row.issues.join(" · ")}</span> : <span className="import-row-ok">✓ Pronta para aplicar</span>}</td></tr>)}</tbody></table></div><div className="inventory-import-foot"><button type="button" className="inventory-secondary-action" onClick={onCancel} disabled={isPending}>Cancelar</button><button type="button" className="inventory-primary-action" onClick={onApply} disabled={isPending || !validCount}>{isPending ? "Aplicando..." : `Aplicar ${validCount} ${validCount === 1 ? "linha" : "linhas"}`}</button></div></div>;
+  return <div className="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventory-import-title"><div className="inventory-import-head"><div><p className="inventory-kicker">Conferência antes de salvar</p><h3 id="inventory-import-title">Importar lista de estoque</h3><p>{preview.fileName} · {preview.rows.length} linhas lidas</p></div><button type="button" onClick={onCancel} aria-label="Fechar prévia">×</button></div><div className="inventory-import-summary"><span className="valid"><b>{validCount}</b> reconhecidas</span><span className={preview.rows.length - validCount ? "invalid" : "valid"}><b>{preview.rows.length - validCount}</b> com problema</span><small>O SKU localiza o produto. Nome, GTIN, estoque e valores são atualizados; a categoria não muda.</small>{preview.parceladoIgnorado && <small role="note"><b>Coluna de parcelado ignorada:</b> o site calcula o parcelado sozinho pelo preço, com a tabela da maquininha de Configurações.</small>}</div><div className="inventory-import-table-wrap"><table><thead><tr><th>Linha</th><th>Produto / SKU</th><th>Estoque</th><th>Valores</th><th>Resultado</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={`${row.rowNumber}-${row.sku}`}><td>{row.rowNumber}</td><td><strong>{row.name || "Produto sem nome"}</strong><small>{row.sku || "SKU vazio"}{row.gtin && ` · novo GTIN ${row.gtin}`}{row.newName && " · nome atualizado"}</small></td><td>{row.stock ?? "—"}</td><td>{row.priceCents !== null ? formatPrice(row.priceCents) : "—"}{row.oldPriceCents !== null && <small>real {formatPrice(row.oldPriceCents)}</small>}</td><td>{row.issues.length ? <span className="import-row-error">{row.issues.join(" · ")}</span> : <span className="import-row-ok">✓ Pronta para aplicar</span>}</td></tr>)}</tbody></table></div><div className="inventory-import-foot"><button type="button" className="inventory-secondary-action" onClick={onCancel} disabled={isPending}>Cancelar</button><button type="button" className="inventory-primary-action" onClick={onApply} disabled={isPending || !validCount}>{isPending ? "Aplicando..." : `Aplicar ${validCount} ${validCount === 1 ? "linha" : "linhas"}`}</button></div></div>;
 }
 function SortIcon({ active, ascending }: { active: boolean; ascending: boolean }) { return <span className={`inventory-sort ${active ? "is-active" : ""}`}>{active ? ascending ? "↑" : "↓" : "↕"}</span>; }
 function reasonLabel(value: string) { return ({ initial_import: "Importação", manual_adjustment: "Ajuste manual", sale: "Venda confirmada", cancellation: "Cancelamento", correction: "Contagem física" } as Record<string, string>)[value] ?? value; }

@@ -10,6 +10,10 @@ export interface InventoryCountUpdate {
   expectedPriceCents?: number;
   priceCents?: number;
   oldPriceCents?: number | null;
+  /** Nome do produto vindo da lista importada (com opção, vale para o produto todo). */
+  name?: string;
+  /** GTIN só com dígitos; com opção, grava o da opção. */
+  gtin?: string;
 }
 
 export interface DailySaleUpdate {
@@ -53,14 +57,27 @@ export function applyInventoryCounts(
     if (nextOldPrice !== null && nextOldPrice <= nextPrice) {
       throw new InventoryOperationError(`O preço anterior de “${rotulo}” precisa ser maior que o preço atual.`);
     }
-    if (stockAtual === update.stock && precoAtual === nextPrice && product.old_price_cents === nextOldPrice) return null;
-    return { product, opcao, update, nextPrice, nextOldPrice, stockAtual, precoAtual };
+    const meta = state.operations.product_meta[product.id];
+    const gtinAtual = (opcao ? meta?.variant_prices?.[opcao.id]?.gtin : meta?.gtin) ?? "";
+    const nextName = update.name?.trim() || product.name;
+    const nextGtin = update.gtin ?? gtinAtual;
+    if (stockAtual === update.stock && precoAtual === nextPrice && product.old_price_cents === nextOldPrice && product.name === nextName && gtinAtual === nextGtin) return null;
+    return { product, opcao, update, nextPrice, nextOldPrice, stockAtual, precoAtual, nextName, nextGtin, gtinAtual };
   }).filter((change) => change !== null);
 
   if (!changes.length) return 0;
   const now = new Date().toISOString();
-  for (const { product, opcao, update, nextPrice, nextOldPrice, stockAtual, precoAtual } of changes) {
+  for (const { product, opcao, update, nextPrice, nextOldPrice, stockAtual, precoAtual, nextName, nextGtin, gtinAtual } of changes) {
     const beforeOldPrice = product.old_price_cents;
+    const beforeName = product.name;
+    product.name = nextName;
+    if (nextGtin !== gtinAtual) {
+      const meta = state.operations.product_meta[product.id] ??= { ncm: "", cost_cents: null, model: "", gtin: "" };
+      if (opcao) {
+        meta.variant_prices ??= {};
+        meta.variant_prices[opcao.id] = { ...(meta.variant_prices[opcao.id] ?? { cost_cents: null, old_price_cents: null }), gtin: nextGtin };
+      } else meta.gtin = nextGtin;
+    }
 
     if (opcao) {
       opcao.stock = update.stock;
@@ -86,8 +103,8 @@ export function applyInventoryCounts(
       });
     }
     appendAudit(state, actorId, "inventory.sheet_updated", "product", product.id,
-      { stock: stockAtual, priceCents: precoAtual, oldPriceCents: beforeOldPrice, variant: opcao?.label ?? null },
-      { stock: update.stock, priceCents: nextPrice, oldPriceCents: nextOldPrice, variant: opcao?.label ?? null });
+      { stock: stockAtual, priceCents: precoAtual, oldPriceCents: beforeOldPrice, name: beforeName, gtin: gtinAtual, variant: opcao?.label ?? null },
+      { stock: update.stock, priceCents: nextPrice, oldPriceCents: nextOldPrice, name: nextName, gtin: nextGtin, variant: opcao?.label ?? null });
   }
   return changes.length;
 }
