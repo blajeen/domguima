@@ -123,6 +123,7 @@ function toBanner({ product, reason }: Candidate, categoria?: string): Banner {
     id: `automatico-${reason}-${product.id}`,
     title: product.name,
     detail: detalhe(reason, categoria),
+    ...(categoria ? { categoria, ...(CHAMADAS[categoria] ? { chamada: CHAMADAS[categoria] } : {}) } : {}),
     ctaLabel: reason === "offer" ? "Ver oferta" : "Ver produto",
     href: `/produto/${product.slug}`,
     image: product.images[0],
@@ -147,3 +148,16 @@ function daysSince(value?: string): number | null {
   if (!Number.isFinite(timestamp)) return null;
   return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
 }
+
+/** Chamada de campanha por categoria (nome como no catálogo). Categoria sem chamada mostra o nome do produto. */
+const CHAMADAS: Record<string, { titulo: string; destaque: string; texto: string }> = {
+  "Climatização": { titulo: "Conforto para", destaque: "os dias quentes.", texto: "Ar-condicionado e ventiladores para refrescar sua casa." },
+  "Smart TVs": { titulo: "O cinema", destaque: "na sua sala.", texto: "Imagem grande e nítida para filmes, jogos e futebol." },
+  "Eletrodomésticos": { titulo: "A casa funcionando", destaque: "do seu jeito.", texto: "Eletrodomésticos que facilitam a rotina da cozinha à lavanderia." },
+  "Celulares e Acessórios": { titulo: "Tudo na", destaque: "palma da mão.", texto: "Celulares e acessórios para ficar conectado o dia todo." },
+  "Eletrônicos": { titulo: "Tecnologia para", destaque: "o dia a dia.", texto: "Som, imagem e praticidade com preço de empório." },
+  "Informática e Games": { titulo: "Para trabalhar", destaque: "e jogar melhor.", texto: "Computadores, periféricos e games selecionados." },
+  "Ferramentas": { titulo: "A ferramenta", destaque: "certa para o serviço.", texto: "Para a obra, a oficina e os consertos de casa." },
+  "Casa e Decoração": { titulo: "Detalhes que", destaque: "deixam a casa sua.", texto: "Utilidades e decoração para cada canto." },
+  "Beleza": { titulo: "Cuidado que", destaque: "faz diferença.", texto: "Beleza e cuidados pessoais para a rotina." },
+};

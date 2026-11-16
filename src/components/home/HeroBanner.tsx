@@ -12,7 +12,8 @@ import { paymentLines } from "@/lib/utils/format";
 const AUTOPLAY_MS = 6000;
 
 /**
- * Banner da home: um produto do catálogo por slide, sobre grafite chapado.
+ * Banner da home, estilo revista: um produto do catálogo por slide, com a
+ * chamada da categoria em serifa (quando há) sobre creme claro.
  * Nome do produto, a linha de fato (categoria, novidade), o preço-assinatura e
  * um botão. A foto é a do cadastro, do jeito que está, num poço branco: sem
  * gradiente, halo, mancha desfocada nem sombra desenhada atrás dela.
@@ -102,9 +103,7 @@ export function HeroBanner({ banners }: { banners: Banner[] }) {
     <section
       aria-label="Destaques"
       aria-roledescription="carrossel"
-      // Sobre grafite, o foco troca o ouro padrão pelo ouro-claro, como no
-      // header e no rodapé.
-      className="destaque-vivo destaque-escuro relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
+      className="relative h-full min-w-0 overflow-hidden rounded-card border border-fio bg-[#f7f4ee]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -139,7 +138,7 @@ export function HeroBanner({ banners }: { banners: Banner[] }) {
         // da direita, e ela desce para o canto, no respiro sob a foto. Os
         // botões são os de dentro da pílula da galeria: sem vidro próprio, com
         // fio e foco em papel por dentro (o foco de fora cairia no branco).
-        <div className="absolute right-3 top-38 flex items-center rounded-pill bg-grafite-900 sm:top-auto sm:bottom-3">
+        <div className="absolute right-3 top-44 flex items-center rounded-pill bg-grafite-900 sm:top-auto sm:bottom-4 sm:right-4">
           <IconButton
             icon="seta-esquerda"
             label="Destaque anterior"
@@ -172,6 +171,7 @@ function Slide({
   total: number;
   active: boolean;
 }) {
+  const chamada = banner.chamada;
   return (
     <div
       role="group"
@@ -179,64 +179,64 @@ function Slide({
       aria-label={`${position + 1} de ${total}`}
       // Os slides fora da tela saem do Tab e do leitor de tela.
       inert={!active}
-      className="grid h-full sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]"
+      className="grid h-full sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
     >
-      <div className="flex min-w-0 flex-col justify-center px-5 pb-6 pt-5 sm:px-7 sm:py-8 lg:px-8">
+      {/* Estilo revista: fio + categoria em versalete, título em serifa com a
+          segunda parte em itálico, uma frase e o botão grafite. */}
+      <div className="flex min-w-0 flex-col justify-center px-6 pb-7 pt-6 sm:px-9 sm:py-10 lg:px-12">
+        {banner.categoria && (
+          <p className="flex items-center gap-3 text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-ouro-texto">
+            <span aria-hidden className="h-px w-8 bg-ouro" />
+            {banner.categoria}
+          </p>
+        )}
         {/* h2 em todos: o H1 da home fica fixo na página (page.tsx), fora
             dos slides que saem do leitor de tela. */}
-        <h2 className="line-clamp-3 text-balance text-titulo font-bold text-papel sm:text-titulo-lg">
-          {banner.title}
+        <h2 className="mt-4 text-balance font-brand text-[2rem] leading-[1.08] text-grafite-900 sm:text-[2.6rem] lg:text-[3rem]">
+          {chamada ? (
+            <>
+              {chamada.titulo} <em className="italic">{chamada.destaque}</em>
+            </>
+          ) : (
+            <span className="line-clamp-3">{banner.title}</span>
+          )}
         </h2>
-        {banner.detail && <p className="mt-2 text-sm text-ink-300">{banner.detail}</p>}
-        <PriceTag
-          className="mt-5"
-          size="destaque"
-          tone="papel"
-          cents={banner.price.price}
-          oldCents={banner.price.oldPrice}
-          lines={paymentLines(banner.price.cardInstallment)}
-        />
-        <ButtonLink href={banner.href} variant="claro" className="botao-pulsando mt-6 w-fit">
-          {banner.ctaLabel}
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-600">
+          {chamada ? chamada.texto : banner.detail}
+        </p>
+        <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-2">
+          <PriceTag
+            cents={banner.price.price}
+            oldCents={banner.price.oldPrice}
+            lines={paymentLines(banner.price.cardInstallment)}
+          />
+        </div>
+        {chamada && <p className="mt-1 line-clamp-1 text-xs text-ink-500">{banner.title}</p>}
+        <ButtonLink href={banner.href} className="mt-6 w-fit">
+          {banner.ctaLabel} <span aria-hidden>→</span>
         </ButtonLink>
       </div>
 
-      {/* Poço branco da foto. A pílula das setas fica sobre ele, mas fora da
-          foto:
-          - no celular, faixa de 13rem em cima, com a foto num quadrado
-            encostado à esquerda (alinhado ao texto) e a pílula no canto
-            direito que sobra. Abaixo de ~390 px de tela não sobra lugar para
-            o quadrado inteiro: ele termina 9rem antes da borda direita (a
-            pílula ocupa 8rem mais a margem de 0,75rem) e a foto encolhe
-            junto, sem passar por baixo da pílula. O `sizes` segue esse
-            quadrado, e não a largura da tela: é a foto que decide o LCP no
-            celular;
-          - do sm em diante, coluna da direita com o quadrado limitado a 25rem
-            (em tela larga o banner não passa da dobra) e um respiro maior
-            embaixo, onde a pílula se apoia. No lg o banner divide a linha
-            com os Exclusivos, e a coluna da foto fica perto de 30vw até
-            chegar aos 25rem.
+      {/* Foto do produto num poço creme com volume, preenchendo o lado direito.
           A foto repete o link do botão: fica fora do Tab e do leitor de tela. */}
       <Link
         href={banner.href}
         tabIndex={-1}
         aria-hidden
-        className="poco-foto order-first flex h-52 items-center bg-white pl-2 sm:order-none sm:h-auto sm:justify-center sm:pl-0"
+        className="poco-foto relative order-first block h-56 sm:order-none sm:h-auto sm:min-h-[22rem]"
       >
         {banner.image && (
-          <span className="relative block aspect-square h-full max-sm:max-w-[calc(100%-9rem)] sm:h-auto sm:w-full sm:max-w-[25rem]">
-            <Image
-              src={banner.image.src}
-              alt=""
-              fill
-              loading={position === 0 ? "eager" : "lazy"}
-              // Os outros slides ficam fora da tela, mas perto: o navegador
-              // os baixa logo, e a prioridade baixa deixa a banda para a 1ª.
-              fetchPriority={position === 0 ? "high" : "low"}
-              sizes="(max-width: 639px) 12rem, (max-width: 1023px) 44vw, (max-width: 1439px) 30vw, 25rem"
-              className="object-contain p-1 sm:pb-12"
-            />
-          </span>
+          <Image
+            src={banner.image.src}
+            alt=""
+            fill
+            loading={position === 0 ? "eager" : "lazy"}
+            // Os outros slides ficam fora da tela, mas perto: o navegador
+            // os baixa logo, e a prioridade baixa deixa a banda para a 1ª.
+            fetchPriority={position === 0 ? "high" : "low"}
+            sizes="(max-width: 639px) 100vw, 50vw"
+            className="object-contain p-4 sm:p-8 sm:pb-16"
+          />
         )}
       </Link>
     </div>

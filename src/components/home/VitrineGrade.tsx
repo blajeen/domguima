@@ -12,10 +12,13 @@ import type { Product } from "@/lib/catalog/types";
 export function VitrineGrade({
   products,
   title,
+  href,
   repetidos,
 }: {
   products: Product[];
   title: string;
+  /** Link "Ver todas" ao lado do título. */
+  href?: string;
   /** Produtos que também aparecem em outra vitrine da tela: ficam sem a transição da foto. */
   repetidos?: ReadonlySet<string>;
 }) {
@@ -23,7 +26,7 @@ export function VitrineGrade({
 
   return (
     <section>
-      <SectionHeader title={title} />
+      <SectionHeader title={title} href={href} linkLabel="Ver todas" />
       <div className="grid grid-cols-2 gap-3 max-sm:[&>*:nth-child(n+7)]:hidden sm:grid-cols-3 sm:gap-4 sm:max-lg:[&>*:nth-child(n+10)]:hidden lg:grid-cols-4 xl:grid-cols-6">
         {products.slice(0, 12).map((product) => (
           <ProductCard key={product.id} product={product} transicaoFoto={!repetidos?.has(product.id)} />

@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
 import { CategoryStrip } from "@/components/home/CategoryStrip";
 import { ProductComparison } from "@/components/catalog/ProductComparison";
-import { FaixaDeOfertas } from "@/components/home/FaixaDeOfertas";
 import { HeroBanner } from "@/components/home/HeroBanner";
-import {
-  ExclusiveProductCarousel,
-  type ProdutoExclusivo,
-} from "@/components/home/ExclusiveProductCarousel";
 import { InstagramSection } from "@/components/home/InstagramSection";
 import { ReviewsSection } from "@/components/home/ReviewsSection";
 import { TrustBar } from "@/components/home/TrustBar";
@@ -51,28 +46,15 @@ export default async function HomePage() {
   // vitrine. Esse fica sem a transição da foto nas duas (nome repetido na tela
   // cancela a transição).
   const mostraOfertas = offers.length >= 4;
+  const exclusiveProducts = await getExclusiveProducts();
   const repetidos = idsRepetidos([
     selection,
     mostraOfertas ? offers : [],
+    exclusiveProducts,
     technology,
     homeEssentials,
   ]);
   const heroBanners = await getSmartBanners();
-  // O carrossel é client: só vai para o navegador o que ele mostra.
-  const exclusiveProducts = (await getExclusiveProducts()).map(
-    (product): ProdutoExclusivo => ({
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      brand: product.brand,
-      price: product.price,
-      oldPrice: product.oldPrice,
-      cardInstallment: product.cardInstallment,
-      image: product.images[0]
-        ? { src: product.images[0].src, alt: product.images[0].alt }
-        : null,
-    }),
-  );
 
   return (
     <>
@@ -81,17 +63,14 @@ export default async function HomePage() {
       <h1 className="sr-only">
         {site.name}, {site.tagline}
       </h1>
-      <div
-        className={`site-shell grid gap-4 py-4 ${heroBanners.length > 0 ? "lg:grid-cols-3 lg:items-stretch" : ""}`}
-      >
-        {heroBanners.length > 0 && (
-          // Enquanto o banner passa por baixo do header, o header vira vidro.
-          <MidiaDoTopo className="min-w-0 lg:col-span-2">
+      {heroBanners.length > 0 && (
+        <div className="site-shell py-4">
+          {/* Enquanto o banner passa por baixo do header, o header vira vidro. */}
+          <MidiaDoTopo className="min-w-0">
             <HeroBanner banners={heroBanners} />
           </MidiaDoTopo>
-        )}
-        <ExclusiveProductCarousel products={exclusiveProducts} />
-      </div>
+        </div>
+      )}
 
       {/* Cidade, CNPJ e as notas com data, numa linha, logo abaixo do topo. */}
       <TrustBar />
@@ -101,13 +80,17 @@ export default async function HomePage() {
           curtos e específicos, sem rótulo acima nem subtítulo. Nenhuma foto
           daqui tem prioridade: a única da home é o 1º slide do banner. */}
       <div className="site-shell space-y-12 py-9 sm:space-y-14 sm:py-12">
-        {mostraOfertas && <FaixaDeOfertas products={offers} repetidos={repetidos} />}
+        <CategoryStrip />
+
+        {mostraOfertas && <VitrineGrade products={offers} title="Ofertas da semana" href="/ofertas" repetidos={repetidos} />}
+
+        {/* Sem o selo "Só na Dom Guima" em cada card: o título da seção já diz isso. */}
+        <ProductCarousel products={exclusiveProducts.map(product => ({ ...product, isExclusive: false }))} title="Exclusivos Dom Guima" repetidos={repetidos} />
 
         {/* Um produto de cada categoria (o de maior preço com estoque), e um
             segundo das primeiras quando sobra lugar. */}
         <ProductCarousel products={selection} title="Um pouco de cada categoria" repetidos={repetidos} />
 
-        <CategoryStrip />
         <ProductComparison products={comparisonProducts.map(product => ({ id: product.id, name: product.name, slug: product.slug, categoryId: product.categoryId, price: product.price, brand: product.brand ?? "", stock: product.stock, specs: product.specifications.slice(0,12) }))} />
 
         <VitrineGrade products={technology} title="TVs, celulares e informática" repetidos={repetidos} />

@@ -147,6 +147,10 @@ export interface Banner {
   href: string;
   /** Foto principal do produto, do jeito que está no cadastro. */
   image?: ProductImage;
+  /** Nome da categoria, em versalete acima do título. */
+  categoria?: string;
+  /** Chamada de campanha da categoria (título + parte em itálico + frase), quando houver. */
+  chamada?: { titulo: string; destaque: string; texto: string };
   /** Preço do produto, para o preço-assinatura do banner. */
   price: Pick<Product, "price" | "oldPrice" | "cardInstallment">;
 }
