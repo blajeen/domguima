@@ -10,7 +10,7 @@
   cursor: grab;
   touch-action: none;
   user-select: none;
-  contain: layout paint;
+  /* Sem contain: paint, para o paraquedas aparecer acima do boneco. */
 }
 .admin-dancing-mascot canvas { display: block; width: 100%; height: 100%; animation: aura-azul 0.8s ease-in-out infinite alternate; }
 /* Aura azul colada ao corpo: o canvas é transparente, então o drop-shadow segue a silhueta do boneco. */
@@ -350,3 +350,36 @@ html[data-barra-lojistas] {
 .business-operation-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 26px; }
 @media (max-width: 1199px) { .dashboard-overview { grid-template-columns: minmax(0,1fr); } .dashboard-operation-heading { padding-top: 3px; } .business-revenue { font-size: 34px; } }
 @media (max-width: 560px) { .dashboard-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-stat { min-height: 102px; padding: 13px; } .business-dashboard { padding: 17px; } .business-revenue { font-size: 27px; } .business-metrics { gap: 8px; } .business-metrics strong { font-size: 14px; } .business-heading h2 { font-size: 19px; } }
+
+/* Avião que cruza o topo do painel a cada 5 minutos e solta o mascote. */
+.admin-aviao {
+  position: fixed; top: 72px; left: 0; z-index: 31; pointer-events: none;
+  animation: admin-aviao-voo linear forwards;
+  filter: drop-shadow(0 6px 6px rgb(0 0 0 / .25));
+}
+@keyframes admin-aviao-voo {
+  from { transform: translateX(-160px) translateY(0) rotate(-3deg); }
+  50% { transform: translateX(50vw) translateY(-14px) rotate(2deg); }
+  to { transform: translateX(calc(100vw + 40px)) translateY(-28px) rotate(-4deg); }
+}
+/* Descida de paraquedas, balançando, até o lugar do mascote; o paraquedas some ao pousar. */
+.admin-mascote-queda { animation: admin-mascote-descida 5s cubic-bezier(.3,.6,.4,1) both; }
+@keyframes admin-mascote-descida {
+  from { transform: translateY(-110vh) rotate(-6deg); }
+  30% { transform: translateY(-70vh) rotate(6deg); }
+  60% { transform: translateY(-30vh) rotate(-4deg); }
+  85% { transform: translateY(-6vh) rotate(2deg); }
+  to { transform: translateY(0) rotate(0); }
+}
+.admin-paraquedas {
+  position: absolute; left: -15%; bottom: 72%; width: 130%; pointer-events: none;
+  animation: admin-paraquedas-fecha 0.8s ease-in 5s forwards;
+}
+@keyframes admin-paraquedas-fecha { to { opacity: 0; transform: translateY(-30px) scale(.7); } }
+.admin-mascote-saindo { animation: admin-mascote-some .7s ease-in forwards; }
+@keyframes admin-mascote-some { to { opacity: 0; transform: scale(.6) translateY(20px); } }
+@media (prefers-reduced-motion: reduce) {
+  .admin-aviao, .admin-paraquedas { display: none; }
+  .admin-mascote-queda, .admin-mascote-saindo { animation-duration: 1ms; }
+}
+@media print { .admin-aviao { display: none !important; } }
