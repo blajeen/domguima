@@ -32,6 +32,8 @@ export async function createDancingMascot(canvas: HTMLCanvasElement) {
   try {
     const gltf = await new GLTFLoader().loadAsync("/mascot/dom-guima.glb?v=3");
     model = gltf.scene; scene.add(model);
+    const head = model.getObjectByName("mixamorigHead") ?? model.getObjectByName("mixamorig:Head");
+    if (head) head.add(spikyHair(head.children[0]?.position.length() || .15));
     const clips = gltf.animations
       .filter(clip => ["dance_01", "dance_02", "dance_03", "dance_05"].includes(clip.name))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -77,4 +79,29 @@ export async function createDancingMascot(canvas: HTMLCanvasElement) {
       dispose() { mixer.stopAllAction(); mixer.uncacheRoot(model!); dispose(); },
     };
   } catch (error) { dispose(); throw error; }
+}
+
+/** Cabelo espetado dourado (estilo "super guerreiro"), em coordenadas do osso da cabeça: y para cima, z para a frente. */
+function spikyHair(headHeight: number) {
+  const hair = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: 0xffd21f, emissive: 0xffa000, emissiveIntensity: .55, roughness: .45, flatShading: true });
+  const r = headHeight * .5, center = new THREE.Vector3(0, headHeight * .45, -r * .05);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.25, 12, 8, 0, Math.PI * 2, 0, Math.PI * .42), material);
+  cap.position.copy(center); hair.add(cap);
+  // [x, y, z, comprimento, grossura]: direções das mechas a partir do centro da cabeça.
+  const spikes: [number, number, number, number, number][] = [
+    [0, 1, -.15, 1.5, .42], [-.45, .9, -.2, 1.4, .4], [.45, .9, -.2, 1.4, .4],
+    [-.25, .75, -.6, 1.45, .4], [.25, .75, -.6, 1.45, .4], [0, .55, -.85, 1.4, .42],
+    [-.85, .55, -.3, 1.25, .38], [.85, .55, -.3, 1.25, .38], [-.7, .25, -.65, 1.15, .36], [.7, .25, -.65, 1.15, .36],
+    [-.35, .6, .75, .55, .24], [.3, .65, .75, .5, .22],
+  ];
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const [x, y, z, length, width] of spikes) {
+    const dir = new THREE.Vector3(x, y, z).normalize();
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(r * width, r * length, 5), material);
+    spike.quaternion.setFromUnitVectors(up, dir);
+    spike.position.copy(center).addScaledVector(dir, r * (.75 + length / 2));
+    hair.add(spike);
+  }
+  return hair;
 }
