@@ -9,7 +9,10 @@ import { getAdminProducts } from "@/lib/admin/data";
 import { formatPrice } from "@/lib/utils/format";
 
 export default async function OffersAdminPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const relampago = (await searchParams).aba === "relampago";
+  const query = await searchParams;
+  const relampago = query.aba === "relampago";
+  const num = (key: string) => { const n = Number(String(query[key] ?? "").replace(",", ".")); return String(query[key] ?? "") !== "" && Number.isFinite(n) && n >= 0 ? n : null; };
+  const filtro = { descMin: num("desc_min"), descMax: num("desc_max"), precoMin: num("preco_min"), precoMax: num("preco_max") };
   const [products, state, publicProducts] = await Promise.all([getAdminProducts(), readCatalogState(), loadCatalogProducts()]);
   const published = new Set(publicProducts.filter(product => product.isOffer && product.stock > 0 && product.oldPrice && product.oldPrice > product.price).map(product => product.id));
   const active = products.filter((product) => product.status !== "archived");
@@ -18,9 +21,13 @@ export default async function OffersAdminPage({ searchParams }: { searchParams: 
   const meta = state.operations.product_meta;
   const flashCount = offers.filter(product => meta[product.id]?.flash_offer).length;
   const statusOf = (product: (typeof active)[number]) => !product.is_offer ? "Fora das ofertas" : published.has(product.id) ? "Visível em Ofertas" : !offerIsScheduledNow(readOfferSchedule(meta[product.id])) ? "Fora do período" : product.stock <= 0 ? "Sem estoque" : product.status === "draft" ? "Rascunho" : "Revisar desconto (preço anterior precisa ser maior)";
-  const list = relampago ? offers : active;
+  const discountOf = (product: (typeof active)[number]) => product.old_price_cents && product.old_price_cents > product.price_cents ? Math.round((1 - product.price_cents / product.old_price_cents) * 100) : 0;
+  // Só produtos com estoque; os filtros escondem linhas, e o Salvar só mexe nas linhas visíveis.
+  const list = (relampago ? offers : active).filter(product => product.stock > 0
+    && (filtro.descMin === null || discountOf(product) >= filtro.descMin) && (filtro.descMax === null || discountOf(product) <= filtro.descMax)
+    && (filtro.precoMin === null || product.price_cents >= filtro.precoMin * 100) && (filtro.precoMax === null || product.price_cents <= filtro.precoMax * 100));
   const rows = list.map(product => {
-    const discount = product.old_price_cents ? Math.round((1 - product.price_cents / product.old_price_cents) * 100) : 0;
+    const discount = discountOf(product);
     return {
       id: product.id,
       checked: relampago ? Boolean(meta[product.id]?.flash_offer) : product.is_offer,
@@ -45,8 +52,16 @@ export default async function OffersAdminPage({ searchParams }: { searchParams: 
       <Link href="/painel/ofertas" className={aba(!relampago)}>Todos os produtos</Link>
       <Link href="/painel/ofertas?aba=relampago" className={aba(relampago)}>🔥 Oferta relâmpago</Link>
     </nav>
+    <form className="mb-4 flex flex-wrap items-end gap-3 text-xs">
+      {relampago && <input type="hidden" name="aba" value="relampago" />}
+      {([["desc_min", "Desconto mín. (%)"], ["desc_max", "Desconto máx. (%)"], ["preco_min", "Preço mín. (R$)"], ["preco_max", "Preço máx. (R$)"]] as const).map(([name, label]) =>
+        <label key={name} className="font-bold">{label}<input type="number" min="0" step="any" name={name} defaultValue={String(query[name] ?? "")} className="mt-1 block w-32 rounded border border-ink-200 bg-white p-2" /></label>)}
+      <button className="rounded-lg bg-ink-950 px-4 py-2.5 font-extrabold text-white">Filtrar</button>
+      <Link href={relampago ? "/painel/ofertas?aba=relampago" : "/painel/ofertas"} className="px-2 py-2.5 font-bold text-ink-500 underline">Limpar</Link>
+      <span className="ml-auto self-center text-ink-500">{rows.length} produto(s) com estoque</span>
+    </form>
     <PanelCard>
-      {relampago && <p className="pt-3 text-xs text-ink-500">Os marcados aqui ganham o efeito de fogo em volta do card na loja. Só aparecem os produtos que já estão em Ofertas.</p>}
+      {relampago &&<p className="pt-3 text-xs text-ink-500">Os marcados aqui ganham o efeito de fogo em volta do card na loja. Só aparecem os produtos que já estão em Ofertas.</p>}
       {rows.length > 0
         ? <OfferSelectionForm key={relampago ? "flash" : "offer"} field={relampago ? "flash" : "offer"} label={relampago ? "Oferta relâmpago" : "Mostrar em Ofertas"} rows={rows} />
         : <p className="py-10 text-center text-sm text-ink-500">{relampago ? "Nenhum produto em Ofertas ainda. Marque na aba Todos os produtos." : "Nenhum produto cadastrado."}</p>}
