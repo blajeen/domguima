@@ -339,6 +339,8 @@ export interface SellerRecord {
 export interface ProductOperationalMeta {
   /** Optional promotion visibility dates, inclusive in São Paulo. Prices remain as entered. */
   offer_schedule?: { starts: string; ends: string };
+  /** Oferta relâmpago: card com efeito de fogo na loja (só vale enquanto for oferta). */
+  flash_offer?: boolean;
   ncm: string;
   cost_cents: number | null;
   model: string;

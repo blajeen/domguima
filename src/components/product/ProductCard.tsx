@@ -60,7 +60,7 @@ export function ProductCard({
 
   return (
     <article
-      className={`group relative flex flex-col overflow-hidden rounded-card border border-fio bg-white transition-colors duration-(--duracao-toque) hover:border-grafite-900 ${
+      className={`group relative flex flex-col overflow-hidden rounded-card border border-fio bg-white transition-colors duration-(--duracao-toque) hover:border-grafite-900 ${product.isFlash && !outOfStock ? "fogo-relampago " : ""}${
         fixedWidth
           ? "w-[46vw] max-w-[232px] sm:w-[224px] lg:w-full lg:max-w-none"
           : "w-full"

@@ -89,6 +89,8 @@ export interface Product {
   isFeatured: boolean;
   isBestSeller: boolean;
   isOffer: boolean;
+  /** Oferta relâmpago marcada no painel: o card ganha o efeito de fogo. */
+  isFlash?: boolean;
   /** Produto próprio ou exclusivo selecionado pelo gestor da Dom Guima. */
   isExclusive?: boolean;
   tags: string[];

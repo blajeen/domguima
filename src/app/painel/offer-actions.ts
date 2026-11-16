@@ -25,3 +25,33 @@ export async function saveOfferScheduleAction(_previous: ActionState, form: Form
     return { ok: true, message: "Período da oferta salvo. O preço cadastrado não foi alterado." };
   } catch { return { ok: false, message: "Não foi possível salvar o período. Atualize e tente novamente." }; }
 }
+
+/** Marca em massa: `field=offer` liga is_offer; `field=flash` liga a oferta relâmpago (product_meta). Só mexe nos ids listados em `shown`. */
+export async function saveOfferSelectionAction(_previous: ActionState, form: FormData): Promise<ActionState> {
+  const owner = await ownerOrThrow();
+  const field = form.get("field") === "flash" ? "flash" : "offer";
+  const shown = new Set(form.getAll("shown").map(String));
+  const checked = new Set(form.getAll("ids").map(String));
+  try {
+    await mutateCatalogState(state => {
+      const now = new Date().toISOString();
+      for (const product of state.products) {
+        if (!shown.has(product.id)) continue;
+        const on = checked.has(product.id);
+        if (field === "offer") {
+          if (product.is_offer === on) continue;
+          product.is_offer = on;
+          product.updated_at = now;
+        } else {
+          const meta = state.operations.product_meta[product.id] ?? { ncm: "", model: "", gtin: "", cost_cents: null };
+          if (Boolean(meta.flash_offer) === on) continue;
+          state.operations.product_meta[product.id] = { ...meta, flash_offer: on };
+        }
+        state.auditLogs.unshift({ id: randomUUID(), actor_id: owner.id, action: field === "offer" ? "product.offer_toggled" : "product.flash_offer_toggled", entity_type: "product", entity_id: product.id, before_data: { on: !on }, after_data: { on }, created_at: now });
+      }
+      state.auditLogs = state.auditLogs.slice(0, 1000);
+    });
+    updateTag("catalog"); revalidatePath("/", "layout"); revalidatePath("/sitemap.xml");
+    return { ok: true, message: field === "offer" ? "Seleção de ofertas salva." : "Oferta relâmpago salva." };
+  } catch { return { ok: false, message: "Não foi possível salvar. Atualize e tente novamente." }; }
+}
