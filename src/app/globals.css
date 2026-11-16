@@ -385,14 +385,14 @@
   animation: fogo-relampago 0.9s ease-in-out infinite alternate, gelatina 2.6s ease-in-out infinite;
 }
 @keyframes fogo-relampago {
-  0% { border-color: #f97316; box-shadow: 0 0 6px 3px #fde047, 0 -4px 16px 6px #fb923c, 0 -10px 28px 10px rgb(220 38 38 / 0.75), 0 0 40px 14px rgb(249 115 22 / 0.35); }
-  25% { border-color: #facc15; box-shadow: 0 0 9px 4px #fef08a, 3px -8px 20px 8px #f97316, -4px -16px 34px 12px rgb(239 68 68 / 0.7), 0 0 46px 16px rgb(249 115 22 / 0.4); }
-  50% { border-color: #ef4444; box-shadow: 0 0 7px 3px #fde047, -3px -6px 18px 7px #fb923c, 4px -14px 32px 13px rgb(220 38 38 / 0.8), 0 0 42px 15px rgb(234 88 12 / 0.4); }
-  75% { border-color: #fb923c; box-shadow: 0 0 10px 5px #fef08a, 2px -9px 22px 9px #f97316, -2px -18px 38px 14px rgb(220 38 38 / 0.7), 0 0 50px 18px rgb(249 115 22 / 0.45); }
-  100% { border-color: #f97316; box-shadow: 0 0 8px 4px #fde047, 0 -10px 24px 9px #ea580c, 0 -20px 40px 15px rgb(185 28 28 / 0.75), 0 0 48px 17px rgb(249 115 22 / 0.4); }
+  0% { border-color: #f97316; box-shadow: 0 0 3px 1px #fde047, 0 -2px 8px 2px rgb(249 115 22 / 0.7); }
+  25% { border-color: #facc15; box-shadow: 0 0 4px 1px #fef08a, 1px -3px 10px 3px rgb(239 68 68 / 0.6); }
+  50% { border-color: #ef4444; box-shadow: 0 0 3px 1px #fde047, -1px -2px 9px 2px rgb(249 115 22 / 0.7); }
+  75% { border-color: #fb923c; box-shadow: 0 0 4px 2px #fef08a, 1px -4px 11px 3px rgb(220 38 38 / 0.55); }
+  100% { border-color: #f97316; box-shadow: 0 0 4px 1px #fde047, 0 -3px 10px 3px rgb(234 88 12 / 0.65); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fogo-relampago { animation: none; transform: none; box-shadow: 0 0 8px 4px #fde047, 0 -8px 22px 8px #f97316, 0 -16px 34px 12px rgb(220 38 38 / 0.7); }
+  .fogo-relampago { animation: none; transform: none; box-shadow: 0 0 4px 1px #fde047, 0 -3px 10px 3px rgb(249 115 22 / 0.65); }
 }
 /* Gelatina: balança e volta ao normal, depois descansa um pouco, para o card parecer vivo. */
 @keyframes gelatina {
