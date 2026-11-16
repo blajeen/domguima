@@ -52,7 +52,7 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
     <section
       aria-labelledby="exclusivos-titulo"
       aria-roledescription="carrossel"
-      className="relative flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-card border border-fio bg-white"
+      className="destaque-vivo destaque-atrasado relative flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-card border border-fio bg-white"
     >
       <Cabecalho>
         {/* Setas sobre o grafite chapado: sem vidro, porque não há nada atrás para desfocar. */}
@@ -108,7 +108,7 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
               oldCents={product.oldPrice}
               lines={paymentLines(product.cardInstallment)}
             />
-            <ButtonLink href={href} size="sm" className="shrink-0">
+            <ButtonLink href={href} size="sm" className="botao-pulsando shrink-0">
               Ver produto
             </ButtonLink>
           </div>

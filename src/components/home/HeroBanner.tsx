@@ -104,7 +104,7 @@ export function HeroBanner({ banners }: { banners: Banner[] }) {
       aria-roledescription="carrossel"
       // Sobre grafite, o foco troca o ouro padrão pelo ouro-claro, como no
       // header e no rodapé.
-      className="relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
+      className="destaque-vivo relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -196,7 +196,7 @@ function Slide({
           oldCents={banner.price.oldPrice}
           lines={paymentLines(banner.price.cardInstallment)}
         />
-        <ButtonLink href={banner.href} variant="claro" className="mt-6 w-fit">
+        <ButtonLink href={banner.href} variant="claro" className="botao-pulsando mt-6 w-fit">
           {banner.ctaLabel}
         </ButtonLink>
       </div>

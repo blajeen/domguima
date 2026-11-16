@@ -402,3 +402,32 @@
   27% { transform: scale(1.02, 0.98); }
   36% { transform: scale(0.99, 1.01); }
 }
+
+/* Banner e Exclusivos da home: gelatina leve + um reflexo de luz que atravessa o bloco de tempos em tempos. */
+.destaque-vivo { animation: gelatina-suave 4s ease-in-out infinite; }
+.destaque-atrasado { animation-delay: 1.3s; }
+.destaque-vivo::after {
+  content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.28) 48%, rgb(255 236 170 / 0.35) 50%, transparent 62%);
+  transform: translateX(-120%); animation: brilho-passando 5s ease-in-out infinite 1s;
+}
+@keyframes gelatina-suave {
+  0%, 30%, 100% { transform: scale(1, 1); }
+  6% { transform: scale(1.012, 0.988); }
+  12% { transform: scale(0.992, 1.008); }
+  18% { transform: scale(1.005, 0.995); }
+  24% { transform: scale(0.998, 1.002); }
+}
+@keyframes brilho-passando { 0% { transform: translateX(-120%); } 30%, 100% { transform: translateX(120%); } }
+/* Botão de compra pulsando com um anel dourado. */
+.botao-pulsando { animation: botao-pulsando 1.8s ease-out infinite; }
+@keyframes botao-pulsando {
+  0% { box-shadow: 0 0 0 0 rgb(234 179 8 / 0.7); transform: scale(1); }
+  50% { transform: scale(1.05); }
+  70% { box-shadow: 0 0 0 12px rgb(234 179 8 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(234 179 8 / 0); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .destaque-vivo, .destaque-vivo::after, .botao-pulsando { animation: none; }
+  .destaque-vivo::after { display: none; }
+}
