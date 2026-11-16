@@ -234,7 +234,7 @@ function Slide({
               // os baixa logo, e a prioridade baixa deixa a banda para a 1ª.
               fetchPriority={position === 0 ? "high" : "low"}
               sizes="(max-width: 639px) 12rem, (max-width: 1023px) 44vw, (max-width: 1439px) 30vw, 25rem"
-              className="object-contain p-2 sm:p-3 sm:pb-14"
+              className="object-contain p-1 sm:pb-12"
             />
           </span>
         )}

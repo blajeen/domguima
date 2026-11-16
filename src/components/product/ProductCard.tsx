@@ -54,7 +54,7 @@ export function ProductCard({
       fill
       loading={eager ? "eager" : "lazy"}
       sizes="(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 232px"
-      className={`object-contain p-3 ${outOfStock ? "opacity-45 grayscale" : ""}`}
+      className={`object-contain p-1.5 ${outOfStock ? "opacity-45 grayscale" : ""}`}
     />
   ) : null;
 

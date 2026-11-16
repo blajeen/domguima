@@ -90,7 +90,7 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
               alt=""
               fill
               sizes="(max-width: 1023px) 12rem, 15rem"
-              className="object-contain p-2"
+              className="object-contain"
             />
           )}
         </Link>
