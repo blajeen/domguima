@@ -10,6 +10,7 @@ import { MidiaDoTopo } from "@/components/layout/MidiaDoTopo";
 import { ProductCarousel } from "@/components/product/ProductCarousel";
 import { site } from "@/config/site";
 import { getSmartBanners } from "@/lib/catalog/smart-banners";
+import { TEMPORADAS, temporadaEm } from "@/lib/utils/temporada";
 import {
   getHomeCollection,
   getHomeSelection,
@@ -55,6 +56,8 @@ export default async function HomePage() {
     homeEssentials,
   ]);
   const heroBanners = await getSmartBanners();
+  // A home se refaz a cada 5 min (revalidate), então o título vira sozinho na data.
+  const temporada = temporadaEm(new Date());
 
   return (
     <>
@@ -82,7 +85,7 @@ export default async function HomePage() {
       <div className="site-shell space-y-12 py-9 sm:space-y-14 sm:py-12">
         <CategoryStrip />
 
-        {mostraOfertas && <VitrineGrade products={offers} title="Ofertas da semana" href="/ofertas" repetidos={repetidos} />}
+        {mostraOfertas && <VitrineGrade products={offers} title={temporada ? TEMPORADAS[temporada].titulo : "Ofertas da semana"} href="/ofertas" repetidos={repetidos} />}
 
         {/* Sem o selo "Só na Dom Guima" em cada card: o título da seção já diz isso. */}
         <ProductCarousel products={exclusiveProducts.map(product => ({ ...product, isExclusive: false }))} title="Exclusivos Dom Guima" repetidos={repetidos} />

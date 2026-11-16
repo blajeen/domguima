@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { CapturaOrigem } from "@/components/layout/CapturaOrigem";
 import { Footer } from "@/components/layout/Footer";
+import { FaixaDaTemporada } from "@/components/layout/FaixaDaTemporada";
 import { Header } from "@/components/layout/Header";
 import { WhatsAppFloat } from "@/components/layout/WhatsAppFloat";
 import { site } from "@/config/site";
@@ -138,6 +139,7 @@ export default async function RootLayout({
         <AttendantsProvider value={attendants}>
           <ParcelamentoProvider value={parcelamento}>
             <CartProvider>
+              <FaixaDaTemporada />
               <Header />
               <main id="conteudo">{children}</main>
               <Footer />
