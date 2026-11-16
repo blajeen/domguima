@@ -73,11 +73,13 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
         {/* Sem selo "Só na Dom Guima" na foto: o cabeçalho logo acima já diz isso.
             A foto repete o link do nome logo abaixo: fica fora do Tab e do
             leitor de tela, como no carrinho. */}
+        {/* Quadro quadrado do tamanho da foto, centralizado no espaço que sobra: sem caixa branca larga em volta. */}
+        <div className="mx-4 mt-4 flex min-h-44 flex-1 justify-center lg:min-h-32">
         <Link
           href={href}
           tabIndex={-1}
           aria-hidden
-          className="relative mx-4 mt-4 block min-h-32 flex-1 overflow-hidden rounded-card border border-fio bg-white"
+          className="poco-foto relative block aspect-square h-full max-h-60 overflow-hidden rounded-card border border-fio bg-white"
         >
           {image && (
             // O poço é largo e baixo, e a foto é contida nele: quem manda no
@@ -88,10 +90,11 @@ export function ExclusiveProductCarousel({ products }: { products: ProdutoExclus
               alt=""
               fill
               sizes="(max-width: 1023px) 12rem, 15rem"
-              className="object-contain p-3"
+              className="object-contain p-2"
             />
           )}
         </Link>
+        </div>
 
         <div className="px-4 pb-4 pt-3">
           <p className="text-xs text-ink-500">{product.brand || "Dom Guima"}</p>

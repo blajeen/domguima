@@ -104,7 +104,7 @@ export function HeroBanner({ banners }: { banners: Banner[] }) {
       aria-roledescription="carrossel"
       // Sobre grafite, o foco troca o ouro padrão pelo ouro-claro, como no
       // header e no rodapé.
-      className="destaque-vivo relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
+      className="destaque-vivo destaque-escuro relative h-full min-w-0 overflow-hidden rounded-card bg-grafite-950 text-papel [--cor-foco:var(--color-ouro-claro)]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -221,7 +221,7 @@ function Slide({
         href={banner.href}
         tabIndex={-1}
         aria-hidden
-        className="order-first flex h-52 items-center bg-white pl-2 sm:order-none sm:h-auto sm:justify-center sm:pl-0"
+        className="poco-foto order-first flex h-52 items-center bg-white pl-2 sm:order-none sm:h-auto sm:justify-center sm:pl-0"
       >
         {banner.image && (
           <span className="relative block aspect-square h-full max-sm:max-w-[calc(100%-9rem)] sm:h-auto sm:w-full sm:max-w-[25rem]">
@@ -234,7 +234,7 @@ function Slide({
               // os baixa logo, e a prioridade baixa deixa a banda para a 1ª.
               fetchPriority={position === 0 ? "high" : "low"}
               sizes="(max-width: 639px) 12rem, (max-width: 1023px) 44vw, (max-width: 1439px) 30vw, 25rem"
-              className="object-contain p-3 sm:p-5 sm:pb-16"
+              className="object-contain p-2 sm:p-3 sm:pb-14"
             />
           </span>
         )}

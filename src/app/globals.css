@@ -431,3 +431,10 @@
   .destaque-vivo, .destaque-vivo::after, .botao-pulsando { animation: none; }
   .destaque-vivo::after { display: none; }
 }
+
+/* Acabamento do topo da home: fio dourado, sombra de profundidade, brilho no fundo escuro e poço da foto com volume. */
+.destaque-vivo { box-shadow: 0 0 0 1px rgb(201 162 74 / 0.55), 0 18px 40px -22px rgb(17 17 17 / 0.55); }
+.destaque-escuro { background-image: radial-gradient(120% 90% at 0% 0%, rgb(201 162 74 / 0.18), transparent 55%), radial-gradient(80% 60% at 100% 100%, rgb(201 162 74 / 0.08), transparent 60%); }
+.poco-foto { background: radial-gradient(75% 75% at 50% 45%, #ffffff 55%, #f1ece2 100%); }
+.poco-foto img { filter: drop-shadow(0 12px 14px rgb(0 0 0 / 0.16)); transition: transform 0.4s ease; }
+.poco-foto:hover img { transform: scale(1.04); }
