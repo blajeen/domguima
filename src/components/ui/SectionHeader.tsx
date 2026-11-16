@@ -32,7 +32,7 @@ export function SectionHeader({
     <div className="mb-4 flex items-baseline justify-between gap-4 sm:mb-5">
       <h2
         id={id}
-        className={`min-w-0 text-balance font-brand text-titulo font-medium text-grafite-900 ${compacto ? "" : "sm:text-titulo-lg"}`}
+        className={`titulo-serifa min-w-0 text-balance font-brand text-titulo font-semibold text-grafite-900 ${compacto ? "" : "sm:text-titulo-lg"}`}
       >
         {title}
       </h2>

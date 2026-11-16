@@ -382,7 +382,7 @@
 /* Oferta relâmpago: chamas tremulando em volta do card (box-shadow, não é cortado pelo overflow do card). */
 .fogo-relampago {
   border: 2px solid #f97316;
-  animation: fogo-relampago 0.9s ease-in-out infinite alternate, gelatina 2.6s ease-in-out infinite;
+  animation: fogo-relampago 0.9s ease-in-out infinite alternate, gelatina 3.2s ease-in-out infinite;
 }
 @keyframes fogo-relampago {
   0% { border-color: #f97316; box-shadow: 0 0 3px 1px #fde047, 0 -2px 8px 2px rgb(249 115 22 / 0.7); }
@@ -397,10 +397,10 @@
 /* Gelatina: balança e volta ao normal, depois descansa um pouco, para o card parecer vivo. */
 @keyframes gelatina {
   0%, 45%, 100% { transform: scale(1, 1); }
-  9% { transform: scale(1.04, 0.96); }
-  18% { transform: scale(0.97, 1.03); }
-  27% { transform: scale(1.02, 0.98); }
-  36% { transform: scale(0.99, 1.01); }
+  9% { transform: scale(1.015, 0.985); }
+  18% { transform: scale(0.99, 1.01); }
+  27% { transform: scale(1.006, 0.994); }
+  36% { transform: scale(0.998, 1.002); }
 }
 
 /* Poço da foto do banner: creme com volume. */
@@ -408,3 +408,6 @@
 /* As fotos do cadastro costumam vir com margem branca: ampliar um pouco preenche o quadro sem cortar o produto. */
 .poco-foto img { filter: drop-shadow(0 12px 14px rgb(0 0 0 / 0.16)); transform: scale(1.15); transition: transform 0.4s ease; }
 .poco-foto:hover img { transform: scale(1.2); }
+
+/* Títulos em serifa (Bodoni): no tamanho grande o eixo óptico afina demais os traços; um tamanho óptico menor deixa o fio mais grosso e legível. */
+.titulo-serifa { font-variation-settings: "opsz" 14; letter-spacing: -0.01em; }

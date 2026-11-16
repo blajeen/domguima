@@ -192,7 +192,7 @@ function Slide({
         )}
         {/* h2 em todos: o H1 da home fica fixo na página (page.tsx), fora
             dos slides que saem do leitor de tela. */}
-        <h2 className="mt-4 text-balance font-brand text-[2rem] leading-[1.08] text-grafite-900 sm:text-[2.6rem] lg:text-[3rem]">
+        <h2 className="titulo-serifa mt-4 text-balance font-brand text-[2rem] font-semibold leading-[1.08] text-grafite-950 sm:text-[2.6rem] lg:text-[3rem]">
           {chamada ? (
             <>
               {chamada.titulo} <em className="italic">{chamada.destaque}</em>
@@ -201,7 +201,7 @@ function Slide({
             <span className="line-clamp-3">{banner.title}</span>
           )}
         </h2>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-600">
+        <p className="mt-3 max-w-md text-[0.95rem] leading-relaxed text-grafite-700">
           {chamada ? chamada.texto : banner.detail}
         </p>
         <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-2">
@@ -211,7 +211,7 @@ function Slide({
             lines={paymentLines(banner.price.cardInstallment)}
           />
         </div>
-        {chamada && <p className="mt-1 line-clamp-1 text-xs text-ink-500">{banner.title}</p>}
+        {chamada && <p className="mt-1 line-clamp-1 text-xs font-medium text-grafite-700">{banner.title}</p>}
         <ButtonLink href={banner.href} className="mt-6 w-fit">
           {banner.ctaLabel} <span aria-hidden>→</span>
         </ButtonLink>
