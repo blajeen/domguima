@@ -3,6 +3,7 @@ import { recentUnits } from "@/lib/admin/catalog-insights";
 import { normalize } from "@/lib/utils/format";
 import { loadCatalogCategories, loadCatalogProducts } from "./database";
 import type { Category, Product, ProductFilters, SortKey } from "./types";
+import { matchesVoltage, parseVoltageSearch } from "./voltage-search";
 
 /**
  * Todos os produtos publicados, inclusive os sem estoque.
@@ -100,18 +101,23 @@ function scoreProduct(product: Product, terms: string[], categoryMap: Map<string
 }
 
 export async function searchProducts(query: string): Promise<Product[]> {
-  const terms = normalize(query).split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
+  const { terms, voltages } = parseVoltageSearch(query);
+  if (!terms.length && !voltages.size) return [];
   const [products, categories] = await Promise.all([getSellableProducts(), loadCatalogCategories()]);
   const categoryMap = new Map(categories.map((category) => [category.id, category]));
-  return products.map((product) => ({ product, score: scoreProduct(product, terms, categoryMap) })).filter((result) => result.score > 0).sort((a, b) => b.score - a.score).map((result) => result.product);
+  return products
+    .filter((product) => !voltages.size || matchesVoltage(product, voltages))
+    .map((product) => ({ product, score: terms.length ? scoreProduct(product, terms, categoryMap) : 1 }))
+    .filter((result) => result.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((result) => result.product);
 }
 
 export interface Suggestion { type: "produto" | "categoria"; label: string; href: string; image?: string; price?: number; }
 export async function getSuggestions(query: string, limit = 6): Promise<Suggestion[]> {
-  const terms = normalize(query).split(/\s+/).filter(Boolean);
-  if (!terms.length) return [];
-  const categories = await loadCatalogCategories();
+  const { terms, voltages } = parseVoltageSearch(query);
+  if (!terms.length && !voltages.size) return [];
+  const categories = voltages.size ? [] : await loadCatalogCategories();
   const categoryHits: Suggestion[] = categories.filter((category) => terms.every((term) => normalize(category.name).includes(term))).slice(0, 2).map((category) => ({ type: "categoria", label: category.name, href: `/categoria/${category.slug}` }));
   const productHits = (await searchProducts(query)).slice(0, limit - categoryHits.length).map((product) => ({ type: "produto" as const, label: product.name, href: `/produto/${product.slug}`, image: product.images[0]?.src, price: product.price }));
   return [...categoryHits, ...productHits];

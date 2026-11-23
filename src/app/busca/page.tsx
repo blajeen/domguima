@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { categoryIcon } from "@/lib/catalog/categories";
 import { parseFilterState, parseSort, priceRangesFor, toProductFilters } from "@/lib/catalog/filters";
 import { getBestSellers, getBrands, getCatalogCategories, queryProducts, searchProducts } from "@/lib/catalog/queries";
+import { parseVoltageSearch } from "@/lib/catalog/voltage-search";
 
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -50,7 +51,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
       filters={filters}
       sort={sort}
       emptyMessage="Não encontramos exatamente o que você procura"
-      emptySlot={<SearchSuggestions />}
+      emptySlot={parseVoltageSearch(term).voltages.size ? undefined : <SearchSuggestions />}
     />
   );
 }
